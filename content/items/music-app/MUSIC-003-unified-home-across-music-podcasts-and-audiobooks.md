@@ -23,7 +23,7 @@ Spoken word is now a large share of listening hours but still lives in a separat
 
 ## What ships
 A single ranked feed backed by one cross-format candidate generator, per-format quotas that decay as the model earns confidence, a context signal (time, device, recent session shape) feeding ranking, and a shelf-level explanation string on every row. Ships to a holdback-controlled 25% before general rollout.
-
+test
 ## Who it's for
 All listeners, with the largest expected shift among music-only listeners who have never opened the podcasts tab.
 
