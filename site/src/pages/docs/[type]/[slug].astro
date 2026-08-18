@@ -1,0 +1,104 @@
+---
+import Base from '../../../layouts/Base.astro';
+import { getCollection } from 'astro:content';
+import MarkdownContent from '../../../components/markdown/MarkdownContent.astro';
+import Mermaid from '../../../components/markdown/Mermaid.vue';
+import Breadcrumb from '../../../components/ui/Breadcrumb.vue';
+import { getVisibleDocCollection } from '../../../lib/docs';
+import { parseLinks } from '../../../lib/items';
+import { toneSurface, toneText, type Tone } from '../../../lib/display';
+import { IS_PUBLIC } from '../../../lib/audience';
+import {
+  DOC_COLLECTIONS,
+  DOC_TYPE_LABEL,
+  DOC_TYPE_ROUTE,
+  docBasename,
+} from '../../../lib/slugs';
+
+export async function getStaticPaths() {
+  const base = import.meta.env.BASE_URL;
+  const prefix = base.replace(/\/$/, '');
+  const items = (await getCollection('items')).filter(
+    (it) => !IS_PUBLIC || it.data.visibility === 'Public',
+  );
+
+  // reverse index: doc route → items that reference it
+  const back: Record<string, { id: string; title: string; href: string }[]> = {};
+  for (const it of items) {
+    for (const ln of parseLinks(it.body ?? '', base)) {
+      if (ln.kind === 'doc')
+        (back[ln.href] ??= []).push({
+          id: it.data.id,
+          title: it.data.title,
+          href: `${prefix}/item/${it.data.id}`,
+        });
+    }
+  }
+
+  const paths = [];
+  for (const coll of DOC_COLLECTIONS) {
+    const docs = await getVisibleDocCollection(coll);
+    for (const entry of docs) {
+      const slug = docBasename(entry.id);
+      const type = DOC_TYPE_ROUTE[coll];
+      const selfHref = `${prefix}/docs/${type}/${slug}`;
+      paths.push({ params: { type, slug }, props: { entry, coll, backlinks: back[selfHref] ?? [] } });
+    }
+  }
+  return paths;
+}
+
+const { entry, coll, backlinks } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const title = entry.data.title ?? docBasename(entry.id);
+const typeTone = { prds: 'orange', techDesign: 'blue', research: 'green' }[coll] as Tone;
+---
+
+<Base title={`${title} · Docs`} active="docs">
+  <main class="page-reveal mx-auto max-w-3xl px-6 py-10">
+      <Breadcrumb
+        items={[
+          { label: 'Roadmap', href: base },
+          { label: 'Docs', href: `${base}docs` },
+          { label: title },
+        ]}
+      />
+
+      <div class="mt-5 flex flex-wrap items-center gap-2">
+        <span
+          class="text-single-sm-medium rounded-md px-2 py-0.5 font-semibold tracking-wide uppercase"
+          style={`background: ${toneSurface[typeTone]}; color: ${toneText[typeTone]}`}
+        >
+          {DOC_TYPE_LABEL[coll]}
+        </span>
+        {
+          entry.data.status && (
+            <span class="text-single-sm-medium text-text-subtle-default bg-surface-subtle-default rounded-full px-2.5 py-0.5">
+              {entry.data.status}
+            </span>
+          )
+        }
+      </div>
+
+      <h1 class="text-heading-lg-semibold text-text-primary-default mt-3 tracking-tight text-balance">{title}</h1>
+
+      {
+        backlinks.length > 0 && (
+          <p class="text-single-sm-medium text-text-subtle-default mt-2">
+            For{' '}
+            {backlinks.map((b, i) => (
+              <>
+                {i > 0 && <span>, </span>}
+                <a href={b.href} class="text-text-link-default hover:underline">
+                  {b.title} ({b.id})
+                </a>
+              </>
+            ))}
+          </p>
+        )
+      }
+
+      <article class="mt-8"><MarkdownContent entry={entry} /></article>
+      <Mermaid client:load />
+    </main>
+</Base>

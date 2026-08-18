@@ -1,0 +1,220 @@
+/* ABOUTME: Primitive design tokens (raw color ramps, spacing steps, shadows). Internal to the library. */
+/* ABOUTME: Declared in :root so they resolve via var() at runtime but are not registered as Tailwind utilities. */
+
+:root {
+  /* Colors */
+  --primitive-color-base-white: #ffffff;
+  --primitive-color-base-black: #030712;
+
+  --primitive-color-transparency-green-25: #27be5140;
+  --primitive-color-transparency-red-25: #f4300940;
+  --primitive-color-transparency-yellow-25: #ffb80040;
+  --primitive-color-transparency-blue-25: #1572ed40;
+  --primitive-color-transparency-orange-25: #f63e0d40;
+  --primitive-color-transparency-violet-25: #8000ff40;
+  --primitive-color-transparency-green-10: #27be511a;
+  --primitive-color-transparency-red-10: #f430091a;
+  --primitive-color-transparency-yellow-10: #ffb8001a;
+  --primitive-color-transparency-blue-10: #1572ed1a;
+  --primitive-color-transparency-orange-10: #f63e0d1a;
+  --primitive-color-transparency-violet-10: #8000ff1a;
+  --primitive-color-transparency-black-25: #00000040;
+  --primitive-color-transparency-black-50: #00000080;
+  --primitive-color-transparency-black-75: #000000bf;
+
+  --primitive-color-neutral-50: #f8f8f8ff;
+  --primitive-color-neutral-100: #e8e8e7ff;
+  --primitive-color-neutral-200: #d8d8d7ff;
+  --primitive-color-neutral-300: #c6c5c4ff;
+  --primitive-color-neutral-400: #b6b5b3ff;
+  --primitive-color-neutral-500: #989795ff;
+  --primitive-color-neutral-600: #767471ff;
+  --primitive-color-neutral-700: #54524eff;
+  --primitive-color-neutral-800: #494642ff;
+  --primitive-color-neutral-900: #322f2bff;
+  --primitive-color-neutral-950: #1b1813ff;
+  --primitive-color-neutral-base: var(--primitive-color-neutral-500);
+
+  --primitive-color-beige-50: #ffffff;
+  --primitive-color-beige-100: #fcfbfa;
+  --primitive-color-beige-200: #faf7f5;
+  --primitive-color-beige-300: #f5f2f0;
+  --primitive-color-beige-400: #f0ede9;
+  --primitive-color-beige-500: #ebe6df;
+  --primitive-color-beige-600: #e3dacf;
+  --primitive-color-beige-700: #bfb29f;
+  --primitive-color-beige-800: #8c806d;
+  --primitive-color-beige-900: #595041;
+  --primitive-color-beige-950: #383227;
+  --primitive-color-beige-base: var(--primitive-color-beige-500);
+
+  --primitive-color-green-50: #e6faeb;
+  --primitive-color-green-100: #d0f5db;
+  --primitive-color-green-200: #a2ecb6;
+  --primitive-color-green-300: #73e292;
+  --primitive-color-green-400: #45d96e;
+  --primitive-color-green-500: #27be51;
+  --primitive-color-green-600: #1f9841;
+  --primitive-color-green-700: #177231;
+  --primitive-color-green-800: #104c20;
+  --primitive-color-green-900: #082610;
+  --primitive-color-green-950: #031107;
+  --primitive-color-green-base: var(--primitive-color-green-500);
+
+  --primitive-color-red-50: #fef1e5;
+  --primitive-color-red-100: #fee4cd;
+  --primitive-color-red-200: #fdc29c;
+  --primitive-color-red-300: #fb986a;
+  --primitive-color-red-400: #f87044;
+  --primitive-color-red-500: #f43009;
+  --primitive-color-red-600: #d11806;
+  --primitive-color-red-700: #af0604;
+  --primitive-color-red-800: #8d020b;
+  --primitive-color-red-900: #750111;
+  --primitive-color-red-950: #400109;
+  --primitive-color-red-base: var(--primitive-color-red-500);
+
+  --primitive-color-yellow-50: #fff8e5;
+  --primitive-color-yellow-100: #fff1cc;
+  --primitive-color-yellow-200: #ffe399;
+  --primitive-color-yellow-300: #ffd466;
+  --primitive-color-yellow-400: #ffc633;
+  --primitive-color-yellow-500: #ffb800;
+  --primitive-color-yellow-600: #cc9300;
+  --primitive-color-yellow-700: #996e00;
+  --primitive-color-yellow-800: #664a00;
+  --primitive-color-yellow-900: #332500;
+  --primitive-color-yellow-950: #1a1200;
+  --primitive-color-yellow-base: var(--primitive-color-yellow-500);
+
+  --primitive-color-blue-50: #e7f1fd;
+  --primitive-color-blue-100: #d0e2fb;
+  --primitive-color-blue-200: #a0c6f8;
+  --primitive-color-blue-300: #71a9f4;
+  --primitive-color-blue-400: #428df0;
+  --primitive-color-blue-500: #1572ed;
+  --primitive-color-blue-600: #0f5abd;
+  --primitive-color-blue-700: #0b438e;
+  --primitive-color-blue-800: #072d5f;
+  --primitive-color-blue-900: #04162f;
+  --primitive-color-blue-950: #020b18;
+  --primitive-color-blue-base: var(--primitive-color-blue-500);
+
+  --primitive-color-orange-50: #faece5;
+  --primitive-color-orange-100: #fee0d5;
+  --primitive-color-orange-200: #ffc7b5;
+  --primitive-color-orange-300: #ffa284;
+  --primitive-color-orange-400: #f97856;
+  --primitive-color-orange-500: #f63e0d;
+  --primitive-color-orange-600: #d43309;
+  --primitive-color-orange-700: #ad2907;
+  --primitive-color-orange-800: #861f06;
+  --primitive-color-orange-900: #641804;
+  --primitive-color-orange-950: #3f0d02;
+  --primitive-color-orange-base: var(--primitive-color-orange-500);
+
+  /* Accent ramp. The semantic --color-accent-brand-* tokens read from this, so the
+     product's accent hue changes here and nowhere else. Kept distinct from the data
+     ramps below: those encode categories (a product, a horizon) and must not shift
+     when the accent does. */
+  --primitive-color-teal-50: #e9f4f2;
+  --primitive-color-teal-100: #cbe7e3;
+  --primitive-color-teal-200: #9dd4cd;
+  --primitive-color-teal-300: #6cbfb5;
+  --primitive-color-teal-400: #3fb3a6;
+  --primitive-color-teal-500: #12857c;
+  --primitive-color-teal-600: #0f6f68;
+  --primitive-color-teal-700: #0c5a54;
+  --primitive-color-teal-800: #094641;
+  --primitive-color-teal-900: #06332f;
+  --primitive-color-teal-950: #04211f;
+  --primitive-color-teal-base: var(--primitive-color-teal-500);
+
+  --primitive-color-violet-50: #f2e5ff;
+  --primitive-color-violet-100: #e6ccff;
+  --primitive-color-violet-200: #cc99ff;
+  --primitive-color-violet-300: #b366ff;
+  --primitive-color-violet-400: #9933ff;
+  --primitive-color-violet-500: #8000ff;
+  --primitive-color-violet-600: #6600cc;
+  --primitive-color-violet-700: #4d0099;
+  --primitive-color-violet-800: #330066;
+  --primitive-color-violet-900: #1a0033;
+  --primitive-color-violet-950: #0d001a;
+  --primitive-color-violet-base: var(--primitive-color-violet-500);
+
+  /* Spacing */
+  --primitive-space-0: 0px;
+  --primitive-space-1: 4px;
+  --primitive-space-2: 8px;
+  --primitive-space-2-5: 10px;
+  --primitive-space-3: 12px;
+  --primitive-space-3-5: 14px;
+  --primitive-space-4: 16px;
+  --primitive-space-5: 20px;
+  --primitive-space-6: 24px;
+  --primitive-space-8: 32px;
+  --primitive-space-9: 36px;
+  --primitive-space-10: 40px;
+  --primitive-space-12: 48px;
+  --primitive-space-16: 64px;
+  --primitive-space-20: 80px;
+  --primitive-space-24: 96px;
+  --primitive-space-32: 128px;
+
+  --primitive-radius-none: 0px;
+  --primitive-radius-sm: 2px;
+  --primitive-radius-md: 4px;
+  --primitive-radius-lg: 8px;
+  --primitive-radius-xl: 12px;
+  --primitive-radius-2xl: 16px;
+  --primitive-radius-3xl: 24px;
+  --primitive-radius-full: 9999px;
+
+  --primitive-border-0: 0px;
+  --primitive-border-1: 1px;
+  --primitive-border-2: 2px;
+
+  --primitive-font-weight-light: 300;
+  --primitive-font-weight-regular: 400;
+  --primitive-font-weight-medium: 500;
+  --primitive-font-weight-semi-bold: 600;
+  --primitive-font-weight-bold: 700;
+
+  --primitive-line-height-100: 1;
+  --primitive-line-height-115: 1.15;
+  --primitive-line-height-120: 1.2;
+  --primitive-line-height-140: 1.4;
+  --primitive-line-height-150: 1.5;
+  --primitive-line-height-200: 2;
+
+  /* Label color primitives (categorization badges) */
+  --primitive-color-label-purple: #8b5cf6;
+  --primitive-color-label-purple-light: #f3edff;
+  --primitive-color-label-purple-dark: #3b1a8b;
+  --primitive-color-label-teal: #0891b2;
+  --primitive-color-label-teal-light: #e0f7fa;
+  --primitive-color-label-teal-dark: #164e63;
+  --primitive-color-label-pink: #ec4899;
+  --primitive-color-label-pink-light: #fdf2f8;
+  --primitive-color-label-pink-dark: #831843;
+  --primitive-color-label-orange: #f97316;
+  --primitive-color-label-orange-light: #fff4e6;
+  --primitive-color-label-orange-dark: #7c2d12;
+  --primitive-color-label-indigo: #6366f1;
+  --primitive-color-label-indigo-light: #eef2ff;
+  --primitive-color-label-indigo-dark: #312e81;
+
+  /* Shadows */
+  --primitive-shadow-small: 0 var(--primitive-space-1, 4px) var(--primitive-space-3, 12px) 0
+    rgba(0, 0, 0, 0.2);
+  --primitive-shadow-medium: 0 var(--primitive-space-1, 4px) var(--primitive-space-5, 20px) 0
+    rgba(0, 0, 0, 0.2);
+  --primitive-shadow-medium-soft: 0 var(--primitive-space-1, 4px) var(--primitive-space-5, 20px) 0
+    rgba(0, 0, 0, 0.1);
+  --primitive-shadow-large: 0 var(--primitive-space-2, 8px) var(--primitive-space-6, 24px) 0
+    rgba(0, 0, 0, 0.2);
+  --primitive-shadow-xlarge: 0 20px 30px 0px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --primitive-shadow-2xlarge: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --primitive-shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+}

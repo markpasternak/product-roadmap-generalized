@@ -1,0 +1,29 @@
+---
+// Per-product board at a clean, SEO-friendly path: /music-app/, /podcasts-audiobooks/,
+// /core-platform-data/ (and any new product added to the PRODUCTS list). Renders the same
+// interactive board seeded with the product filter — the product lives in the URL
+// path, not a ?product= query string.
+import Base from '../layouts/Base.astro';
+import Board from '../components/board/Board.vue';
+import { PRODUCTS } from '../lib/schema';
+import { productSlug } from '../lib/slugs';
+import { buildBoardItems } from '../lib/board';
+
+export function getStaticPaths() {
+  return PRODUCTS.map((product) => ({ params: { product: productSlug(product) }, props: { product } }));
+}
+
+const { product } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const items = await buildBoardItems(base);
+---
+
+<Base
+  title={`${product} · Product Roadmap`}
+  active="roadmap"
+  description={`What's Now, Next and Later for ${product}, ordered by confidence rather than dates.`}
+>
+  <main class="mx-auto max-w-[1600px] px-4 py-4 sm:px-6 sm:py-5">
+    <Board client:load items={items} initialProduct={product} base={base} />
+  </main>
+</Base>

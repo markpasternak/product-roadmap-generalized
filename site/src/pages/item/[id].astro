@@ -1,0 +1,389 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getCollection } from 'astro:content';
+import Breadcrumb from '../../components/ui/Breadcrumb.vue';
+import ProductMark from '../../components/ui/ProductMark.vue';
+import {
+  horizonDot,
+  horizonStatLabel,
+  horizonTone,
+  levelColor,
+  toneSurface,
+  toneSurfaceStrong,
+  toneText,
+  tagTone,
+  type Tone,
+} from '../../lib/display';
+import { parseLinks, parseSections, parseTags, mdToHtml, sectionText, byHorizonThenOrder, docTargetKey } from '../../lib/items';
+import { linkSource } from '../../lib/sources';
+import { productSlug } from '../../lib/slugs';
+import { formatDateTime, formatDateTimeOrDate } from '../../lib/dates';
+import { itemHistoryForPath } from '../../lib/itemHistory.server';
+import type { ItemLink } from '../../lib/items';
+import { IS_PUBLIC } from '../../lib/audience';
+import {
+  PhArrowSquareOut as _PhArrowSquareOut,
+  PhArrowUp as _PhArrowUp,
+  PhCaretLeft as _PhCaretLeft,
+  PhCaretRight as _PhCaretRight,
+  PhChecks as _PhChecks,
+  PhCode as _PhCode,
+  PhCube as _PhCube,
+  PhFileText as _PhFileText,
+  PhGauge as _PhGauge,
+  PhHeart as _PhHeart,
+  PhLink as _PhLink,
+  PhMagnifyingGlass as _PhMagnifyingGlass,
+  PhPencilSimple as _PhPencilSimple,
+  PhStack as _PhStack,
+  PhTarget as _PhTarget,
+  PhTrendUp as _PhTrendUp,
+} from '@phosphor-icons/vue';
+import { getVisibleDocCollections } from '../../lib/docs';
+
+const PhArrowSquareOut = _PhArrowSquareOut as any;
+const PhArrowUp = _PhArrowUp as any;
+const PhCaretLeft = _PhCaretLeft as any;
+const PhCaretRight = _PhCaretRight as any;
+const PhChecks = _PhChecks as any;
+const PhCode = _PhCode as any;
+const PhCube = _PhCube as any;
+const PhFileText = _PhFileText as any;
+const PhGauge = _PhGauge as any;
+const PhHeart = _PhHeart as any;
+const PhLink = _PhLink as any;
+const PhMagnifyingGlass = _PhMagnifyingGlass as any;
+const PhPencilSimple = _PhPencilSimple as any;
+const PhStack = _PhStack as any;
+const PhTarget = _PhTarget as any;
+const PhTrendUp = _PhTrendUp as any;
+
+export async function getStaticPaths() {
+  const items = (await getCollection('items')).filter(
+    (entry) => !IS_PUBLIC || entry.data.visibility === 'Public',
+  );
+  items.sort((a, b) => byHorizonThenOrder(a.data, b.data));
+  return items.map((entry, i) => {
+    const sibling = (e: (typeof items)[number] | undefined) =>
+      e ? { id: e.data.id, title: e.data.title } : null;
+    return {
+      params: { id: entry.data.id },
+      props: { entry, prev: sibling(items[i - 1]), next: sibling(items[i + 1]) },
+    };
+  });
+}
+
+const { entry, prev, next } = Astro.props;
+const d = entry.data;
+const base = import.meta.env.BASE_URL;
+const body = entry.body ?? '';
+const links = parseLinks(body, base);
+const title = d.title;
+const lede = sectionText(body, 'One-liner');
+const { tags, themes } = parseTags(d.tags);
+const REPO_EDIT_BASE = 'https://github.com/markpasternak/product-roadmap-generalized/edit/main';
+const repoPath = entry.filePath ? entry.filePath.slice(entry.filePath.indexOf('content/items/')) : null;
+const history = itemHistoryForPath(repoPath);
+const editUrl = !IS_PUBLIC && repoPath ? `${REPO_EDIT_BASE}/${repoPath}` : null;
+const created = formatDateTimeOrDate(history.createdAt, history.created);
+const updated = formatDateTimeOrDate(history.updatedAt, history.updated);
+const historyTitle = (at: string, by: string, subject: string): string =>
+  [at ? formatDateTime(at) : '', by, subject].filter(Boolean).join(' · ');
+
+// The board card/drawer shows the fixed sections; the full page renders every
+// section the file has, in file order. Public builds keep the curated set only
+// (deeper detail like "Current behavior (in repo)" stays internal).
+const PUBLIC_SECTIONS = new Set(['Why it matters', 'Target outcome', 'What ships', "Who it's for"]);
+const HIDDEN_SECTIONS = new Set(['One-liner', 'Links']);
+const storySections = parseSections(body)
+  .filter((s) => !HIDDEN_SECTIONS.has(s.heading))
+  .filter((s) => !IS_PUBLIC || PUBLIC_SECTIONS.has(s.heading))
+  .map((s) => ({ heading: s.heading, html: mdToHtml(s.raw) }));
+
+const docColls = await getVisibleDocCollections();
+const docTitleByTarget = new Map<string, string>();
+for (const { root, entries } of docColls)
+  for (const e of entries)
+    if (e.data.title) docTitleByTarget.set(`${root}/${e.id}`.toLowerCase(), e.data.title);
+const prettifySlug = (s: string): string =>
+  (s.split('/').filter(Boolean).pop() ?? '').replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+// Never render a raw URL as flowing text — show the host, keep the full URL on hover.
+const externalHost = (target: string): string => {
+  try {
+    return new URL(target).hostname.replace(/^www\./, '');
+  } catch {
+    return target;
+  }
+};
+const linkText = (ln: ItemLink): string =>
+  ln.kind === 'external'
+    ? externalHost(ln.target)
+    : ln.kind === 'presentation'
+      ? prettifySlug(ln.href)
+      : (docTitleByTarget.get(docTargetKey(ln.target) ?? '') ?? ln.target.split('/').pop() ?? ln.target);
+
+const details: { label: string; value: string; href?: string; color?: string; datetime?: string; title?: string; localDateTime?: boolean }[] = [
+  { label: 'Product', value: d.product, href: `${base}${productSlug(d.product)}/` },
+  ...(!IS_PUBLIC && d.owner ? [{ label: 'Owner', value: d.owner }] : []),
+  ...(created ? [{ label: 'Created', value: created, datetime: history.createdAt || history.created, title: historyTitle(history.createdAt ?? '', history.createdBy ?? '', history.createdSubject ?? ''), localDateTime: !!history.createdAt }] : []),
+  ...(updated ? [{ label: 'Updated', value: updated, datetime: history.updatedAt || history.updated, title: historyTitle(history.updatedAt ?? '', history.updatedBy ?? '', history.updatedSubject ?? ''), localDateTime: !!history.updatedAt }] : []),
+  ...(links.length ? [{ label: 'Resources', value: String(links.length) }] : []),
+  { label: 'Item ID', value: d.id },
+];
+const resourceTypes = [...links.reduce((acc, ln) => acc.set(ln.label, (acc.get(ln.label) ?? 0) + 1), new Map<string, number>())]
+  .map(([label, count]) => ({ label, count }));
+
+function sectionTone(heading: string): Tone {
+  const h = heading.toLowerCase();
+  if (h.includes('target')) return 'orange';
+  if (h.includes('why')) return 'red';
+  if (h.includes('ship')) return 'violet';
+  if (h.includes('open') || h.includes('current')) return 'blue';
+  return 'green';
+}
+function sectionIcon(heading: string) {
+  const h = heading.toLowerCase();
+  if (h.includes('target')) return PhTarget;
+  if (h.includes('why')) return PhHeart;
+  if (h.includes('ship')) return PhCube;
+  if (h.includes('acceptance')) return PhChecks;
+  if (h.includes('current')) return PhCode;
+  if (h.includes('open')) return PhMagnifyingGlass;
+  return PhFileText;
+}
+function horizonSub(horizon: string) {
+  return horizon in horizonStatLabel ? horizonStatLabel[horizon as keyof typeof horizonStatLabel] : horizon;
+}
+function tagFilterHref(token: string): string {
+  const params = new URLSearchParams();
+  params.set('tag', token);
+  return `${base}?${params.toString()}`;
+}
+---
+
+<Base title={`${title} · Product Roadmap`} active="roadmap" description={lede || `${d.product} roadmap item ${d.id}`} ogType="article">
+  <main
+    class="page-reveal mx-auto max-w-[1440px] px-4 pb-10 sm:px-7"
+    data-item-page
+    data-prev-href={prev ? `${base}item/${prev.id}` : undefined}
+    data-next-href={next ? `${base}item/${next.id}` : undefined}
+  >
+    <section class="roadmap-masthead -mx-4 rounded-b-[22px] px-5 py-3 sm:mx-0 sm:mt-4 sm:rounded-[22px] sm:px-6 lg:px-7">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: d.id }]} />
+        <div class="flex flex-wrap items-center gap-3">
+          <a
+            href={prev ? `${base}item/${prev.id}` : undefined}
+            title={prev ? `Previous: ${prev.title}` : undefined}
+            class:list={[
+              'roadmap-action grid size-10 place-items-center rounded-lg border bg-card/80',
+              prev ? 'border-border-subtle-default text-icons-subtle-default hover:text-text-primary-default' : 'pointer-events-none border-border-subtle-default text-icons-subtle-default opacity-30',
+            ]}
+            aria-label={prev ? `Previous item: ${prev.title}` : 'No previous item'}
+          >
+            <PhCaretLeft size={19} />
+          </a>
+          <a
+            href={next ? `${base}item/${next.id}` : undefined}
+            title={next ? `Next: ${next.title}` : undefined}
+            class:list={[
+              'roadmap-action grid size-10 place-items-center rounded-lg border bg-card/80',
+              next ? 'border-[color:var(--color-accent-brand-default)] text-[color:var(--color-accent-brand-default)]' : 'pointer-events-none border-border-subtle-default text-icons-subtle-default opacity-30',
+            ]}
+            aria-label={next ? `Next item: ${next.title}` : 'No next item'}
+          >
+            <PhCaretRight size={19} />
+          </a>
+          <a href={Astro.url.pathname} data-copy-link class="roadmap-action hidden h-10 items-center gap-2 rounded-lg border border-border-subtle-default bg-card/80 px-3.5 text-single-sm-medium text-text-primary-default sm:inline-flex">
+            <PhLink size={18} /> <span data-copy-label>Copy link</span>
+          </a>
+          {editUrl && (
+            <a href={editUrl} target="_blank" rel="noopener" class="roadmap-action hidden h-10 items-center gap-2 rounded-lg border border-border-subtle-default bg-card/80 px-3.5 text-single-sm-medium text-text-primary-default sm:inline-flex">
+              <PhPencilSimple size={18} /> Edit
+            </a>
+          )}
+        </div>
+      </div>
+
+      <div class="mt-2.5 grid gap-3.5 lg:grid-cols-[42px_minmax(0,1fr)] lg:items-start">
+        <ProductMark product={d.product} size={40} />
+        <div>
+          <div class="flex flex-wrap items-center gap-2">
+            <span
+              class="text-single-sm-medium inline-flex items-center gap-2 rounded-lg border border-border-subtle-default/60 px-2.5 py-1 text-text-primary-default"
+              style={`background:${toneSurfaceStrong[horizonTone[d.horizon]]}`}
+            >
+              <span class="h-4 w-1 rounded-full" style={`background:${horizonDot[d.horizon]}`} />
+              {d.horizon}
+            </span>
+            <span class="roadmap-quiet-chip text-single-sm-medium rounded-lg px-2.5 py-1 text-text-subtle-default">
+              {d.stage}
+            </span>
+            {links.length > 0 && (
+              <span class="text-single-sm-medium inline-flex items-center gap-2 rounded-lg border border-border-subtle-default/60 bg-surface-transparent-orange-25 px-2.5 py-1 text-text-primary-default">
+                <PhStack size={17} /> {links.length} resources
+              </span>
+            )}
+          </div>
+          <h1 class="roadmap-display roadmap-title mt-1.5 max-w-5xl text-[1.6rem] sm:text-[1.9rem] lg:text-[2.15rem]">
+            {title}
+          </h1>
+          {lede && <p class="roadmap-muted mt-1.5 max-w-3xl text-sm leading-relaxed sm:text-base">{lede}</p>}
+        </div>
+      </div>
+    </section>
+
+    <div class="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <article class="min-w-0">
+        <div class="grid gap-3 md:grid-cols-3">
+          <div class="roadmap-panel rounded-xl p-3.5">
+            <div class="roadmap-label">Stage</div>
+            <div class="mt-2.5 flex items-center gap-2.5">
+              <span class="roadmap-icon-tile size-9 rounded-lg text-[color:var(--color-data-green-border-primary-default)]">
+                <PhTrendUp size={18} />
+              </span>
+              <div>
+                <div class="font-display roadmap-title text-[1.2rem] leading-none">{d.stage}</div>
+                <div class="text-single-sm-medium mt-1" style={`color:${toneText.green}`}>{horizonSub(d.horizon)}</div>
+              </div>
+            </div>
+          </div>
+          <div class="roadmap-panel rounded-xl p-3.5">
+            <div class="roadmap-label">Impact</div>
+            <div class="mt-2.5 flex items-center gap-2.5">
+              <span class="roadmap-icon-tile size-9 rounded-lg text-[color:var(--color-accent-brand-default)]">
+                <PhArrowUp size={18} />
+              </span>
+              <div>
+                <div class="font-display roadmap-title text-[1.2rem] leading-none">{d.impact ?? '—'}</div>
+                <div class="text-single-sm-medium mt-1" style={`color:${levelColor(d.impact)}`}>{d.impact ? `${d.impact} business value` : 'Not scored'}</div>
+              </div>
+            </div>
+          </div>
+          <div class="roadmap-panel rounded-xl p-3.5">
+            <div class="roadmap-label">Effort</div>
+            <div class="mt-2.5 flex items-center gap-2.5">
+              <span class="roadmap-icon-tile size-9 rounded-lg text-[color:var(--color-data-violet-border-primary-default)]">
+                <PhGauge size={18} />
+              </span>
+              <div>
+                <div class="font-display roadmap-title text-[1.2rem] leading-none">{d.effort ?? '—'}</div>
+                <div class="text-single-sm-medium mt-1" style={`color:${levelColor(d.effort)}`}>{d.effort ? `${d.effort} effort` : 'Not scoped'}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <section class="roadmap-panel mt-5 rounded-[22px] p-4 sm:p-5">
+          <div class="space-y-5">
+            {storySections.map((s) => {
+              const tone = sectionTone(s.heading);
+              const Icon = sectionIcon(s.heading);
+              return (
+                <section class="grid gap-3 border-b border-border-subtle-default pb-5 last:border-b-0 last:pb-0 sm:grid-cols-[48px_minmax(0,1fr)]">
+                  <span class="roadmap-icon-tile grid size-10 place-items-center rounded-lg" style={`background:${toneSurfaceStrong[tone]};color:${toneText[tone]}`}>
+                    <Icon size={21} />
+                  </span>
+                  <div class="min-w-0">
+                    <h2 class="font-display roadmap-title text-[1.35rem] leading-tight">{s.heading}</h2>
+                    <div class="item-prose mt-1.5 text-base leading-relaxed text-text-primary-default" set:html={s.html} />
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+          {(tags.length > 0 || themes.length > 0) && (
+            <div class="mt-6 flex flex-wrap gap-2">
+              {themes.map((t) => (
+                <a href={tagFilterHref(`theme:${t}`)} class="text-single-sm-medium relative inline-flex min-h-8 items-center rounded-lg border border-border-subtle-default/60 px-2.5 py-1 after:absolute after:-inset-x-1 after:-inset-y-1 hover:underline" style={`background:${toneSurface.orange};color:${toneText.orange}`}>
+                  {t}
+                </a>
+              ))}
+              {tags.map((t) => (
+                <a href={tagFilterHref(t)} class="text-single-sm-medium relative inline-flex min-h-8 items-center rounded-lg border border-border-subtle-default/60 px-2.5 py-1 after:absolute after:-inset-x-1 after:-inset-y-1 hover:underline" style={`background:${toneSurface[tagTone(t)]};color:${toneText[tagTone(t)]}`}>
+                  {t}
+                </a>
+              ))}
+            </div>
+          )}
+          {resourceTypes.length > 0 && (
+            <div class="mt-5 flex flex-wrap items-center gap-2">
+              <span class="roadmap-label mr-1">Resources</span>
+              {resourceTypes.map((resource) => {
+                const src = linkSource(resource.label);
+                const Icon = src.Icon as any;
+                return (
+                  <span class="text-single-sm-medium inline-flex items-center gap-2 rounded-lg border border-border-subtle-default/60 px-2.5 py-1.5" style={`background:${toneSurfaceStrong[src.tone]};color:${toneText[src.tone]}`}>
+                    <Icon size={16} />
+                    {resource.label}
+                    {resource.count > 1 && <span class="tabular-nums">×{resource.count}</span>}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </article>
+
+      <aside class="flex flex-col gap-5 lg:sticky lg:top-20 lg:self-start">
+        {links.length > 0 && (
+          <section class="roadmap-panel rounded-[22px] p-4">
+            <h2 class="font-display roadmap-title flex items-center gap-2 text-[1.35rem] leading-none">
+              <PhFileText size={20} /> Related resources
+            </h2>
+            <div class="mt-4 grid gap-2.5">
+              {links.map((ln) => {
+                const src = linkSource(ln.label, ln.target);
+                const Icon = src.Icon as any;
+                return (
+                  <a
+                    href={ln.href}
+                    target={ln.kind === 'external' || ln.kind === 'presentation' ? '_blank' : undefined}
+                    rel={ln.kind === 'external' || ln.kind === 'presentation' ? 'noopener' : undefined}
+                    class="roadmap-action flex items-center gap-3 rounded-xl border border-border-subtle-default bg-card/70 px-3 py-2.5 hover:bg-card"
+                  >
+                    <span class="grid size-12 shrink-0 place-items-center rounded-lg" style={`background:${toneSurfaceStrong[src.tone]};color:${toneText[src.tone]}`}>
+                      <Icon size={23} />
+                    </span>
+                    <span class="min-w-0 flex-1">
+                      <span class="text-single-sm-medium block truncate font-semibold uppercase tracking-wider" style={`color:${toneText[src.tone]}`}>
+                        {ln.label}
+                      </span>
+                      <span class="text-single-base-medium text-text-primary-default block truncate leading-snug" title={ln.kind === 'external' ? ln.target : undefined}>
+                        {linkText(ln)}
+                      </span>
+                    </span>
+                    <PhArrowSquareOut size={18} class="text-icons-subtle-default" />
+                  </a>
+                );
+              })}
+            </div>
+            <a href={`${base}docs`} class="roadmap-action mt-3 flex h-10 items-center justify-center gap-2 rounded-lg border border-border-subtle-default bg-card/70 text-single-sm-medium text-text-primary-default hover:bg-card">
+              <PhFileText size={18} /> View all documents
+            </a>
+          </section>
+        )}
+
+        <section class="roadmap-panel rounded-[22px] p-4">
+          <h2 class="font-display roadmap-title text-[1.35rem] leading-none">Item details</h2>
+          <dl class="mt-4 grid gap-2.5">
+            {details.map((row) => (
+              <div class="flex items-baseline justify-between gap-4 border-b border-border-subtle-default pb-2.5 last:border-b-0 last:pb-0">
+                <dt class="text-single-sm-medium text-text-subtle-default">{row.label}</dt>
+                <dd class="text-single-sm-medium text-text-primary-default text-right">
+                  {row.href ? (
+                    <a href={row.href} class="text-text-link-default hover:underline">{row.value}</a>
+                  ) : row.datetime ? (
+                    <time datetime={row.datetime} title={row.title} data-local-date-time={row.localDateTime ? true : undefined}>{row.value}</time>
+                  ) : (
+                    row.value
+                  )}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      </aside>
+    </div>
+  </main>
+</Base>

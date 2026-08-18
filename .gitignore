@@ -1,0 +1,14 @@
+# Local runtime artifact from tooling/seed_portfolio_project.py — records the
+# GitHub Project item IDs created this run so wipe_portfolio_project.py can undo them.
+tooling/.seeded-item-ids.txt
+
+# Python
+__pycache__/
+*.pyc
+
+# Edit service secrets (never commit)
+edit-service/.env
+edit-service/.env.*
+!edit-service/.env.example
+edit-service/secrets/
+*.pem

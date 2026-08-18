@@ -1,0 +1,232 @@
+/* ABOUTME: Typography tokens (font-family default, text/leading/tracking scales). */
+/* ABOUTME: Imported by tokens.css so consumers get text-* utilities through their Tailwind. Inter is loaded separately via fonts.css. */
+
+:root {
+  --font-family: 'Inter', Arial, sans-serif;
+}
+
+@theme {
+  --font-family: 'Inter', Arial, sans-serif;
+}
+
+@theme inline {
+  /* Reset defaults */
+  --font-*: initial;
+  --text-*: initial;
+  --leading-*: initial;
+  --tracking-*: initial;
+  --font-size-*: initial;
+
+  /* Letter spacing */
+  --tracking-tighter: -0.05em;
+  --tracking-tight: -0.025em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.025em;
+  --tracking-wider: 0.05em;
+  --tracking-widest: 0.1em;
+
+  /* Font family */
+  --default-font-family: var(--font-family);
+  --font-family-sans: var(--font-family);
+  --font-family-serif: var(--font-family);
+  --font-family-mono: var(--font-family);
+
+  /* Font weight */
+  --font-weight-light: var(--primitive-font-weight-light);
+  --font-weight-normal: var(--primitive-font-weight-regular);
+  --font-weight-medium: var(--primitive-font-weight-medium);
+  --font-weight-semibold: var(--primitive-font-weight-semi-bold);
+  --font-weight-bold: var(--primitive-font-weight-bold);
+
+  /* Line height */
+  --leading-none: var(--primitive-line-height-100);
+  --leading-tight: var(--primitive-line-height-115);
+  --leading-snug: var(--primitive-line-height-120);
+  --leading-normal: var(--primitive-line-height-150);
+  --leading-relaxed: var(--primitive-line-height-200);
+
+  /* Body styles */
+  --text-body-sm: var(--primitive-space-3);
+  --text-body-sm--line-height: var(--primitive-line-height-140);
+  --text-body-sm--letter-spacing: 0;
+  --text-body-sm--font-weight: var(--primitive-font-weight-regular);
+
+  --text-body-sm-semibold: var(--primitive-space-3);
+  --text-body-sm-semibold--line-height: var(--primitive-line-height-140);
+  --text-body-sm-semibold--letter-spacing: 0;
+  --text-body-sm-semibold--font-weight: var(--primitive-font-weight-semi-bold);
+
+  --text-body-md: var(--primitive-space-3-5);
+  --text-body-md--line-height: var(--primitive-line-height-140);
+  --text-body-md--letter-spacing: 0;
+  --text-body-md--font-weight: var(--primitive-font-weight-regular);
+
+  --text-body-md-semibold: var(--primitive-space-3-5);
+  --text-body-md-semibold--line-height: var(--primitive-line-height-140);
+  --text-body-md-semibold--letter-spacing: 0;
+  --text-body-md-semibold--font-weight: var(--primitive-font-weight-semi-bold);
+
+  --text-body-lg: var(--primitive-space-4);
+  --text-body-lg--line-height: var(--primitive-line-height-140);
+  --text-body-lg--letter-spacing: 0;
+  --text-body-lg--font-weight: var(--primitive-font-weight-regular);
+
+  --text-body-lg-semibold: var(--primitive-space-4);
+  --text-body-lg-semibold--line-height: var(--primitive-line-height-140);
+  --text-body-lg-semibold--letter-spacing: 0;
+  --text-body-lg-semibold--font-weight: var(--primitive-font-weight-semi-bold);
+
+  /* Subtitle styles */
+  --text-subtitle-sm: var(--primitive-space-4);
+  --text-subtitle-sm--line-height: var(--primitive-line-height-120);
+  --text-subtitle-sm--letter-spacing: 0;
+  --text-subtitle-sm--font-weight: var(--primitive-font-weight-regular);
+
+  --text-subtitle-sm-semibold: var(--primitive-space-4);
+  --text-subtitle-sm-semibold--line-height: var(--primitive-line-height-120);
+  --text-subtitle-sm-semibold--letter-spacing: 0;
+  --text-subtitle-sm-semibold--font-weight: var(--primitive-font-weight-semi-bold);
+
+  --text-subtitle-md: var(--primitive-space-5);
+  --text-subtitle-md--line-height: var(--primitive-line-height-120);
+  --text-subtitle-md--letter-spacing: 0;
+  --text-subtitle-md--font-weight: var(--primitive-font-weight-regular);
+
+  --text-subtitle-md-semibold: var(--primitive-space-5);
+  --text-subtitle-md-semibold--line-height: var(--primitive-line-height-120);
+  --text-subtitle-md-semibold--letter-spacing: 0;
+  --text-subtitle-md-semibold--font-weight: var(--primitive-font-weight-semi-bold);
+
+  --text-subtitle-lg: var(--primitive-space-6);
+  --text-subtitle-lg--line-height: var(--primitive-line-height-120);
+  --text-subtitle-lg--letter-spacing: 0;
+  --text-subtitle-lg--font-weight: var(--primitive-font-weight-regular);
+
+  --text-subtitle-lg-semibold: var(--primitive-space-6);
+  --text-subtitle-lg-semibold--line-height: var(--primitive-line-height-120);
+  --text-subtitle-lg-semibold--letter-spacing: 0;
+  --text-subtitle-lg-semibold--font-weight: var(--primitive-font-weight-semi-bold);
+
+  /* Heading styles */
+  --text-heading-md: var(--primitive-space-8);
+  --text-heading-md--line-height: var(--primitive-line-height-120);
+  --text-heading-md--letter-spacing: 0;
+  --text-heading-md--font-weight: var(--primitive-font-weight-regular);
+
+  --text-heading-md-semibold: var(--primitive-space-8);
+  --text-heading-md-semibold--line-height: var(--primitive-line-height-120);
+  --text-heading-md-semibold--letter-spacing: 0;
+  --text-heading-md-semibold--font-weight: var(--primitive-font-weight-semi-bold);
+
+  --text-heading-lg: var(--primitive-space-9);
+  --text-heading-lg--line-height: var(--primitive-line-height-120);
+  --text-heading-lg--letter-spacing: 0;
+  --text-heading-lg--font-weight: var(--primitive-font-weight-regular);
+
+  --text-heading-lg-semibold: var(--primitive-space-9);
+  --text-heading-lg-semibold--line-height: var(--primitive-line-height-120);
+  --text-heading-lg-semibold--letter-spacing: 0;
+  --text-heading-lg-semibold--font-weight: var(--primitive-font-weight-semi-bold);
+
+  /* Single line styles */
+  --text-single-xs: var(--primitive-space-2-5);
+  --text-single-xs--line-height: var(--primitive-line-height-100);
+  --text-single-xs--letter-spacing: 0;
+  --text-single-xs--font-weight: var(--primitive-font-weight-regular);
+
+  --text-single-sm: var(--primitive-space-3);
+  --text-single-sm--line-height: var(--primitive-line-height-100);
+  --text-single-sm--letter-spacing: 0;
+  --text-single-sm--font-weight: var(--primitive-font-weight-regular);
+
+  --text-single-sm-medium: var(--primitive-space-3);
+  --text-single-sm-medium--line-height: var(--primitive-line-height-100);
+  --text-single-sm-medium--letter-spacing: 0;
+  --text-single-sm-medium--font-weight: var(--primitive-font-weight-medium);
+
+  --text-single-base: var(--primitive-space-3-5);
+  --text-single-base--line-height: var(--primitive-line-height-100);
+  --text-single-base--letter-spacing: 0;
+  --text-single-base--font-weight: var(--primitive-font-weight-regular);
+
+  --text-single-base-medium: var(--primitive-space-3-5);
+  --text-single-base-medium--line-height: var(--primitive-line-height-115);
+  --text-single-base-medium--letter-spacing: 0;
+  --text-single-base-medium--font-weight: var(--primitive-font-weight-medium);
+
+  --text-single-base-semibold: var(--primitive-space-3-5);
+  --text-single-base-semibold--line-height: var(--primitive-line-height-115);
+  --text-single-base-semibold--letter-spacing: 0;
+  --text-single-base-semibold--font-weight: var(--primitive-font-weight-semi-bold);
+
+  --text-single-lg-semibold: var(--primitive-space-4);
+  --text-single-lg-semibold--line-height: var(--primitive-line-height-115);
+  --text-single-lg-semibold--letter-spacing: 0;
+  --text-single-lg-semibold--font-weight: var(--primitive-font-weight-semi-bold);
+
+  /* Core Tailwind */
+  --text-xs: var(--primitive-space-3);
+  --text-xs--line-height: var(--primitive-line-height-140);
+  --text-xs--letter-spacing: 0;
+  --text-xs--font-weight: var(--primitive-font-weight-regular);
+
+  --text-sm: var(--primitive-space-3-5);
+  --text-sm--line-height: var(--primitive-line-height-140);
+  --text-sm--letter-spacing: 0;
+  --text-sm--font-weight: var(--primitive-font-weight-regular);
+
+  --text-base: var(--primitive-space-4);
+  --text-base--line-height: var(--primitive-line-height-140);
+  --text-base--letter-spacing: 0;
+  --text-base--font-weight: var(--primitive-font-weight-regular);
+
+  --text-lg: var(--primitive-space-5);
+  --text-lg--line-height: var(--primitive-line-height-140);
+  --text-lg--letter-spacing: 0;
+  --text-lg--font-weight: var(--primitive-font-weight-regular);
+
+  --text-xl: var(--primitive-space-5);
+  --text-xl--line-height: var(--primitive-line-height-140);
+  --text-xl--letter-spacing: 0;
+  --text-xl--font-weight: var(--primitive-font-weight-regular);
+
+  --text-2xl: var(--primitive-space-6);
+  --text-2xl--line-height: var(--primitive-line-height-140);
+  --text-2xl--letter-spacing: 0;
+  --text-2xl--font-weight: var(--primitive-font-weight-regular);
+
+  --text-3xl: var(--primitive-space-8);
+  --text-3xl--line-height: var(--primitive-line-height-140);
+  --text-3xl--letter-spacing: 0;
+  --text-3xl--font-weight: var(--primitive-font-weight-regular);
+
+  --text-4xl: var(--primitive-space-9);
+  --text-4xl--line-height: var(--primitive-line-height-140);
+  --text-4xl--letter-spacing: 0;
+  --text-4xl--font-weight: var(--primitive-font-weight-regular);
+
+  --text-5xl: var(--primitive-space-12);
+  --text-5xl--line-height: var(--primitive-line-height-140);
+  --text-5xl--letter-spacing: 0;
+  --text-5xl--font-weight: var(--primitive-font-weight-regular);
+
+  --text-6xl: var(--primitive-space-16);
+  --text-6xl--line-height: var(--primitive-line-height-140);
+  --text-6xl--letter-spacing: 0;
+  --text-6xl--font-weight: var(--primitive-font-weight-regular);
+
+  --text-7xl: var(--primitive-space-20);
+  --text-7xl--line-height: var(--primitive-line-height-140);
+  --text-7xl--letter-spacing: 0;
+  --text-7xl--font-weight: var(--primitive-font-weight-regular);
+
+  --text-8xl: var(--primitive-space-24);
+  --text-8xl--line-height: var(--primitive-line-height-140);
+  --text-8xl--letter-spacing: 0;
+  --text-8xl--font-weight: var(--primitive-font-weight-regular);
+
+  --text-9xl: var(--primitive-space-32);
+  --text-9xl--line-height: var(--primitive-line-height-140);
+  --text-9xl--letter-spacing: 0;
+  --text-9xl--font-weight: var(--primitive-font-weight-regular);
+}

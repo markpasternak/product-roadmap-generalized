@@ -1,0 +1,116 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getCollection } from 'astro:content';
+import Breadcrumb from '../../components/ui/Breadcrumb.vue';
+import { DOC_COLLECTIONS, DOC_TYPE_LABEL, DOC_TYPE_ROUTE, docBasename } from '../../lib/slugs';
+import { getVisibleDocCollection } from '../../lib/docs';
+import { toneSurface, toneText, type Tone } from '../../lib/display';
+import { IS_PUBLIC } from '../../lib/audience';
+import { formatDateOnly } from '../../lib/dates';
+
+const base = import.meta.env.BASE_URL;
+const prefix = base.replace(/\/$/, '');
+
+// Doc-type identity colors (must match the doc pages).
+const TYPE_TONE: Record<(typeof DOC_COLLECTIONS)[number], Tone> = {
+  prds: 'orange',
+  techDesign: 'blue',
+  research: 'green',
+};
+
+const items = (await getCollection('items')).filter((e) => !IS_PUBLIC || e.data.visibility === 'Public');
+const itemTitle = new Map(
+  items.map((e) => [e.data.id, e.data.title]),
+);
+
+const groups = [];
+for (const coll of DOC_COLLECTIONS) {
+  const docs = await getVisibleDocCollection(coll);
+  groups.push({
+    coll,
+    label: DOC_TYPE_LABEL[coll],
+    tone: TYPE_TONE[coll],
+    docs: docs.map((e) => {
+      const itemId = e.data.roadmap_item ?? null;
+      return {
+        title: e.data.title ?? docBasename(e.id),
+        href: `${prefix}/docs/${DOC_TYPE_ROUTE[coll]}/${docBasename(e.id)}`,
+        status: e.data.status ?? null,
+        updated: e.data.updated ? e.data.updated.toISOString().slice(0, 10) : '',
+        item: itemId ? { id: itemId, title: itemTitle.get(itemId) ?? itemId, href: `${prefix}/item/${itemId}` } : null,
+      };
+    }),
+  });
+}
+const total = groups.reduce((n, g) => n + g.docs.length, 0);
+---
+
+<Base title="Docs · Roadmap" active="docs" description="PRDs, technical designs, and research behind the roadmap.">
+  <main class="page-reveal mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+      <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: 'Docs' }]} />
+      <h1 class="font-display text-text-primary-default mt-6 text-[2rem] sm:text-[2.4rem]">Docs library</h1>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        {total > 0
+          ? `The ${total} PRDs, technical designs, and research notes behind the roadmap.`
+          : 'PRDs, technical designs, and research notes authored inside this repo will live here.'}
+      </p>
+
+      {total === 0 && (
+        <div class="border-border-subtle-default bg-card mt-8 rounded-xl border border-dashed px-5 py-6">
+          <p class="text-single-sm-medium mb-2 inline-flex items-center gap-2 rounded-full px-2.5 py-1" style={`background:${toneSurface.yellow};color:${toneText.yellow}`}>
+            Work in progress
+          </p>
+          <p class="text-body-md text-text-primary-default mt-1">
+            This library is a placeholder for now. It fills in as we start adding internal
+            assets — PRDs, technical designs, and research — as markdown in the repo.
+          </p>
+          <p class="text-single-sm-medium text-text-subtle-default mt-3">
+            External resources (Notion, Figma, Google, decks…) don't live here — they attach
+            directly to each roadmap item and open in a new tab from its card.
+          </p>
+        </div>
+      )}
+
+      {
+        groups.map(
+          (g) =>
+            g.docs.length > 0 && (
+              <section class="mt-8">
+                <h2 class="text-single-sm-medium text-text-subtle-default mb-3 flex items-center gap-2 tracking-wide uppercase">
+                  <span class="size-2 rounded-full" style={`background:${toneText[g.tone]}`} />
+                  {g.label}
+                  <span class="text-text-subtle-default font-normal normal-case">· {g.docs.length}</span>
+                </h2>
+                <div class="flex flex-col gap-2">
+                  {g.docs.map((d) => (
+                    <a
+                      href={d.href}
+                      class="border-border-subtle-default bg-card hover:border-border-subtle-hover block rounded-lg border px-4 py-3 shadow-sm transition duration-150 hover:shadow-md"
+                    >
+                      <span class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span
+                          class="text-single-sm-medium rounded px-1.5 py-0.5 font-semibold tracking-wide uppercase"
+                          style={`background:${toneSurface[g.tone]};color:${toneText[g.tone]}`}
+                        >
+                          {g.label}
+                        </span>
+                        <span class="text-single-base-medium text-text-primary-default flex-1">{d.title}</span>
+                        {d.status && (
+                          <span class="text-single-sm-medium bg-surface-subtle-default text-text-subtle-default rounded-full px-2 py-0.5">
+                            {d.status}
+                          </span>
+                        )}
+                      </span>
+                      <span class="text-single-sm-medium text-text-subtle-default mt-1.5 flex flex-wrap items-center gap-x-2">
+                        {d.item && <span>For {d.item.title} ({d.item.id})</span>}
+                        {d.updated && <span>· Updated <time datetime={d.updated}>{formatDateOnly(d.updated)}</time></span>}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </section>
+            ),
+        )
+      }
+    </main>
+</Base>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Example presentation</title>
+    <!-- Relative asset paths so this works at / and under /p/<slug>/ alike. -->
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <p class="eyebrow">Presentations · example</p>
+        <h1>A self-contained microsite</h1>
+        <p class="lede">
+          Plain HTML, CSS, JS and Markdown — copied verbatim to
+          <code>/p/&lt;slug&gt;/</code>. No build step, no dependencies.
+        </p>
+      </header>
+
+      <!-- The markdown below is fetched from ./content.md and rendered by app.js. -->
+      <article id="content" class="prose">Loading…</article>
+
+      <footer class="foot">
+        Duplicate this folder, rename it, edit the files. That's the whole workflow.
+      </footer>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,33 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumb from '../components/ui/Breadcrumb.vue';
+import RecentChanges from '../components/board/RecentChanges.vue';
+import { buildBoardItems } from '../lib/board';
+
+const base = import.meta.env.BASE_URL;
+const items = await buildBoardItems(base);
+---
+
+<Base
+  title="Activity — commits · Roadmap"
+  description="The latest commits to the roadmap — who changed what, and a link to each commit."
+>
+  <main class="page-reveal mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+    <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: 'Activity' }]} />
+    <h1 class="font-display text-text-primary-default mt-6 text-[2rem] sm:text-[2.4rem]">Activity — commits</h1>
+    <p class="text-body-lg text-text-subtle-default mt-3 max-w-xl">
+      Every Sync to the roadmap, newest first — who changed what, and a link to the commit itself.
+    </p>
+    <nav class="border-border-subtle-default bg-card mt-5 inline-flex rounded-full border p-0.5" aria-label="Activity views">
+      <a href={`${base}changelog`} class="text-single-sm-medium text-text-subtle-default rounded-full px-3.5 py-1.5 transition-colors hover:text-text-primary-default">
+        Item updates
+      </a>
+      <a href={`${base}changes`} aria-current="page" class="text-single-sm-medium bg-foreground text-text-primary-inverted-default rounded-full px-3.5 py-1.5 transition-colors">
+        Commits
+      </a>
+    </nav>
+    <div class="mt-6">
+      <RecentChanges client:load items={items} base={base} showSeeAll={false} />
+    </div>
+  </main>
+</Base>

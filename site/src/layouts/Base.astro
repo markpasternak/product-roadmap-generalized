@@ -1,0 +1,278 @@
+---
+import '../styles/global.css';
+import Navbar from '../components/ui/Navbar.vue';
+import { ClientRouter } from 'astro:transitions';
+import { formatDateTime } from '../lib/dates';
+
+interface Props {
+  title: string;
+  active?: 'roadmap' | 'shares' | 'docs' | 'help';
+  description?: string;
+  /** OpenGraph type — pass 'article' for item pages. */
+  ogType?: 'website' | 'article';
+  /** Path (relative to base) of a page-specific OG image; defaults to the brand card. */
+  ogImage?: string;
+}
+const { title, active, description, ogType = 'website', ogImage } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const buildGlobal = globalThis as typeof globalThis & { __ROADMAP_BUILD_TIME__?: string };
+const builtIso = buildGlobal.__ROADMAP_BUILD_TIME__ ??= new Date().toISOString();
+const builtAt = new Date(builtIso);
+const built = formatDateTime(builtAt, { timeZone: 'UTC', suffix: 'UTC' });
+// Absolute URLs for canonical/OG — Astro.site comes from SITE_URL in astro.config.
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const ogImageUrl = new URL(ogImage ?? `${base}brand/og-card.png`, Astro.site).href;
+// The product mark (accent square + three horizon bars) as the favicon — same glyph
+// as ui/BrandMark.vue, inlined so the tab icon costs no extra request.
+const favicon =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 415 415'%3E"
+  + "%3Crect width='415' height='415' rx='41.5' fill='%2312857c'/%3E"
+  + "%3Crect x='88' y='120' width='239' height='44' rx='22' fill='%23fff'/%3E"
+  + "%3Crect x='88' y='186' width='172' height='44' rx='22' fill='%23fff' fill-opacity='.82'/%3E"
+  + "%3Crect x='88' y='252' width='105' height='44' rx='22' fill='%23fff' fill-opacity='.6'/%3E"
+  + "%3C/svg%3E";
+---
+
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    {description && <meta name="description" content={description} />}
+    <link rel="canonical" href={canonical} />
+    <meta property="og:title" content={title} />
+    {description && <meta property="og:description" content={description} />}
+    <meta property="og:type" content={ogType} />
+    <meta property="og:site_name" content="Product Roadmap" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    {description && <meta name="twitter:description" content={description} />}
+    <meta name="twitter:image" content={ogImageUrl} />
+    <link rel="icon" href={favicon} />
+    <script is:inline>
+      (() => {
+        const theme = () => {
+          try {
+            const t = localStorage.getItem('rm-theme');
+            if (t === 'light' || t === 'dark') return t;
+            return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          } catch (e) {
+            return 'light';
+          }
+        };
+        const isPresentation = (url) => {
+          try {
+            return new URL(url, location.href).searchParams.get('present') === '1';
+          } catch (e) {
+            return false;
+          }
+        };
+        const applyShellState = (url = location.href, doc = document) => {
+          const html = doc.documentElement;
+          html.dataset.theme = theme();
+          if (isPresentation(url)) html.dataset.present = '1';
+          else delete html.dataset.present;
+        };
+
+        // Apply saved theme and presentation chrome state before first paint.
+        applyShellState();
+
+        if (window.__roadmapShellReady) return;
+        window.__roadmapShellReady = true;
+        const copyTimers = new WeakMap();
+
+        const followWithRouter = (href) => {
+          const link = [...document.querySelectorAll('a[href]')].find((a) => a.href === new URL(href, location.href).href);
+          if (link) link.click();
+          else location.href = href;
+        };
+
+        document.addEventListener('keydown', (e) => {
+          const tag = e.target && e.target.tagName;
+          if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+          const itemPage = document.querySelector('[data-item-page]');
+          if (!itemPage) return;
+          const href = e.key === 'ArrowLeft'
+            ? itemPage.getAttribute('data-prev-href')
+            : e.key === 'ArrowRight'
+              ? itemPage.getAttribute('data-next-href')
+              : null;
+          if (!href) return;
+          e.preventDefault();
+          followWithRouter(href);
+        });
+
+        document.addEventListener('click', async (event) => {
+          const target = event.target instanceof Element ? event.target.closest('[data-copy-link]') : null;
+          if (!target) return;
+          event.preventDefault();
+          await navigator.clipboard?.writeText(location.href);
+          const label = target.querySelector('[data-copy-label]');
+          if (!label) return;
+          const oldText = label.textContent;
+          label.textContent = 'Copied';
+          clearTimeout(copyTimers.get(target));
+          copyTimers.set(target, setTimeout(() => (label.textContent = oldText), 1400));
+        });
+
+        document.addEventListener('astro:before-swap', (event) => {
+          applyShellState(event.to.href, event.newDocument);
+        });
+        document.addEventListener('astro:after-swap', () => applyShellState());
+        document.addEventListener('astro:page-load', () => applyShellState());
+      })();
+    </script>
+    <ClientRouter fallback="swap" />
+    <!-- canvas-drop browser SDK: defines window.canvasdrop when the canvas backend
+         is enabled (no-op/404 otherwise). Powers "Share this view". -->
+    <script is:inline src="/sdk/v1.js"></script>
+    {
+      /* DEV ONLY: the real SDK 404s locally, so stub window.canvasdrop to a signed-in
+         member. Lets "Share this view" appear and the publish flow run end-to-end with
+         a fake result. import.meta.env.DEV → tree-shaken out of production builds. */
+      import.meta.env.DEV && (
+        <script
+          is:inline
+          set:html={`
+        if (!window.canvasdrop) {
+          const devShares = window.__devCanvasdropShares || (window.__devCanvasdropShares = []);
+          const devUser = { id: 'dev', email: 'you@example.com', name: 'Dev Member' };
+          const delay = () => new Promise((r) => setTimeout(r, 400));
+          const bytesOf = (bundle) => bundle
+            ? (bundle.size != null ? bundle.size : bundle.byteLength)
+            : 0;
+          const statusOf = (share) => {
+            if (share.revokedAt) return 'revoked';
+            if (share.expiresAt && share.expiresAt <= Date.now()) return 'expired';
+            if (share.access === 'private') return 'private';
+            return 'live';
+          };
+          const normalize = (share) => {
+            const metadata = share.metadata || {};
+            return {
+              ...share,
+              status: statusOf(share),
+              sourceApp: typeof metadata.sourceApp === 'string' ? metadata.sourceApp : null,
+              sourceKind: typeof metadata.sourceKind === 'string' ? metadata.sourceKind : null,
+              metadata,
+            };
+          };
+          const matchesFilter = (share, filter = {}) => {
+            const s = normalize(share);
+            if (filter.sourceApp && s.sourceApp !== filter.sourceApp) return false;
+            if (filter.sourceKind && s.sourceKind !== filter.sourceKind) return false;
+            if (filter.tags && !filter.tags.every((tag) => s.tags.includes(tag))) return false;
+            return true;
+          };
+          window.canvasdrop = {
+            me: async () => devUser,
+            canvases: {
+              publish: async (opts) => {
+                console.log('[dev canvasdrop] publish()', {
+                  title: opts.title, access: opts.access, tags: opts.tags,
+                  expiresAt: opts.expiresAt, metadata: opts.metadata, bundleBytes: bytesOf(opts.bundle),
+                });
+                await delay();
+                const now = Date.now();
+                const id = 'dev-' + Math.random().toString(36).slice(2, 8);
+                const share = {
+                  id,
+                  url: location.origin + '/dev-share/' + id + '/ (mock - not published)',
+                  title: opts.title,
+                  tags: opts.tags || [],
+                  access: opts.access || 'public_link',
+                  createdAt: now,
+                  updatedAt: now,
+                  expiresAt: opts.expiresAt ?? null,
+                  revokedAt: null,
+                  createdBy: devUser.id,
+                  version: 'dev-v1',
+                  bundleUpdatedAt: now,
+                  metadata: opts.metadata || {},
+                };
+                devShares.unshift(share);
+                return normalize(share);
+              },
+              update: async (id, opts) => {
+                const share = devShares.find((s) => s.id === id);
+                if (!share) throw Object.assign(new Error('Share not found.'), { code: 'NOT_FOUND', status: 404 });
+                if (share.revokedAt) throw Object.assign(new Error('Revoked shares cannot be updated.'), { code: 'SHARE_REVOKED', status: 409 });
+                console.log('[dev canvasdrop] update()', {
+                  id, title: opts.title, access: opts.access, tags: opts.tags,
+                  expiresAt: opts.expiresAt, metadata: opts.metadata, bundleBytes: bytesOf(opts.bundle),
+                });
+                await delay();
+                const now = Date.now();
+                if ('title' in opts) share.title = opts.title;
+                if ('tags' in opts) share.tags = opts.tags || [];
+                if ('access' in opts) share.access = opts.access || share.access;
+                if ('expiresAt' in opts) share.expiresAt = opts.expiresAt ?? null;
+                if ('metadata' in opts) share.metadata = opts.metadata || {};
+                if (opts.bundle) share.version = 'dev-v' + now;
+                share.updatedAt = now;
+                share.bundleUpdatedAt = now;
+                return normalize(share);
+              },
+              list: async (filter) => devShares.filter((share) => matchesFilter(share, filter)).map(normalize),
+              revoke: async (id) => {
+                const share = devShares.find((s) => s.id === id);
+                if (!share) return;
+                const now = Date.now();
+                share.revokedAt = now;
+                share.updatedAt = now;
+                share.bundleUpdatedAt = now;
+              },
+            },
+          };
+          console.log('[dev canvasdrop] mock installed — Share button will appear');
+        }
+      `}
+        />
+      )
+    }
+  </head>
+  <body class="bg-background flex min-h-screen flex-col">
+    <Navbar client:load base={base} active={active} />
+    <div class="flex-1"><slot /></div>
+    <footer class="site-footer border-border-subtle-default mt-16 border-t">
+      <div
+        class="text-single-sm-medium text-text-subtle-default mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-2 px-4 py-6 sm:px-6"
+      >
+        <span>Product Roadmap · Now / Next / Later</span>
+        <span class="flex items-center gap-3">
+          <a href={`${base}themes`} class="hover:text-text-primary-default transition-colors">Themes</a>
+          <span>·</span>
+          <a href={`${base}changelog`} class="hover:text-text-primary-default transition-colors">What changed</a>
+          <span>·</span>
+          <span>Published <time datetime={builtIso} data-local-date-time>{built}</time></span>
+        </span>
+      </div>
+    </footer>
+    <script is:inline>
+      (() => {
+        const format = (value) => {
+          const date = new Date(value);
+          if (Number.isNaN(date.getTime())) return '';
+          const parts = new Intl.DateTimeFormat('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          }).formatToParts(date);
+          const get = (type) => parts.find((part) => part.type === type)?.value ?? '';
+          return `${get('month')} ${Number(get('day'))}, ${get('year')}, ${get('hour')}:${get('minute')}`;
+        };
+        for (const el of document.querySelectorAll('[data-local-date-time]')) {
+          const next = format(el.getAttribute('datetime'));
+          if (next) el.textContent = next;
+        }
+      })();
+    </script>
+  </body>
+</html>

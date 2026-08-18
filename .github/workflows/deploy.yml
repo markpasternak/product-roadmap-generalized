@@ -1,0 +1,97 @@
+# Deploy the roadmap site + hosted presentations to canvas-drop.
+#
+# Ships the FULL INTERNAL build (owners, all items). This is a demonstration
+# instance whose content is entirely fictional, so there is nothing to leak. For
+# a real portfolio on a publicly reachable canvas, switch to the public build by
+# adding `SITE_AUDIENCE: public` to the build step's env (only Public items,
+# owners stripped).
+#
+# Static files only. To use the canvas Backend SDK, first enable Backend + the
+# capabilities you need (kv, files, ai, realtime) in the canvas's Backend tab —
+# the deploy key can't toggle them.
+#
+# SECRET: CANVAS_DROP_TOKEN — the per-canvas deploy key (Bearer), stored in repo
+# Actions secrets. The canvas id and host below are not secrets.
+name: Deploy roadmap site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'content/**'
+      - '!content/sources/**'   # raw tooling inputs, not rendered by the site
+      - 'presentations/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canvas-drop-deploy
+  cancel-in-progress: true
+
+env:
+  CANVAS_ID: REPLACE_WITH_CANVAS_ID
+  CANVAS_HOST: roadmapdemo.canvas-drop.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      # Cache the installed node_modules, keyed by the lockfile. On a hit we skip
+      # `npm ci` — the ~30s bulk of this job — so a normal content-only deploy
+      # doesn't reinstall deps at all. Only a dependency change (lockfile change)
+      # misses the cache, reinstalls, and repopulates it for next time.
+      - name: Cache node_modules
+        id: node-modules
+        uses: actions/cache@v6
+        with:
+          path: site/node_modules
+          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('site/package-lock.json') }}
+
+      - name: Install dependencies (skipped on cache hit)
+        if: steps.node-modules.outputs.cache-hit != 'true'
+        working-directory: site
+        run: npm ci --no-audit --no-fund
+
+      # Full internal build. Served at the canvas subdomain root, so base = "/".
+      - name: Build the roadmap site
+        working-directory: site
+        run: npm run build
+
+      # Publish each presentations/<slug>/ folder verbatim at /p/<slug>/.
+      - name: Bundle presentations into the build
+        run: |
+          mkdir -p site/dist/p
+          if [ -d presentations ]; then
+            cp -R presentations/. site/dist/p/
+            rm -f site/dist/p/README.md   # keep the convention doc out of the artifact
+          fi
+
+      # canvas-drop expects a zip whose root is the site root (index.html at top).
+      - name: Package the static site
+        run: (cd site/dist && zip -qr "$GITHUB_WORKSPACE/site.zip" .)
+
+      - name: Deploy to canvas-drop
+        env:
+          CANVAS_DROP_TOKEN: ${{ secrets.CANVAS_DROP_TOKEN }}
+        run: |
+          if [ -z "$CANVAS_DROP_TOKEN" ]; then
+            echo "::error::CANVAS_DROP_TOKEN secret is not set — add it in repo Settings → Secrets."
+            exit 1
+          fi
+          curl --fail-with-body -sS -X PUT \
+            "https://${CANVAS_HOST}/v1/canvases/${CANVAS_ID}/deploy" \
+            -H "Authorization: Bearer ${CANVAS_DROP_TOKEN}" \
+            --data-binary @"$GITHUB_WORKSPACE/site.zip"
+          echo "✓ Deployed to https://${CANVAS_HOST}/"

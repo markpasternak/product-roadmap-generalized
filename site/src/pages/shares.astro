@@ -1,0 +1,20 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumb from '../components/ui/Breadcrumb.vue';
+import ShareLibrary from '../components/share/ShareLibrary.vue';
+
+const base = import.meta.env.BASE_URL;
+---
+
+<Base
+  title="Shares · Roadmap"
+  active="shares"
+  description="Live roadmap share links and published versions."
+>
+  <main class="page-reveal mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
+    <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: 'Shares' }]} />
+    <div class="mt-6">
+      <ShareLibrary client:load base={base} />
+    </div>
+  </main>
+</Base>

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#12857c" stop-opacity="0.32"/>
+      <stop offset="45%" stop-color="#12857c" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#12857c" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow-accent-light" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#3fb3a6" stop-opacity="0.16"/>
+      <stop offset="100%" stop-color="#3fb3a6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#101a2b"/>
+  <ellipse cx="980" cy="60" rx="520" ry="440" fill="url(#glow)"/>
+  <ellipse cx="120" cy="620" rx="380" ry="260" fill="url(#glow-accent-light)"/>
+  <circle cx="1010" cy="360" r="360" fill="none" stroke="rgba(233,244,242,0.06)" stroke-width="1.5"/>
+  <circle cx="1010" cy="360" r="270" fill="none" stroke="rgba(233,244,242,0.045)" stroke-width="1"/>
+
+  <!-- Brand lockup -->
+  
+  <g transform="translate(100 92) scale(0.18313253012048192)">
+    <rect width="415" height="415" rx="41.5" fill="#12857c"/>
+    <rect x="88" y="120" width="239" height="44" rx="22" fill="#fff"/>
+    <rect x="88" y="186" width="172" height="44" rx="22" fill="#fff" fill-opacity="0.82"/>
+    <rect x="88" y="252" width="105" height="44" rx="22" fill="#fff" fill-opacity="0.6"/>
+  </g>
+  <text x="198" y="146" font-family="'Helvetica Neue', Arial, sans-serif" font-weight="700" font-size="24" letter-spacing="6" fill="rgba(240,244,252,0.68)">PRODUCT PORTFOLIO</text>
+  <rect x="100" y="196" width="52" height="4" rx="2" fill="#12857c"/>
+
+  <!-- Headline -->
+  <text x="96" y="368" font-family="Georgia, 'Times New Roman', serif" font-weight="400" font-size="168" fill="#f5f2ec">Roadmap</text>
+
+  <!-- Now / Next / Later legend -->
+  <circle cx="112" cy="448" r="7" fill="#73d49a"/>
+  <text x="130" y="457" font-family="'Helvetica Neue', Arial, sans-serif" font-weight="500" font-size="34" letter-spacing="0.5" fill="#f5f2ec">Now</text>
+  <text x="222" y="457" font-family="'Helvetica Neue', Arial, sans-serif" font-weight="400" font-size="34" fill="rgba(240,244,252,0.4)">·</text>
+  <circle cx="258" cy="448" r="7" fill="#f0b863"/>
+  <text x="276" y="457" font-family="'Helvetica Neue', Arial, sans-serif" font-weight="500" font-size="34" letter-spacing="0.5" fill="#f5f2ec">Next</text>
+  <text x="384" y="457" font-family="'Helvetica Neue', Arial, sans-serif" font-weight="400" font-size="34" fill="rgba(240,244,252,0.4)">·</text>
+  <circle cx="420" cy="448" r="7" fill="rgba(233,244,242,0.58)"/>
+  <text x="438" y="457" font-family="'Helvetica Neue', Arial, sans-serif" font-weight="500" font-size="34" letter-spacing="0.5" fill="#f5f2ec">Later</text>
+
+  <text x="98" y="512" font-family="'Helvetica Neue', Arial, sans-serif" font-weight="400" font-size="25" fill="rgba(240,244,252,0.68)">What's shipping, what's next, what's not yet scoped.</text>
+</svg>

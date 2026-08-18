@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1980 1074" width="1980" height="1074">
+  <!-- Decorative accent wash: a soft diagonal gradient bloom used as a page
+       background flourish (see styles/global.css). Purely ornamental, no
+       semantics, and deliberately brand-neutral — it reads as ambient colour
+       rather than as a logo. -->
+  <defs>
+    <linearGradient id="wash" x1="8%" y1="88%" x2="94%" y2="10%">
+      <stop offset="0%" stop-color="#3fb3a6"/>
+      <stop offset="38%" stop-color="#12857c"/>
+      <stop offset="72%" stop-color="#2f6098"/>
+      <stop offset="100%" stop-color="#5b3fb5"/>
+    </linearGradient>
+    <filter id="soften" x="-25%" y="-45%" width="150%" height="190%">
+      <feGaussianBlur stdDeviation="86"/>
+    </filter>
+  </defs>
+  <g filter="url(#soften)">
+    <ellipse cx="990" cy="537" rx="800" ry="290" transform="rotate(-19 990 537)" fill="url(#wash)"/>
+    <ellipse cx="1420" cy="360" rx="360" ry="180" transform="rotate(-19 1420 360)" fill="#3fb3a6" opacity="0.55"/>
+    <ellipse cx="560" cy="720" rx="330" ry="170" transform="rotate(-19 560 720)" fill="#2f6098" opacity="0.45"/>
+  </g>
+</svg>

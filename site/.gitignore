@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.astro/
+.DS_Store
+
+# Presentations staged by scripts/sync-presentations.mjs (build artifact)
+public/p/
+
+# Build commit stamp written by scripts/gen-version.mjs (build artifact)
+public/version.json

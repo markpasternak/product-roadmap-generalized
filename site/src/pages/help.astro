@@ -1,0 +1,423 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumb from '../components/ui/Breadcrumb.vue';
+import { HORIZONS, STAGES, PRODUCTS, VISIBILITIES } from '../lib/schema';
+import { horizonDot, horizonDescription, productColor, productShort, levelTone, toneText } from '../lib/display';
+
+const base = import.meta.env.BASE_URL;
+
+const STAGE_DESCRIPTION: Record<(typeof STAGES)[number], string> = {
+  Discovery: 'Exploring the problem. Nothing is committed yet.',
+  Validation: 'Checking with users and data that the problem is real, and our answer with it.',
+  Shaping: 'Defining scope and approach so it could be picked up.',
+  Committed: 'Agreed and queued. It will be built.',
+  Building: 'In active development.',
+  Pilot: 'Live with a limited set of users before general availability.',
+  Shipped: 'Generally available.',
+  Parked: 'On hold on purpose. Kept for the record.',
+};
+
+const PRODUCT_DESCRIPTION: Record<(typeof PRODUCTS)[number], string> = {
+  'Music App': 'Listening, discovery, personalisation and social on the consumer app. content/items/music-app/, IDs MUSIC-NNN.',
+  'Podcasts & Audiobooks':
+    'Spoken-word catalogue, video podcasts, audiobook entitlements and creator publishing. content/items/podcasts-audiobooks/, IDs TALK-NNN.',
+  'Spotify for Artists':
+    'Analytics, promotion and release tooling for artists, labels and their teams. content/items/spotify-for-artists/, IDs ARTISTS-NNN.',
+  'Ads Platform':
+    'Advertiser demand — buying, targeting, measurement and brand safety. content/items/ads-platform/, IDs ADS-NNN.',
+  'Core Platform & Data':
+    'Shared infrastructure: identity, data platform, ML serving and reliability. content/items/core-platform-data/, IDs PLATFORM-NNN.',
+};
+
+const TOC = [
+  { href: '#mental-model', label: 'The mental model' },
+  { href: '#horizons', label: 'Horizons' },
+  { href: '#stages', label: 'Stages' },
+  { href: '#products', label: 'Products' },
+  { href: '#other-fields', label: 'Owner, impact, effort, visibility, tags, order' },
+  { href: '#reading-the-board', label: 'Reading the board' },
+  { href: '#editing', label: 'Editing in the app' },
+  { href: '#latest-changes', label: 'Latest changes' },
+  { href: '#new-with-ai', label: 'New with AI' },
+  { href: '#rewrite-with-ai', label: 'Rewrite with AI' },
+  { href: '#presence', label: 'Live presence' },
+  { href: '#how-it-connects', label: 'How it connects to GitHub' },
+  { href: '#shares', label: 'Sharing a view' },
+  { href: '#why-no-dates', label: 'Why no dates?' },
+];
+---
+
+<Base
+  title="Help · Roadmap"
+  active="help"
+  description="Every concept on the board, and how the in-app editor actually works — a full guide to reading and editing the roadmap."
+>
+  <main class="page-reveal mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+    <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: 'Help' }]} />
+    <h1 class="font-display text-text-primary-default mt-6 text-[2rem] sm:text-[2.4rem]">Help</h1>
+    <p class="text-body-lg text-text-subtle-default mt-3 max-w-xl">
+      A <b class="text-text-primary-default">Now / Next / Later</b> roadmap. Instead of dates, items are grouped
+      by how sure we are they'll happen: we plan broadly but only commit to what's directly ahead. The closer to
+      <b class="text-text-primary-default">Now</b>, the more defined the work; the further out, the more it's a
+      direction we still need to shape.
+    </p>
+    <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+      This page covers the whole product: every concept on the board, how to read a card, and — since the board
+      is also the editor — exactly how changing something here reaches GitHub.
+    </p>
+
+    <nav class="border-border-subtle-default bg-card mt-6 rounded-xl border px-4 py-3" aria-label="On this page">
+      <p class="text-single-sm-medium text-text-subtle-default font-semibold uppercase tracking-wide">On this page</p>
+      <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+        {
+          TOC.map((t) => (
+            <li>
+              <a href={t.href} class="text-single-sm-medium text-text-primary-default underline decoration-border-subtle-default underline-offset-4 hover:decoration-current">
+                {t.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+
+    <section id="mental-model" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">The mental model</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        <b class="text-text-primary-default">The markdown files are the source of truth. This site is a live,
+        editable view of them.</b> Every item on the board is one file under <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">content/items/&lt;product&gt;/</code>
+        in the roadmap's GitHub repo — nothing lives in a separate database. If you can see it on the board, a
+        file says so; if you change it here, that change becomes a commit to that same file.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        Everything below follows from that one fact — including the whole editing model in
+        <a href="#editing" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Editing in the app</a>.
+      </p>
+    </section>
+
+    <section id="horizons" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Horizons: how sure we are</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        The lanes on the board. As an item moves toward <b class="text-text-primary-default">Now</b>, our
+        confidence grows and the detail fills in. Further out, it stays a broad direction.
+      </p>
+      <div class="mt-5 flex flex-col gap-2">
+        {
+          HORIZONS.map((h) => (
+            <div class="border-border-subtle-default bg-card flex items-baseline gap-3 rounded-lg border px-4 py-3">
+              <span class="flex w-28 shrink-0 items-center gap-2">
+                <span class="size-2.5 rounded-full" style={`background:${horizonDot[h]}`} />
+                <b class="text-single-base-medium text-text-primary-default">{h}</b>
+              </span>
+              <span class="text-single-base-medium text-text-subtle-default">{horizonDescription[h]}</span>
+            </div>
+          ))
+        }
+      </div>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        The board opens focused on <b class="text-text-primary-default">Now, Next and Later</b> — the stat tiles
+        above the lanes double as toggles, so <b class="text-text-primary-default">Candidates</b> (raw intake,
+        not committed to the roadmap yet) and <b class="text-text-primary-default">Completed</b> (already
+        shipped) stay out of the way until you click them on.
+      </p>
+    </section>
+
+    <section id="stages" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Stages: how real it is</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        Independent from the horizon: an item can be <i>Now</i> and still <i>Shaping</i>. The stage tells you how far the work itself has come.
+      </p>
+      <div class="mt-5 flex flex-col gap-2">
+        {
+          STAGES.map((s) => (
+            <div class="border-border-subtle-default bg-card flex items-baseline gap-3 rounded-lg border px-4 py-3">
+              <b class="text-single-base-medium text-text-primary-default w-28 shrink-0">{s}</b>
+              <span class="text-single-base-medium text-text-subtle-default">{STAGE_DESCRIPTION[s]}</span>
+            </div>
+          ))
+        }
+      </div>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        Rule of thumb: <b class="text-text-primary-default">horizon</b> answers "when, and how confident are we?";
+        <b class="text-text-primary-default">stage</b> answers "how cooked is the work itself?"
+      </p>
+    </section>
+
+    <section id="products" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Products</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        Every item belongs to exactly one product track. The product decides the item's folder and ID
+        prefix, and it's the other way you can slice the board: group by product instead of by horizon to see
+        each product's own Now/Next/Later, side by side.
+      </p>
+      <div class="mt-5 flex flex-col gap-2">
+        {
+          PRODUCTS.map((p) => (
+            <div class="border-border-subtle-default bg-card flex items-baseline gap-3 rounded-lg border px-4 py-3">
+              <span class="flex w-40 shrink-0 items-center gap-2">
+                <span
+                  class="text-single-sm-medium grid size-6 shrink-0 place-items-center rounded font-semibold text-white"
+                  style={`background:${productColor[p]}`}
+                >
+                  {productShort[p]}
+                </span>
+                <b class="text-single-base-medium text-text-primary-default">{p}</b>
+              </span>
+              <span class="text-single-base-medium text-text-subtle-default">{PRODUCT_DESCRIPTION[p]}</span>
+            </div>
+          ))
+        }
+      </div>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        <b class="text-text-primary-default">Grouping by horizon</b> (the default) answers "what's happening
+        across everything, right now?" <b class="text-text-primary-default">Grouping by product</b> answers "what's
+        the plan for just this product?" — and it's also what makes drag-to-reorder priority meaningful (see
+        <a href="#reading-the-board" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Reading the board</a>).
+      </p>
+    </section>
+
+    <section id="other-fields" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Owner, impact, effort, visibility, tags, order</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        The rest of what a card carries — some required, some there only when it earns its place.
+      </p>
+      <dl class="mt-5 flex flex-col gap-4">
+        <div>
+          <dt class="text-single-base-medium text-text-primary-default font-semibold">Owner</dt>
+          <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
+            The person accountable for the item. Shown as initials on the card, in full in the detail drawer.
+            Hidden on public builds and shares (see <a href="#shares" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Sharing a view</a>).
+          </dd>
+        </div>
+        <div>
+          <dt class="text-single-base-medium text-text-primary-default font-semibold">Impact &amp; effort</dt>
+          <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
+            Rough sizing, not precision, each one of <b style={`color:${toneText[levelTone.Low]}`}>Low</b>,
+            <b style={`color:${toneText[levelTone.Medium]}`}> Medium</b> or <b style={`color:${toneText[levelTone.High]}`}> High</b>.
+            <b class="text-text-primary-default"> Impact</b> is the value we expect it to create;
+            <b class="text-text-primary-default"> effort</b> is how much work it takes. High-impact, low-effort
+            items tend to move up. Both are optional — an item without either just shows
+            <span class="text-single-sm-medium bg-surface-subtle-default text-text-subtle-default rounded px-1.5 py-0.5">Not scored</span>,
+            which is a perfectly normal state, not a gap to fill in.
+          </dd>
+        </div>
+        <div>
+          <dt class="text-single-base-medium text-text-primary-default font-semibold">Visibility</dt>
+          <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
+            {VISIBILITIES.join(' or ')}, defaulting to Internal. This is the only field that decides what a
+            <b class="text-text-primary-default">public build or a share</b> shows: a public snapshot filters
+            down to <b class="text-text-primary-default">Public</b> items only, and hides owners and the
+            "Edit on GitHub" link on top of that. Internal is the right default for anything still being shaped;
+            flip an item to Public once its framing is safe for an outside audience.
+          </dd>
+        </div>
+        <div>
+          <dt class="text-single-base-medium text-text-primary-default font-semibold">Tags &amp; themes</dt>
+          <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
+            Free-form labels for filtering — a comma-separated list on the item. A tag written as
+            <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">theme:name</code>
+            is a cross-cutting theme: it groups items across products and horizons and gets its own page (see
+            "Themes" in the nav) instead of just being a filter chip.
+          </dd>
+        </div>
+        <div>
+          <dt class="text-single-base-medium text-text-primary-default font-semibold">Order (priority)</dt>
+          <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
+            Where an item sits within its lane, relative to its neighbors — set by dragging (see
+            <a href="#editing" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Editing in the app</a>),
+            not by typing a number. It's what "Sort: Priority" reflects, and it's scoped to one product's one
+            horizon at a time — reordering never reaches across a product or a lane boundary.
+          </dd>
+        </div>
+      </dl>
+    </section>
+
+    <section id="reading-the-board" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Reading the board</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        A card shows the shorthand: product mark, title, horizon dot, stage, impact/effort chips if scored, and
+        up to a few tags. Click a card to open the <b class="text-text-primary-default">detail drawer</b> — the
+        full write-up (One-liner, Why it matters, Target outcome, What ships, and whatever optional sections the
+        item has), the owner, and — when you're signed in and not viewing a public build — an
+        <b class="text-text-primary-default">"Edit on GitHub"</b> link that jumps straight to that item's markdown
+        file in GitHub's own web editor.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        Above the lanes: <b class="text-text-primary-default">filters</b> for product, stage, impact, effort,
+        visibility and tags (plus the horizon chips described above), a <b class="text-text-primary-default">sort</b>
+        picker — Priority (the manual drag order), Impact (high to low), Effort (low to high), Recently updated, or
+        Title (A–Z) — and <b class="text-text-primary-default">search</b> (press <kbd class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">/</kbd> from
+        anywhere on the board to jump into it). Toggle <b class="text-text-primary-default">Group: Horizon</b> vs
+        <b class="text-text-primary-default"> Group: Product</b> to change what the lanes represent, as covered in
+        <a href="#products" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Products</a> above.
+      </p>
+      <div class="border-border-subtle-default bg-card mt-5 flex items-center justify-between gap-3 rounded-lg border px-4 py-3">
+        <span class="text-single-base-medium text-text-primary-default font-semibold">Keyboard shortcuts</span>
+        <kbd class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5 font-mono">?</kbd>
+      </div>
+    </section>
+
+    <section id="editing" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Editing in the app</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        This board doubles as the editor. Anyone with <b class="text-text-primary-default">write access to the
+        roadmap's GitHub repo</b> can sign in and edit it directly — no separate account, no ticket.
+      </p>
+
+      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">1. Sign in, then flip into edit mode</h3>
+      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
+        Sign in with GitHub from the board. If you have write access, an <b class="text-text-primary-default">edit
+        mode</b> toggle appears — turning it on is visually unmistakable: a colored banner takes over the top of
+        the page for as long as it's on, cards grow drag handles and an inline "+ Add item" control appears in
+        every lane, and clicking a card opens the full-screen editor instead of the read-only drawer.
+      </p>
+
+      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">2. Everything you do is a local working copy</h3>
+      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
+        Nothing you do in edit mode touches GitHub yet — it all accumulates in a draft in your browser. That draft covers:
+      </p>
+      <ul class="text-body-md text-text-subtle-default mt-2 max-w-xl list-disc space-y-1.5 pl-5">
+        <li>Editing any field — title, product (new items only), horizon, stage, owner, impact, effort, visibility, tags.</li>
+        <li>
+          Editing the write-up, in either mode: <b class="text-text-primary-default">structured</b> mode pins the
+          three sections every item has (One-liner, Why it matters, What ships) plus a reorderable list of optional
+          sections (Target outcome, Who it's for, Open questions, Links, and more), or switch to whole-body
+          <b class="text-text-primary-default">markdown</b> mode with a formatting toolbar (bold, italic, lists,
+          link, code, quote) for free-form editing. Both modes edit the same underlying text — toggling between
+          them re-parses it, nothing is lost.
+        </li>
+        <li><b class="text-text-primary-default">Dragging a card between lanes</b> changes its horizon (when the board is grouped by horizon).</li>
+        <li><b class="text-text-primary-default">Dragging a card within a lane</b> sets its priority order — only enabled while filtered to one product with sort set to Priority and no other filters muddying what "priority" means.</li>
+        <li><b class="text-text-primary-default">+ New item</b>, duplicating a card, deleting one, and renaming inline by double-clicking a title.</li>
+      </ul>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        Your working copy persists across a refresh, so you can step away mid-edit without losing anything.
+      </p>
+
+      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">3. Sync publishes everything as one commit</h3>
+      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
+        Nothing is public until you press <b class="text-text-primary-default">Sync</b>. It bundles every change in
+        your working copy — every edited field, every new or deleted item, every reorder — into a
+        <b class="text-text-primary-default">single commit</b> to the repo, and the site rebuilds (about a minute).
+        Your working copy stays visible exactly as you left it through that window — nothing you added or changed
+        vanishes before the new version is actually live — then reconciles automatically once it is: anything the
+        rebuilt site already reflects quietly drops out of the draft, and anything you keep editing in the meantime
+        stays.
+      </p>
+
+      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">The alternative: edit the file directly on GitHub</h3>
+      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
+        Every item's <b class="text-text-primary-default">"Edit on GitHub"</b> link (in the detail drawer) opens
+        that item's markdown file in GitHub's own web editor — frontmatter and body both, in one file. Good for a
+        quick one-off fix, or when you'd rather open a PR for review than commit straight to <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">main</code>.
+        Both paths edit the exact same file, so they're always interchangeable.
+      </p>
+    </section>
+
+    <section id="latest-changes" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Latest changes</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        A <b class="text-text-primary-default">"Recent changes"</b> card sits on the board itself, and its
+        <b class="text-text-primary-default">"View all →"</b> link opens the full history page. Both are built
+        straight from the repo's Sync commit history — one commit
+        (<a href="#editing" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Sync</a>
+        or a direct commit) is one row.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        Each row shows <b class="text-text-primary-default">who</b> changed things (the editor who synced, not the
+        bot that makes the commit), <b class="text-text-primary-default">what</b> (how many items were updated,
+        created, deleted, or reordered, plus the titles of the items involved), a relative timestamp, and a
+        link out to that <b class="text-text-primary-default">exact commit on GitHub</b>. A manual commit made
+        outside the app (a direct push or PR) still shows up, using its raw commit message.
+      </p>
+    </section>
+
+    <section id="new-with-ai" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">New with AI</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        In edit mode, <b class="text-text-primary-default">"New with AI"</b> sits beside "+ New item". Describe
+        what the item should cover and pick a product, and AI (Sonnet) drafts a full spec — every relevant
+        section filled in, plus a suggested stage, horizon, and tags — instead of you starting from a blank card.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        The draft opens straight in the same full-screen editor you'd use for any item, as a normal
+        <b class="text-text-primary-default">working-copy created item</b> — nothing about it is special or
+        locked. Read it over, change anything you like, or delete it outright. Like every other edit, it's only a
+        local draft: <b class="text-text-primary-default">nothing publishes until you Sync</b>.
+      </p>
+    </section>
+
+    <section id="rewrite-with-ai" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Rewrite with AI</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        Inside the item editor, <b class="text-text-primary-default">"Rewrite with AI"</b> opens a conversational
+        panel over the item you're already editing. Give it an instruction — "sharpen Why it matters", "add a
+        risk to Open questions" — and it first tells you <b class="text-text-primary-default">what it would
+        change</b>, in plain language. Nothing is rewritten yet at this point.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        You can chat back and forth to steer the plan before committing to anything. When it looks right, hit
+        <b class="text-text-primary-default">Apply</b>: the AI returns the full item rewritten, keeping the exact
+        same section structure, and you get a <b class="text-text-primary-default">before/after diff, shown
+        section by section</b>. <b class="text-text-primary-default">Accept</b> writes the rewrite into your
+        working copy (same as any other edit — it publishes on Sync); <b class="text-text-primary-default">
+        Discard</b> throws it away and keeps your conversation so you can try again.
+      </p>
+    </section>
+
+    <section id="presence" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Live presence</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        The board shows a subtle <b class="text-text-primary-default">"N viewing"</b> indicator with avatars for
+        who else is looking at it right now, visible to everyone. A viewer who goes quiet — no activity on the
+        page — idles out of that count after about <b class="text-text-primary-default">10 minutes</b>; coming
+        back and doing anything on the page rejoins it.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        In edit mode specifically, you'll also see a soft <b class="text-text-primary-default">"X is also
+        editing"</b> nudge when another editor is active at the same time. It's advisory only — a heads-up so you
+        can coordinate — not a lock: the roadmap still works on a last-write-wins basis, and nothing stops either
+        of you from syncing.
+      </p>
+      <div class="border-border-subtle-default bg-card mt-5 rounded-xl border px-4 py-3.5">
+        <p class="text-body-md text-text-subtle-default max-w-xl">
+          <b class="text-text-primary-default">Good to know:</b> New with AI, Rewrite with AI, and live presence
+          all depend on the canvas Backend (AI + realtime) being enabled, so they only appear when it's on —
+          they're simply absent, never broken, when it's off. Latest changes is different: it doesn't touch that
+          Backend at all, it just reads the repo's own GitHub commit history, so it works everywhere the app does.
+        </p>
+      </div>
+    </section>
+
+    <section id="how-it-connects" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">How it connects to GitHub</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        In-app Sync, "Edit on GitHub", and a direct commit or PR all converge on the same files under
+        <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">content/items/**</code> on
+        <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">main</code>. A push there
+        triggers a rebuild that redeploys this site, and a validation check runs on every change to catch a bad ID,
+        a missing required field, or a misplaced file — gating the merge on a PR, flagging the problem after the
+        fact on a direct push or Sync. (There's no GitHub Project board in this pipeline — that integration is retired.)
+      </p>
+    </section>
+
+    <section id="shares" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Sharing a view</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        <b class="text-text-primary-default">Share this view</b> publishes whatever you currently have filtered and
+        sorted as a public, read-only snapshot — its own link, independent of the team-only main site, with an
+        expiry you set. It's a point-in-time copy: it won't update as the board changes underneath it, and it
+        respects the same visibility rule as a public build (Internal items and owner names never leave the team-only site).
+      </p>
+    </section>
+
+    <section id="why-no-dates" class="mt-10 scroll-mt-24">
+      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Why no dates?</h2>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        Dates on a roadmap go stale the day they're written, and they force false certainty onto work we can't
+        see clearly yet. Horizons don't. We commit to what's directly ahead and keep the rest flexible until we
+        get there. The one date we promise is the ship date: when something ships, it moves to Completed.
+      </p>
+    </section>
+  </main>
+</Base>

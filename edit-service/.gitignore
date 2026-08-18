@@ -1,0 +1,9 @@
+# Ops runbook, env, keys, scripts — droplet facts + secrets. Never commit (mirrors alongcast/deploy).
+deploy/
+node_modules/
+*.pem
+.env
+.env.*
+
+# compiled binary
+/roadmap-editor

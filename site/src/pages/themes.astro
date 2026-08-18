@@ -1,0 +1,88 @@
+---
+import Base from '../layouts/Base.astro';
+import Breadcrumb from '../components/ui/Breadcrumb.vue';
+import ProductMark from '../components/ui/ProductMark.vue';
+import { getCollection } from 'astro:content';
+import { horizonDot, toneSurface, toneText } from '../lib/display';
+import { parseTags, sectionText, byHorizonThenOrder } from '../lib/items';
+import { IS_PUBLIC } from '../lib/audience';
+
+const base = import.meta.env.BASE_URL;
+
+const raw = (await getCollection('items')).filter((e) => !IS_PUBLIC || e.data.visibility === 'Public');
+raw.sort((a, b) => byHorizonThenOrder(a.data, b.data));
+
+const byTheme = new Map<string, { id: string; title: string; oneliner: string; product: string; horizon: string; href: string }[]>();
+for (const e of raw) {
+  const { themes } = parseTags(e.data.tags);
+  for (const theme of themes) {
+    const list = byTheme.get(theme) ?? [];
+    list.push({
+      id: e.data.id,
+      title: e.data.title,
+      oneliner: sectionText(e.body ?? '', 'One-liner'),
+      product: e.data.product,
+      horizon: e.data.horizon,
+      href: `${base}item/${e.data.id}`,
+    });
+    byTheme.set(theme, list);
+  }
+}
+const themes = [...byTheme.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+---
+
+<Base title="Themes · Roadmap" active="roadmap" description="The strategic themes the roadmap is organized around, and what's in each.">
+  <main class="page-reveal mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+    <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: 'Themes' }]} />
+    <h1 class="font-display text-text-primary-default mt-6 text-[2rem] sm:text-[2.4rem]">Themes</h1>
+    <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+      The strategic bets the roadmap is organized around. A theme groups items across products and horizons.
+    </p>
+
+    {themes.length === 0 && (
+      <p class="border-border-subtle-default text-single-base-medium text-text-subtle-default mt-8 rounded-xl border border-dashed px-6 py-12 text-center">
+        No themes yet. Tag items with <code>theme:&lt;name&gt;</code> to group them here.
+      </p>
+    )}
+
+    {
+      themes.map(([theme, items]) => (
+        <section class="mt-8">
+          <h2 class="flex items-center gap-2.5">
+            <span
+              class="text-single-base-medium rounded-lg border border-border-subtle-default/60 px-2 py-0.5 font-semibold"
+              style={`background:${toneSurface.orange};color:${toneText.orange}`}
+            >
+              {theme}
+            </span>
+            <span class="text-single-sm-medium text-text-subtle-default tabular-nums">{items.length} item{items.length === 1 ? '' : 's'}</span>
+            <a
+              href={`${base}?tag=theme%3A${encodeURIComponent(theme)}`}
+              class="text-single-sm-medium text-text-link-default ml-auto hover:underline"
+            >
+              View on board →
+            </a>
+          </h2>
+          <div class="mt-3 flex flex-col gap-2">
+            {items.map((it) => (
+              <a
+                href={it.href}
+                class="border-border-subtle-default bg-card hover:border-border-subtle-hover flex items-center gap-3 rounded-lg border px-4 py-3 shadow-sm transition duration-150 hover:shadow-md"
+              >
+                <ProductMark product={it.product} size={30} />
+                <span class="min-w-0 flex-1">
+                  <span class="text-single-base-medium text-text-primary-default block truncate">{it.title}</span>
+                  {it.oneliner && <span class="text-single-sm-medium text-text-subtle-default block truncate">{it.oneliner}</span>}
+                </span>
+                <span class="text-single-sm-medium bg-surface-subtle-default text-text-primary-default hidden shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 sm:inline-flex">
+                  <span class="size-2 rounded-full" style={`background:${horizonDot[it.horizon as keyof typeof horizonDot]}`} />
+                  {it.horizon}
+                </span>
+              </a>
+            ))}
+          </div>
+        </section>
+      ))
+    }
+  </main>
+</Base>

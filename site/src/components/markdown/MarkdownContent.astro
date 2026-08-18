@@ -1,0 +1,24 @@
+---
+// The dedicated markdown viewer: renders a content-collection entry's body as
+// full GFM (tables, task lists, code, images) at build time. Mermaid blocks are
+// left as <pre class="mermaid"> (see astro.config rehypeMermaid) and drawn by the
+// sibling <Mermaid /> island the consuming page mounts once.
+import { render, type CollectionEntry } from 'astro:content';
+
+type AnyEntry =
+  | CollectionEntry<'items'>
+  | CollectionEntry<'prds'>
+  | CollectionEntry<'techDesign'>
+  | CollectionEntry<'research'>;
+
+interface Props {
+  entry: AnyEntry;
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+---
+
+<div class="roadmap-prose">
+  <Content />
+</div>
