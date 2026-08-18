@@ -32,7 +32,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CANVAS_ID: REPLACE_WITH_CANVAS_ID
+  CANVAS_ID: 01a0152e-2c0d-726b-9235-298bf5d46ff8
   CANVAS_HOST: roadmapdemo.canvas-drop.com
 
 jobs:
