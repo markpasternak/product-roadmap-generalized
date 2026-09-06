@@ -1,15 +1,47 @@
 // Browser client for the Go edit-service (GitHub-gated in-app editing).
 export const EDIT_API = import.meta.env.PUBLIC_EDIT_API as string;
 const KEY = 'rm-edit-token';
+const RETURN_KEY = 'rm-edit-return';
+// Once editing starts, this page must keep using the account it loaded. Another
+// tab signing into a different account must never receive this page's draft.
+let boundToken: string | null | undefined;
+let memoryToken: string | null = null;
 
 export function saveToken(t: string) {
-  localStorage.setItem(KEY, t);
+  memoryToken = t;
+  boundToken = undefined;
+  try { localStorage.setItem(KEY, t); } catch { /* This page can still authenticate. */ }
 }
 export function getToken(): string | null {
-  return localStorage.getItem(KEY);
+  if (boundToken !== undefined) return boundToken;
+  try { return localStorage.getItem(KEY); } catch { return memoryToken; }
 }
 export function clearToken() {
-  localStorage.removeItem(KEY);
+  const expired = getToken();
+  try {
+    // A late 401 from this page must not erase a newer sign-in in another tab.
+    if (localStorage.getItem(KEY) === expired) localStorage.removeItem(KEY);
+  } catch { /* Storage may be unavailable. */ }
+  memoryToken = null;
+  boundToken = null;
+}
+
+export function rememberSignInLocation() {
+  try { sessionStorage.setItem(RETURN_KEY, location.href.split('#')[0]!); } catch {}
+}
+function restoreSignInLocation() {
+  let dest = location.pathname + location.search;
+  try {
+    const saved = sessionStorage.getItem(RETURN_KEY);
+    sessionStorage.removeItem(RETURN_KEY);
+    if (saved) {
+      const url = new URL(saved);
+      if (url.origin === location.origin) dest = url.pathname + url.search;
+    }
+  } catch { /* Keep the callback's location. */ }
+  if (new URL(dest, location.origin).pathname !== location.pathname)
+    location.replace(dest + location.hash);
+  else history.replaceState(null, '', dest);
 }
 
 /** Consume the OAuth callback hash (#roadmap_edit_token=… / #roadmap_edit=denied). */
@@ -19,10 +51,10 @@ export function readTokenFromHash(): string | null {
   if (m) {
     const tok = decodeURIComponent(m[1]!);
     saveToken(tok);
-    history.replaceState(null, '', location.pathname + location.search);
+    restoreSignInLocation();
     return tok;
   }
-  if (/roadmap_edit=denied/.test(h)) history.replaceState(null, '', location.pathname + location.search);
+  if (/roadmap_edit=denied/.test(h)) restoreSignInLocation();
   return null;
 }
 
@@ -30,8 +62,7 @@ export function loginUrl(): string {
   return `${EDIT_API}/auth/login?return=${encodeURIComponent(location.origin + location.pathname)}`;
 }
 
-async function authed(path: string, init: RequestInit = {}) {
-  const tok = getToken();
+async function authed(path: string, init: RequestInit = {}, tok = getToken()) {
   return fetch(EDIT_API + path, {
     ...init,
     headers: { ...(init.headers || {}), ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
@@ -41,8 +72,11 @@ export const authedRequest = authed;
 
 export async function me(): Promise<{ editor: boolean; login: string }> {
   try {
-    const r = await authed('/api/me');
-    return r.ok ? r.json() : { editor: false, login: '' };
+    const token = getToken();
+    const r = await authed('/api/me', {}, token);
+    const result = r.ok ? await r.json() : { editor: false, login: '' };
+    if (result.editor) boundToken = token;
+    return result;
   } catch {
     return { editor: false, login: '' };
   }
@@ -154,9 +188,9 @@ export async function sync(changeset: unknown): Promise<SyncResult> {
     return { ok: false, authError: true, errors: ['Your session expired'] };
   }
   const result = await r.json();
-  return !r.ok && result.error
-    ? { ok: false, errors: [result.error], state: r.status === 403 ? 'invalid' : undefined }
-    : result;
+  if (r.status === 403)
+    return { ok: false, errors: result.errors ?? [result.error ?? 'You no longer have editing access.'], state: 'invalid' };
+  return !r.ok && result.error ? { ok: false, errors: [result.error] } : result;
 }
 
 export async function publicationStatus(id: string): Promise<SyncResult> {

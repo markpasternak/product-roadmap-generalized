@@ -24,6 +24,7 @@ vi.mock('../../lib/edit/client', () => ({
   authedRequest: vi.fn(async (path:string) => new Response(JSON.stringify(path==='/api/assets'?[]:{revision:0,data:null}),{status:200,headers:{'Content-Type':'application/json'}})),
   publicationStatus: vi.fn(async () => ({ok:false})),
   clearToken: vi.fn(),
+  rememberSignInLocation: vi.fn(),
   readTokenFromHash: vi.fn(() => null),
   me: (...args: unknown[]) => meMock(...(args as [])),
   loginUrl: vi.fn(() => '#'),
@@ -1143,45 +1144,22 @@ describe('Board — session-expiry re-auth path (fix #2)', () => {
     }
   });
 
-  it('resets sessionExpired once a later sync succeeds', async () => {
+  it('blocks repeated publication after expiry while retaining further edits', async () => {
     localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: false, authError: true, errors: ['Your session expired'] });
+    syncMock.mockResolvedValueOnce({ ok: false, authError: true });
     const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
+    useEditStore().setField('TALK-1', 'title', 'Before expiry');
+    await (w.vm as any).doSync();
+    useEditStore().setField('TALK-1', 'title', 'After expiry');
+    await (w.vm as any).doSync();
     await flushPromises();
-    expect(w.find('[data-test="save-error"]').exists()).toBe(true);
-
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'abc123' });
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(w.find('[data-test="save-error"]').exists()).toBe(false);
+    expect(syncMock).toHaveBeenCalledTimes(1);
+    expect(w.find('[data-test="sync"]').exists()).toBe(false);
+    expect(w.find('[data-test="sign-in-again"]').exists()).toBe(true);
+    expect(useEditStore().snapshot().fields['TALK-1'].title).toBe('After expiry');
+    expect(useEditStore().snapshot().requestPayload).toBeNull();
   });
 
-  it('a stale sessionExpired does not mask a subsequently-raised validationBlocked banner', async () => {
-    // authExpired outranks validationBlocked in bannerState precedence, so a leftover
-    // sessionExpired=true from an earlier auth failure must not survive into (and mask) a
-    // later attempt that gets caught by pre-flight validation instead.
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: false, authError: true, errors: ['Your session expired'] });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-    expect(w.find('[data-test="save-error"]').exists()).toBe(true);
-
-    // A new sync attempt is now blocked by pre-flight validation (an untitled new item) —
-    // this early-return path never calls sync() at all, so it must reset sessionExpired
-    // itself for the validationBlocked banner to actually show through.
-    useEditStore().addItem('Podcasts & Audiobooks', '', { horizon: 'Next' });
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(w.find('[data-test="sign-in-again"]').exists()).toBe(false);
-    const bar = w.find('[data-test="save-status"]');
-    expect(bar.text()).toContain('title is required');
-  });
 });
 
 describe('Board — base-version map gates Sync (U2/R1 fail-closed)', () => {

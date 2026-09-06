@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import Avatar from './Avatar.vue';
 import Select from './Select.vue';
 import { getCanvasdrop, type Me } from '../../lib/share/canvasdrop';
-import { me, loginUrl, readTokenFromHash } from '../../lib/edit/client';
+import { me, loginUrl, readTokenFromHash, rememberSignInLocation } from '../../lib/edit/client';
 import { IS_PUBLIC } from '../../lib/audience';
 
 defineProps<{ base: string; active?: 'roadmap' | 'shares' | 'docs' | 'help' }>();
@@ -103,7 +103,7 @@ const navigation = [{ key: 'roadmap', label: 'Roadmap', path: '' }, { key: 'shar
               <p>GitHub · {{ editor.login }}</p>
             </template>
             <template v-else>
-              <a :href="loginUrl()" class="account-sign-in roadmap-primary-action">Sign in to edit</a>
+              <a :href="loginUrl()" class="account-sign-in roadmap-primary-action" @click="rememberSignInLocation">Sign in to edit</a>
               <p>Uses your GitHub account.</p>
             </template>
           </div>

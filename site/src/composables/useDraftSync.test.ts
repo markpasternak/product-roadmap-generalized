@@ -253,3 +253,44 @@ describe("account draft saving", () => {
   });
 
 });
+
+
+describe('expired GitHub sessions', () => {
+  it('preserves new edits locally and stops autosave retries until sign-in recovers', async () => {
+    const { store, sync } = setup();
+    request.mockResolvedValueOnce(response(0, null));
+    await sync.start('alice');
+    store.setBody('A', 'Before expiry');
+    request.mockResolvedValueOnce(new Response('Unauthorized', { status: 401 }));
+    await sync.flush();
+    expect(sync.authExpired.value).toBe(true);
+    store.setBody('A', 'After expiry');
+    await vi.advanceTimersByTimeAsync(30000);
+    await sync.flush();
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(sync.state.value).toBe('local');
+    expect(sync.detail.value).toContain('sign in with GitHub');
+    expect(createEditStore().bodyValue('A')).toBe('After expiry');
+    request.mockResolvedValueOnce(response(0, null))
+      .mockImplementationOnce((_path, init) => Promise.resolve(response(1, JSON.parse(init.body).data)));
+    await sync.reconnect();
+    await vi.advanceTimersByTimeAsync(700);
+    expect(sync.authExpired.value).toBe(false);
+    expect(sync.state.value).toBe('saved');
+    expect(JSON.parse(request.mock.calls.at(-1)![1].body).data.bodies.A).toBe('After expiry');
+  });
+  it('keeps an offline discard pending through expiry instead of restoring the old account draft', async () => {
+    const { store, sync } = setup();
+    const old = { ...store.snapshot(), bodies: { A: 'Old draft' } };
+    request.mockResolvedValueOnce(response(1, old));
+    await sync.start('alice');
+    store.clear();
+    request.mockResolvedValueOnce(new Response('Unauthorized', { status: 401 }));
+    await sync.flush();
+    request.mockResolvedValueOnce(response(1, old)).mockResolvedValueOnce(response(2, null));
+    await sync.reconnect();
+    await vi.advanceTimersByTimeAsync(700);
+    expect(store.dirtyCount.value).toBe(0);
+    expect(JSON.parse(request.mock.calls.at(-1)![1].body).data).toBeNull();
+  });
+});

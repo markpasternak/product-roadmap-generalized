@@ -44,10 +44,9 @@ const primary = computed(() => props.pending ? 'Publishing your changes…'
     <div class="save-status-copy">
       <p role="status" aria-live="polite" class="save-status-primary">{{ primary }}</p>
       <p v-if="dirty && !pending" class="save-status-secondary">{{ detail.replace(/[.…]+$/, '') }}. Publish to update the roadmap.</p>
-      <p v-else-if="localOnly" class="save-status-secondary">Your changes are kept on this device. The account copy has not updated yet.</p>
+      <p v-else-if="localOnly" class="save-status-secondary">{{ detail }}. The account copy has not updated yet.</p>
       <p v-if="error" data-test="save-error" role="alert" class="save-status-error">
         {{ error }}
-        <button v-if="authExpired" type="button" class="save-status-link" data-test="sign-in-again" @click="$emit('signin')">Sign in again</button>
       </p>
       <div v-if="showPublication && !pending" class="save-status-secondary publication-status">
         <span v-if="dirty">{{ publicationText }}</span>
@@ -68,10 +67,10 @@ const primary = computed(() => props.pending ? 'Publishing your changes…'
       </details>
     </div>
     <div class="save-status-actions">
-      <button v-if="localOnly && authExpired && !error" type="button" class="save-status-link" @click="$emit('signin')">Sign in to save</button>
+      <button v-if="authExpired" type="button" class="save-status-publish" data-test="sign-in-again" :disabled="pending" @click="$emit('signin')">Sign in with GitHub</button>
       <button v-if="localOnly && !authExpired" type="button" class="save-status-link" @click="$emit('retry-save')">Retry saving</button>
       <button v-if="dirty" type="button" class="save-status-discard" :disabled="pending || discardBlocked" :title="discardBlocked ? 'Finish uploads or resolve the pending publication or draft conflict first' : undefined" @click="$emit('discard')">Discard draft…</button>
-      <button v-if="dirty || error" type="button" data-test="sync" class="save-status-publish" :disabled="pending || blocked || (authExpired && !dirty)" @click="$emit('publish')">{{ pending ? 'Publishing…' : error ? 'Retry publication' : 'Publish changes' }}</button>
+      <button v-if="(dirty || error) && !authExpired" type="button" data-test="sync" class="save-status-publish" :disabled="pending || blocked" @click="$emit('publish')">{{ pending ? 'Publishing…' : error ? 'Retry publication' : 'Publish changes' }}</button>
     </div>
   </div>
 </template>

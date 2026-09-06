@@ -90,3 +90,17 @@ describe("publication recovery", () => {
     expect(createEditStore().bodyValue("A")).toBe("first tab");
   });
 });
+
+it('recovers only the signed-in account draft after returning from GitHub', () => {
+  const original = createEditStore();
+  original.activate('alice');
+  original.setBody('A', 'Private Alice draft');
+  const other = createEditStore();
+  other.activate('bob');
+  expect(other.dirtyCount.value).toBe(0);
+  other.setBody('B', 'Private Bob draft');
+  const returned = createEditStore();
+  returned.activate('alice');
+  expect(returned.bodyValue('A')).toBe('Private Alice draft');
+  expect(returned.bodyValue('B')).toBeUndefined();
+});

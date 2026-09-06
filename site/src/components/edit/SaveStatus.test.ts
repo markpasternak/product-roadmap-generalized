@@ -46,3 +46,12 @@ describe('save status lifecycle', () => {
     w.unmount();
   });
 });
+
+it('offers GitHub sign-in instead of a publication that will fail', async () => {
+  const w = mount(SaveStatus, { props: { dirty: 1, authExpired: true, saveState: 'local' } });
+  expect(w.find('[data-test="sync"]').exists()).toBe(false);
+  await w.get('[data-test="sign-in-again"]').trigger('click');
+  expect(w.emitted('signin')).toHaveLength(1);
+  expect(w.emitted('publish')).toBeUndefined();
+  w.unmount();
+});

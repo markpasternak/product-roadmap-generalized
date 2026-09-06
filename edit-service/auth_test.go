@@ -13,7 +13,13 @@ func TestSession(t *testing.T) {
 	if login, ok := verifySession("secret", tok, now.Add(time.Hour)); !ok || login != "octocat" {
 		t.Fatalf("valid session rejected: %q %v", login, ok)
 	}
-	if _, ok := verifySession("secret", tok, now.Add(9*time.Hour)); ok {
+	if _, ok := verifySession("secret", tok, now.Add(7*24*time.Hour-time.Second)); !ok {
+		t.Fatal("session expired before seven days")
+	}
+	if _, ok := verifySession("secret", tok, now.Add(7*24*time.Hour)); ok {
+		t.Fatal("session accepted at expiry")
+	}
+	if _, ok := verifySession("secret", tok, now.Add(8*24*time.Hour)); ok {
 		t.Fatal("expired session accepted")
 	}
 	if _, ok := verifySession("secret", tok+"x", now.Add(time.Hour)); ok {

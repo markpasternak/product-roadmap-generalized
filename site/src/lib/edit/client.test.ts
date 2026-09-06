@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { saveToken, getToken, clearToken, readTokenFromHash, sync, deployStatus } from './client';
+import { saveToken, getToken, clearToken, readTokenFromHash, sync, deployStatus, me, authedRequest, rememberSignInLocation } from './client';
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  clearToken();
+  localStorage.clear();
+  sessionStorage.clear();
+  history.replaceState(null, '', '/');
+});
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('edit token', () => {
   it('stores and clears', () => {
@@ -145,4 +151,69 @@ describe('deployStatus() (U4/R4/R5/KTD4)', () => {
 
     expect(await deployStatus()).toEqual({ status: '', conclusion: '', headSha: '', htmlUrl: '' });
   });
+});
+
+
+describe('GitHub session recovery', () => {
+  it('keeps this page bound to its original account when another tab signs in', async () => {
+    saveToken('alice-token');
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ editor: true, login: 'alice' })))
+      .mockResolvedValueOnce(new Response('{}'));
+    vi.stubGlobal('fetch', fetcher);
+    await me();
+    localStorage.setItem('rm-edit-token', 'bob-token');
+    await authedRequest('/api/draft', { method: 'PUT', body: '{}' });
+    expect(fetcher.mock.calls[1][1].headers.Authorization).toBe('Bearer alice-token');
+    clearToken();
+    expect(localStorage.getItem('rm-edit-token')).toBe('bob-token');
+    expect(getToken()).toBeNull();
+  });
+  it('binds the token that was verified even if storage changes during the identity check', async () => {
+    saveToken('alice-token');
+    let finish!: (r: Response) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(r => { finish = r; })));
+    const checking = me();
+    localStorage.setItem('rm-edit-token', 'bob-token');
+    finish(new Response(JSON.stringify({ editor: true, login: 'alice' })));
+    await checking;
+    expect(getToken()).toBe('alice-token');
+  });
+  it('restores the current card and filters after the OAuth callback', () => {
+    history.replaceState(null, '', '/?item=TEST-1&sort=updated&activity=updated&days=7');
+    rememberSignInLocation();
+    history.replaceState(null, '', '/#roadmap_edit_token=new-session');
+    readTokenFromHash();
+    expect(location.search).toBe('?item=TEST-1&sort=updated&activity=updated&days=7');
+    expect(location.hash).toBe('');
+    expect(sessionStorage.getItem('rm-edit-return')).toBeNull();
+  });
+  it('ignores an off-site return location', () => {
+    sessionStorage.setItem('rm-edit-return', 'https://other.example/');
+    location.hash = '#roadmap_edit_token=new-session';
+    readTokenFromHash();
+    expect(location.pathname).toBe('/');
+  });
+  it('can authenticate in memory when browser storage is blocked', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+    saveToken('memory-session');
+    expect(getToken()).toBe('memory-session');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ editor: true, login: 'alice' }))));
+    await expect(me()).resolves.toEqual({ editor: true, login: 'alice' });
+    clearToken();
+    expect(getToken()).toBeNull();
+  });
+  it('treats the backend permission-denied response as definitive, so the draft unlocks', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: false, errors: ['Access removed'] }), { status: 403 })));
+    expect(await sync({})).toEqual({ ok: false, state: 'invalid', errors: ['Access removed'] });
+  });
+});
+
+it('returns to the actual support page after signing in there', () => {
+  history.replaceState(null, '', '/docs?section=overview');
+  rememberSignInLocation();
+  history.replaceState(null, '', '/#roadmap_edit_token=new-session');
+  const navigate = vi.spyOn(location, 'replace').mockImplementation(() => {});
+  readTokenFromHash();
+  expect(navigate).toHaveBeenCalledWith('/docs?section=overview#roadmap_edit_token=new-session');
 });

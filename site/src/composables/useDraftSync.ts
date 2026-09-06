@@ -79,7 +79,9 @@ export function useDraftSync(store: Store) {
             ? "This draft was also changed elsewhere. Both versions are kept."
             : state.value === "loading"
               ? "Connecting your draft…"
-              : "Saved on this device · waiting to save to your account",
+              : authExpired.value
+                ? "Saved on this device · sign in with GitHub to resume account saving"
+                : "Saved on this device · waiting to save to your account",
   );
   const remember = () => {
     try {
@@ -99,6 +101,10 @@ export function useDraftSync(store: Store) {
   function schedule(delay = 700) {
     if (!active || stopped || conflict.value) return;
     clearTimeout(timer);
+    if (authExpired.value) {
+      state.value = "local";
+      return;
+    }
     if (!sending && same(accountSnapshot(), acknowledged)) {
       state.value = "saved";
       return;
@@ -107,7 +113,7 @@ export function useDraftSync(store: Store) {
     timer = setTimeout(() => void flush(), delay);
   }
   async function flush() {
-    if (!active || stopped || sending || conflict.value) return;
+    if (!active || stopped || sending || conflict.value || authExpired.value) return;
     if (same(accountSnapshot(), acknowledged)) {
       state.value = "saved";
       return;

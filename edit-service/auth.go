@@ -10,8 +10,10 @@ import (
 	"time"
 )
 
+const sessionLifetime = 7 * 24 * time.Hour
+
 func mintSession(secret, login string, now time.Time) string {
-	exp := now.Add(8 * time.Hour).Unix()
+	exp := now.Add(sessionLifetime).Unix()
 	msg := fmt.Sprintf("%s.%d", login, exp)
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(msg))
@@ -32,7 +34,7 @@ func verifySession(secret, token string, now time.Time) (string, bool) {
 		return "", false
 	}
 	exp, err := strconv.ParseInt(expStr, 10, 64)
-	if err != nil || now.Unix() > exp {
+	if err != nil || now.Unix() >= exp {
 		return "", false
 	}
 	return login, true

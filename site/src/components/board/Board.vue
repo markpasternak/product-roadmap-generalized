@@ -39,6 +39,7 @@ import {
   readTokenFromHash,
   me,
   loginUrl,
+  rememberSignInLocation,
   fetchItems,
   sync,
   deployStatus,
@@ -213,6 +214,7 @@ watch(editMode, (on) => {
 });
 // `location` isn't in Vue's template-globals whitelist, so navigate from a method.
 function signIn() {
+  rememberSignInLocation();
   window.location.href = loginUrl();
 }
 
@@ -516,6 +518,11 @@ async function acceptPublication(res: Awaited<ReturnType<typeof sync>>, sent: an
   }
 }
 async function doSync() {
+  if (!canEdit.value) return;
+  if (sessionExpired.value || draftSync.authExpired.value) {
+    syncError.value = 'Sign in with GitHub to publish. Your draft is kept.';
+    return;
+  }
   if (syncPending.value || draftSync.conflict.value || resourceTransferCount.value) return;
   if (!baseVersionLoaded.value) {
     syncError.value = 'Still loading your workspace. Try again in a moment.';
@@ -1903,7 +1910,9 @@ onMounted(async () => {
   if (canEdit.value && editStore.hasBodyEdits.value) {
     await loadRawBodies();
   }
-  if (canEdit.value && (localStorage.getItem('rm-edit-mode') === '1' || editStore.dirtyCount.value > 0)) {
+  let resumeEditing = editStore.dirtyCount.value > 0;
+  try { resumeEditing ||= localStorage.getItem('rm-edit-mode') === '1'; } catch {}
+  if (canEdit.value && resumeEditing) {
     editMode.value = true;
   }
   // Now that edit mode is decided, resolve a deep-linked ?item=: straight to the full editor

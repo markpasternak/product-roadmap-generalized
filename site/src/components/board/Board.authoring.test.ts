@@ -40,6 +40,7 @@ vi.mock("../../lib/edit/client", () => ({
   ),
   publicationStatus: vi.fn(async () => ({ ok: false })),
   clearToken: vi.fn(),
+  rememberSignInLocation: vi.fn(),
   readTokenFromHash: vi.fn(() => null),
   me: (...args: unknown[]) => meMock(...(args as [])),
   loginUrl: vi.fn(() => "#"),
@@ -333,4 +334,20 @@ describe("account drafts and recoverable publication", () => {
     expect(status(w).text()).not.toContain("Changes saved");
   });
 
+});
+
+it('does not submit a draft when GitHub is signed out', async () => {
+  meMock.mockResolvedValueOnce({ editor: false, login: '' });
+  const w = await mountBoard();
+  await (w.vm as any).doSync();
+  expect(syncMock).not.toHaveBeenCalled();
+});
+it('retains an editable draft after GitHub rejects publishing permission', async () => {
+  localStorage.setItem('rm-edit-mode', '1');
+  const w = await mountBoard();
+  useEditStore().setBody('TALK-1', 'Keep this');
+  syncMock.mockResolvedValueOnce({ ok: false, state: 'invalid', errors: ['Editing access removed'] });
+  await (w.vm as any).doSync();
+  expect(useEditStore().snapshot().requestPayload).toBeNull();
+  expect(useEditStore().bodyValue('TALK-1')).toBe('Keep this');
 });

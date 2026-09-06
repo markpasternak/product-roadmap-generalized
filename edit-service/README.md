@@ -10,6 +10,8 @@ Records use atomic writes, private permissions, and per-repository/account keys.
 
 ## Draft and publication API
 
+GitHub sign-in issues a roadmap session lasting seven days from sign-in, without automatic renewal. Existing sessions retain their original expiry. The GitHub token is used to verify identity at sign-in; subsequent editing uses the roadmap session.
+
 All editing routes use the existing Bearer session token. Upload and publication operations also verify current GitHub write permission.
 
 - `GET /api/capabilities`: service version, feature availability and upload limit.
