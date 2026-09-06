@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { mount, type VueWrapper } from "@vue/test-utils";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { mount, flushPromises, type VueWrapper } from "@vue/test-utils";
 import ImagePicker from "./ImagePicker.vue";
 
 let w: VueWrapper;
@@ -38,4 +38,38 @@ describe("image insertion", () => {
       "![](https://example.com/decorative.svg)",
     ]);
   });
+});
+
+
+it('reports upload progress and cancels the request when the picker closes', async () => {
+  let signal!: AbortSignal;
+  let finish!: (image: { href: string; name: string; attached: boolean }) => void;
+  const uploadImage = vi.fn((_file: File, abort: AbortSignal, progress: (n: number) => void) => {
+    signal = abort;
+    progress(45);
+    return new Promise<{ href: string; name: string; attached: boolean }>(resolve => { finish = resolve; });
+  });
+  w = mount(ImagePicker, { props: { images: [], uploadImage }, global: { stubs: { Teleport: true } } });
+  const input = w.get('input[type=file]');
+  Object.defineProperty(input.element, 'files', { value: [new File(['image'], 'image.png', { type: 'image/png' })] });
+  await input.trigger('change');
+  expect(w.get('[role=status]').text()).toContain('45%');
+  expect(w.get('button[type=submit]').attributes('disabled')).toBeDefined();
+  await w.get('[aria-label="Close image picker"]').trigger('click');
+  expect(signal.aborted).toBe(true);
+  finish({ href: '../../assets/image.png', name: 'Image', attached: true });
+  await flushPromises();
+  expect(w.emitted('cancel')).toHaveLength(1);
+  expect(w.emitted('insert')).toBeUndefined();
+});
+
+it('keeps the picker open with a useful upload error so the author can retry', async () => {
+  w = mount(ImagePicker, { props: { images: [], uploadImage: vi.fn().mockRejectedValue(new Error('Could not upload. Try again.')) }, global: { stubs: { Teleport: true } } });
+  const input = w.get('input[type=file]');
+  Object.defineProperty(input.element, 'files', { value: [new File(['image'], 'image.png', { type: 'image/png' })] });
+  await input.trigger('change');
+  await flushPromises();
+  expect(w.get('[role=alert]').text()).toBe('Could not upload. Try again.');
+  expect(w.findAll('button').find(b => b.text() === 'Upload image')!.attributes('disabled')).toBeUndefined();
+  expect(w.emitted('cancel')).toBeUndefined();
 });

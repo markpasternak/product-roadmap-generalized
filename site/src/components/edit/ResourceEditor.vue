@@ -38,7 +38,6 @@ const locked = computed(() => !!store.snapshot().requestPayload);
 const loading = ref(true);
 const picker = ref<"upload" | "link" | "existing" | null>(null),
   expanded = ref<string | null>(null),
-  showLibrary = ref(false),
   librarySearch = ref(""),
   error = ref(""),
   notice = ref("");
@@ -50,6 +49,7 @@ watch(notice, value => {
 const library = ref<ResourceAsset[]>([]),
   uploads = ref<ResourceUpload[]>([]);
 const fileInput = ref<HTMLInputElement>();
+const addResourceButton = ref<HTMLButtonElement>();
 const linkName = ref(""),
   linkURL = ref(""),
   selectedExisting = ref(""),
@@ -107,9 +107,22 @@ const allAssets = computed(() => {
     }));
 });
 const attached = computed(() => allAssets.value.filter(a => a.placements.length));
-const rows = computed(() => allAssets.value.filter(a =>
-  showLibrary.value ? a.name.toLowerCase().includes(librarySearch.value.toLowerCase()) : a.placements.length || a.id === expanded.value || a.remove,
-));
+const rows = computed(() => allAssets.value.filter(a => a.placements.length || a.id === expanded.value || a.remove));
+const existingChoices = computed(() => [
+  ...allAssets.value.filter(a => !a.remove).map(a => ({ id: a.id, name: a.name, href: imageHref(a), image: shownRevision(a).original.mediaType.startsWith('image/'), kind: 'File', added: a.placements.some(p => ['Resources', 'Links'].includes(p.section)) })),
+  ...documents.value.map(d => ({ id: d.path, name: d.title, href: markdownAssetPath(d.path), image: false, kind: 'Document', added: external.value.some(p => resourceHref(p.href) === resourceHref(markdownAssetPath(d.path))) })),
+].filter(choice => choice.name.toLowerCase().includes(librarySearch.value.toLowerCase())));
+function toggleAdd() {
+  picker.value = picker.value ? null : 'upload';
+  selectedExisting.value = '';
+  librarySearch.value = '';
+}
+async function closeAdd() {
+  const restoreFocus = document.activeElement?.closest('.resource-picker');
+  picker.value = null;
+  await nextTick();
+  if (restoreFocus) addResourceButton.value?.focus();
+}
 function toggleResource(id: string) { expanded.value = expanded.value === id ? null : id; }
 async function removePlacement(placement: typeof placements.value[number], event?: Event) {
   const row = (event?.currentTarget as HTMLElement | null)?.closest('.resource-row');
@@ -381,18 +394,40 @@ async function runUpload(job: Pending) {
         `${u.revision.original.mediaType.startsWith("image/") ? "!" : ""}[${markdownLabel(u.name)}](${href})`,
         job.anchor,
       );
-      body = inline ?? attachResource(body, u.name, href);
+      body = inline ?? body;
+      if (!inline || u.revision.original.mediaType.startsWith("image/")) body = attachResource(body, u.name, href);
       notice.value = inline
         ? "File inserted. Edit its text alternative in Markdown."
         : "The insertion point changed. Your file was added to Resources.";
     } else body = attachResource(body, u.name, href);
     emit("update:body", body);
     pending.value = pending.value.filter((p) => p.id !== job.id);
-    picker.value = null;
+    void closeAdd();
+    return u;
   } catch (e) {
     if ((e as Error).name === "AbortError")
       pending.value = pending.value.filter((p) => p.id !== job.id);
     else job.error = (e as Error).message;
+  }
+}
+async function uploadPickerImage(file: File, signal: AbortSignal, onProgress: (progress: number) => void) {
+  if (locked.value) throw new Error('Finish the pending publication before adding files.');
+  if (!file.type.startsWith('image/') || !file.size || file.size > 25 * 1048576) throw new Error('Choose an image up to 25 MiB.');
+  const job: Pending = { id: ++serial, file, progress: 0, error: '', controller: new AbortController() };
+  pending.value.push(job);
+  const active = pending.value.at(-1)!;
+  const stopProgress = watch(() => active.progress, onProgress);
+  const cancel = () => { active.controller.abort(); pending.value = pending.value.filter(p => p.id !== active.id); };
+  signal.addEventListener('abort', cancel, { once: true });
+  try {
+    if (signal.aborted) throw new Error('Upload canceled.');
+    const uploaded = await runUpload(active);
+    if (!uploaded) throw new Error(active.error || 'Upload canceled.');
+    return { href: markdownAssetPath(uploaded.repoPath), name: uploaded.name, attached: true };
+  } finally {
+    signal.removeEventListener('abort', cancel);
+    stopProgress();
+    pending.value = pending.value.filter(p => p.id !== active.id);
   }
 }
 async function chooseUpload(assetId?: string) {
@@ -455,7 +490,7 @@ function addLink() {
         url.href,
       ),
     );
-    picker.value = null;
+    void closeAdd();
     linkName.value = "";
     linkURL.value = "";
     error.value = "";
@@ -480,9 +515,11 @@ function editExternal(start: number, field: "label" | "href", value: string) {
   );
 }
 function addExisting() {
-  const asset = library.value.find((a) => a.id === selectedExisting.value);
+  if (!existingChoices.value.some(choice => choice.id === selectedExisting.value && !choice.added)) return;
+  const asset = allAssets.value.find((a) => a.id === selectedExisting.value && !a.remove);
+  if (asset?.placements.some(p => ["Resources", "Links"].includes(p.section))) return;
   if (asset) {
-    const rev = asset.revisions.at(-1)!;
+    const rev = shownRevision(asset);
     emit(
       "update:body",
       attachResource(
@@ -499,7 +536,7 @@ function addExisting() {
         attachResource(props.body, doc.title, markdownAssetPath(doc.path)),
       );
   }
-  picker.value = null;
+  void closeAdd();
 }
 function editAlt(start: number, label: string) {
   const p = placements.value.find((p) => p.start === start);
@@ -666,17 +703,48 @@ onUnmounted(() => {
       Files are included in the pending publication. Finish it before changing
       files.
     </p>
+    <section
+      v-if="fileConflicts.length"
+      class="resource-picker"
+      aria-label="Review changed files"
+    >
+      <h3>These files changed while you were editing</h3>
+      <p>
+        Review the latest original before applying your pending file changes.
+      </p>
+      <article
+        v-for="asset in fileConflicts"
+        :key="asset.id"
+        class="resource-row"
+      >
+        <p>Latest: {{ asset.name }} · {{ asset.visibility }}</p>
+        <p>
+          Your change:
+          {{
+            store.snapshot().assets.update.find((c) => c.id === asset.id)
+              ?.remove
+              ? "Delete file"
+              : store.snapshot().assets.update.find((c) => c.id === asset.id)
+                  ?.name || "File revision or visibility"
+          }}
+        </p>
+        <div class="resource-actions">
+          <button type="button" @click="download(asset)">Download latest</button
+          ><button type="button" @click="keepFileChanges(asset)">
+            Keep my file changes
+          </button>
+        </div>
+      </article>
+    </section>
+    <slot :managed-resource-hrefs="[...attached.flatMap(a => a.placements.map(p => p.href)), ...external.map(p => p.href)]" />
+    <ImagePicker v-if="imagePickerOpen" :images="imageChoices" :upload-image="uploadPickerImage" @insert="insertImage" @cancel="imagePickerOpen = false" />
     <fieldset :disabled="locked" class="resource-controls">
-      <div class="resource-authoring-toolbar">
-        <span>Write-up</span
-        ><button
-          type="button"
-          :aria-expanded="!!picker"
-          @click="picker = picker ? null : 'upload'"
-        >
-          Add resource
-        </button>
-      </div>
+      <section class="resource-shelf" aria-label="Resources">
+        <div class="resource-shelf-heading">
+          <div><h3>Resources <span v-if="attached.length + external.length" class="resource-count">{{ attached.length + external.length }}</span></h3>
+          <p v-if="attached.length + external.length" class="resource-muted">Files and links supporting this item.</p></div>
+          <button ref="addResourceButton" type="button" :aria-expanded="!!picker" @click="toggleAdd">Add resource</button>
+        </div>
       <section v-if="picker" class="resource-picker" aria-label="Add resource">
         <div class="resource-picker-tabs">
           <button
@@ -697,7 +765,7 @@ onUnmounted(() => {
             @click="picker = 'existing'"
           >
             Choose existing</button
-          ><button type="button" @click="picker = null">Close</button>
+          ><button type="button" @click="closeAdd">Close</button>
         </div>
         <div v-if="picker === 'upload'" class="resource-upload-area">
           <p>
@@ -727,31 +795,16 @@ onUnmounted(() => {
           ><button type="submit">Add link</button>
         </form>
         <form v-else @submit.prevent="addExisting">
-          <label
-            >File or document<select v-model="selectedExisting" required>
-              <option value="" disabled>Choose a resource</option>
-              <optgroup label="Uploaded files">
-                <option
-                  v-for="asset in library"
-                  :key="asset.id"
-                  :value="asset.id"
-                >
-                  {{ asset.name }}
-                </option>
-              </optgroup>
-              <optgroup label="Documents">
-                <option
-                  v-for="doc in documents"
-                  :key="doc.path"
-                  :value="doc.path"
-                >
-                  {{ doc.title }}
-                </option>
-              </optgroup>
-            </select></label
-          ><button type="submit" :disabled="!selectedExisting">
-            Add to Resources
-          </button>
+          <label>Find a file or document<input v-model="librarySearch" type="search" placeholder="Search resources…" /></label>
+          <div class="existing-resource-list" aria-label="Existing resources">
+            <button v-for="choice in existingChoices" :key="choice.id" type="button" class="existing-resource-choice" :aria-pressed="selectedExisting === choice.id" :disabled="choice.added" @click="selectedExisting = choice.id">
+              <ImageThumbnail v-if="choice.image" :href="choice.href" authenticated />
+              <span v-else class="resource-kind">{{ choice.kind === 'File' ? 'FILE' : 'DOC' }}</span>
+              <span><strong>{{ choice.name }}</strong><small>{{ choice.added ? 'Already attached' : choice.kind }}</small></span>
+            </button>
+            <p v-if="!existingChoices.length" class="resource-muted">{{ loading ? 'Loading resources…' : 'No matching resources. Try another name or upload a file.' }}</p>
+          </div>
+          <button type="submit" :disabled="!selectedExisting || !existingChoices.some(c => c.id === selectedExisting && !c.added)">Attach resource</button>
         </form>
       </section>
       <input
@@ -799,58 +852,8 @@ onUnmounted(() => {
         {{ error }} <button type="button" @click="load">Try again</button>
       </p>
       <p v-if="notice" role="status" class="resource-muted">{{ notice }}</p>
-    </fieldset>
-    <section
-      v-if="fileConflicts.length"
-      class="resource-picker"
-      aria-label="Review changed files"
-    >
-      <h3>These files changed while you were editing</h3>
-      <p>
-        Review the latest original before applying your pending file changes.
-      </p>
-      <article
-        v-for="asset in fileConflicts"
-        :key="asset.id"
-        class="resource-row"
-      >
-        <p>Latest: {{ asset.name }} · {{ asset.visibility }}</p>
-        <p>
-          Your change:
-          {{
-            store.snapshot().assets.update.find((c) => c.id === asset.id)
-              ?.remove
-              ? "Delete file"
-              : store.snapshot().assets.update.find((c) => c.id === asset.id)
-                  ?.name || "File revision or visibility"
-          }}
-        </p>
-        <div class="resource-actions">
-          <button type="button" @click="download(asset)">Download latest</button
-          ><button type="button" @click="keepFileChanges(asset)">
-            Keep my file changes
-          </button>
-        </div>
-      </article>
-    </section>
-    <slot :managed-resource-hrefs="[...attached.flatMap(a => a.placements.map(p => p.href)), ...external.map(p => p.href)]" />
-    <ImagePicker v-if="imagePickerOpen" :images="imageChoices" @insert="insertImage" @cancel="imagePickerOpen = false" />
-    <fieldset :disabled="locked" class="resource-controls">
-      <section class="resource-shelf" aria-label="Resources">
-        <div class="resource-shelf-heading">
-          <div><h3>{{ showLibrary ? 'File library' : 'Resources' }} <span class="resource-count">{{ showLibrary ? allAssets.length : attached.length + external.length }}</span></h3>
-          <p class="resource-muted">{{ showLibrary ? 'Reusable files across the roadmap.' : 'Files and links used in this item.' }}</p></div>
-          <button type="button" class="resource-quiet" :aria-expanded="showLibrary" @click="showLibrary = !showLibrary; librarySearch = ''">
-            {{ showLibrary ? 'Back to this item' : 'Browse library' }}
-          </button>
-        </div>
-        <label v-if="showLibrary" class="resource-library-search">Find a file in your library
-          <input v-model="librarySearch" type="search" placeholder="Search by name…" />
-        </label>
         <p v-if="loading" role="status" class="resource-muted">Loading resources…</p>
-        <p v-else-if="!rows.length && (showLibrary || !external.length)" class="resource-empty">
-          {{ showLibrary ? 'No files found.' : 'Add supporting files or links using Add resource above.' }}
-        </p>
+        <p v-else-if="!rows.length && !external.length && !picker" class="resource-empty">Add files or links to this item.</p>
         <article v-for="asset in rows" :key="asset.id" class="resource-row" :class="{ 'resource-row-expanded': expanded === asset.id }">
           <div class="resource-row-main">
             <ImageThumbnail v-if="shownRevision(asset).original.mediaType.startsWith('image/')" :href="imageHref(asset)" authenticated />
@@ -898,7 +901,6 @@ onUnmounted(() => {
             </footer>
           </div>
         </article>
-        <template v-if="!showLibrary">
           <article v-for="link in external" :key="link.start" class="resource-row">
             <div class="resource-row-main">
               <ImageThumbnail v-if="link.image || isImageResource(link.href)" :href="link.href" />
@@ -913,7 +915,6 @@ onUnmounted(() => {
               <button type="button" class="resource-quiet resource-danger" @click="removePlacement(link, $event); expanded = null">Remove</button>
             </div>
           </article>
-        </template>
       </section>
     </fieldset>
     <ConfirmAction
@@ -939,7 +940,6 @@ onUnmounted(() => {
 .resource-authoring {
   min-width: 0;
 }
-.resource-authoring-toolbar,
 .resource-shelf-heading,
 .resource-row-main,
 .resource-picker-tabs,
@@ -949,14 +949,9 @@ onUnmounted(() => {
   gap: 0.6rem;
   flex-wrap: wrap;
 }
-.resource-authoring-toolbar,
 .resource-shelf-heading {
   justify-content: space-between;
   margin-bottom: 0.8rem;
-}
-.resource-authoring-toolbar > span {
-  font-size: 0.8rem;
-  color: var(--color-text-subtle-default);
 }
 .resource-controls button,
 .resource-controls input,
@@ -1097,12 +1092,19 @@ onUnmounted(() => {
 .resource-controls .resource-danger { color: var(--color-feedback-error-text-independent-default); }
 .resource-link-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resource-link-editor { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: .75rem; align-items: end; padding: 1rem 0 .25rem 3.75rem; }
-.resource-library-search { margin-bottom: 1rem; }
+.existing-resource-list { display: grid; gap: .35rem; max-height: 18rem; overflow-y: auto; }
+.resource-controls .existing-resource-choice { display: flex; text-align: left; align-items: center; gap: .75rem; padding: .6rem; }
+.existing-resource-choice > span:last-child { min-width: 0; }
+.existing-resource-choice strong { display: block; overflow-wrap: anywhere; font-weight: 500; }
+.existing-resource-choice small { color: var(--color-text-subtle-default); }
+.existing-resource-choice[aria-pressed="true"] { border-color: var(--color-accent-brand-default); background: var(--color-surface-subtle-default); }
+.existing-resource-choice :deep(.image-thumbnail) { width: 48px; height: 48px; }
+.resource-shelf .resource-picker { margin: .5rem 0 1rem; border-radius: 8px; }
 .resource-empty { padding: .75rem 0 1rem; color: var(--color-text-subtle-default); font-size: .82rem; }
 .resource-picker-tabs { gap: .25rem; padding-bottom: .75rem; border-bottom: 1px solid var(--color-border-subtle-default); }
 .resource-picker-tabs button { border-color: transparent; background: transparent; }
 .resource-picker-tabs button:last-child { margin-left: auto; }
-.resource-picker form button { justify-self: start; }
+.resource-picker form > button { justify-self: start; }
 @media (max-width: 640px) {
   .resource-inspector { grid-template-columns: 1fr; padding-left: 0; gap: 1rem; }
   .resource-row-main { gap: .4rem; flex-wrap: wrap; }

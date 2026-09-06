@@ -90,6 +90,8 @@ describe("resource authoring lifecycle", () => {
     await w.findAll('button').find(b => b.text() === 'Insert image')!.trigger('click');
     await flushPromises();
     const dialog = document.querySelector('[role=dialog][aria-label="Insert image"]')!;
+    (Array.from(dialog.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Image URL') as HTMLButtonElement).click();
+    await flushPromises();
     const url = dialog.querySelector('input[type=url]') as HTMLInputElement;
     url.value = 'https://example.com/diagram.png'; url.dispatchEvent(new Event('input', { bubbles: true }));
     await flushPromises();
@@ -226,7 +228,7 @@ describe("resource authoring lifecycle", () => {
 
 describe('resource management', () => {
   const asset = { schemaVersion: 1 as const, id: result.assetId, name: result.name, visibility: 'Internal' as const, sha: 'manifest', revisions: [result.revision], usages: ['content/items/test/TEST-001-example.md'] };
-  it('shows only this item’s resources, with one-step editing and explicit library browsing', async () => {
+  it('keeps management scoped to this item and reuses resources through a searchable picker', async () => {
     vi.mocked(listResources).mockResolvedValueOnce([asset, { ...asset, id: 'ast_other', name: 'Other file' }]);
     await setup('## What ships\n\n[Evidence](../../assets/ast_one/rev_one/evidence.txt)\n');
     expect(w.findAll('.resource-row')).toHaveLength(1);
@@ -237,11 +239,19 @@ describe('resource management', () => {
     expect((w.vm as any).body).not.toContain('evidence.txt');
     expect(w.find('.resource-inspector').exists()).toBe(true);
     expect(w.findAll('button').find(b => b.text() === 'Delete from library…')!.attributes('disabled')).toBeUndefined();
-    await w.findAll('button').find(b => b.text() === 'Browse library')!.trigger('click');
-    expect(w.findAll('.resource-row')).toHaveLength(2);
+    expect(w.text()).not.toContain('Browse library');
+    const add = w.findAll('button').filter(b => b.text() === 'Add resource');
+    expect(add).toHaveLength(1);
+    expect(add[0].element.closest('.resource-shelf')).not.toBeNull();
+    await add[0].trigger('click');
+    await w.findAll('button').find(b => b.text() === 'Choose existing')!.trigger('click');
     await w.get('input[type=search]').setValue('Other');
-    expect(w.findAll('.resource-row')).toHaveLength(1);
-    expect(w.get('.resource-row').text()).toContain('Other file');
+    expect(w.findAll('.existing-resource-choice')).toHaveLength(1);
+    await w.get('.existing-resource-choice').trigger('click');
+    await w.get('.resource-picker form').trigger('submit');
+    expect((w.vm as any).body).toContain('[Other file](../../assets/ast_other/rev_one/evidence.txt)');
+    expect(w.find('.resource-picker').exists()).toBe(false);
+    expect(w.findAll('.resource-row')).toHaveLength(2);
   });
   it('removes one placement without removing the other uses of the file', async () => {
     vi.mocked(listResources).mockResolvedValueOnce([asset]);
@@ -265,6 +275,8 @@ it('inserts into the empty section the author selected', async () => {
   await w.findAll('button').find(b => b.attributes('aria-label') === 'Insert image')!.trigger('click');
   await flushPromises();
   const dialog = document.querySelector('[role=dialog][aria-label="Insert image"]')!;
+  (Array.from(dialog.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Image URL') as HTMLButtonElement).click();
+  await flushPromises();
   const url = dialog.querySelector('input[type=url]') as HTMLInputElement;
   url.value = 'https://example.com/image.png';
   url.dispatchEvent(new Event('input', { bubbles: true }));
@@ -290,9 +302,9 @@ it('cancels replacement mode before choosing a new upload', async () => {
 
 it('keeps insertion in the text toolbar and protects originals used elsewhere', async () => {
   vi.mocked(listResources).mockResolvedValueOnce([{ schemaVersion: 1, id: result.assetId, name: result.name, visibility: 'Internal', sha: 'manifest', revisions: [result.revision], usages: ['content/items/test/TEST-002-other.md'] }]);
-  await setup();
-  await w.findAll('button').find(b => b.text() === 'Browse library')!.trigger('click');
+  await setup('## Resources\n\n- [Evidence](../../assets/ast_one/rev_one/evidence.txt)\n');
   await w.get('[aria-label="Edit Evidence"]').trigger('click');
+  await w.get('[aria-label="Remove from Resources"]').trigger('click');
   expect(w.get('.resource-shelf').text()).not.toContain('Insert');
   expect(w.findAll('button').find(b => b.text() === 'Delete from library…')!.attributes('disabled')).toBeDefined();
   expect(w.text()).toContain('Still used elsewhere');
@@ -308,4 +320,49 @@ it('downloads the version used by this item rather than silently switching files
   await w.get('[aria-label="Download Evidence"]').trigger('click');
   expect(href).toBe('blob:original');
   click.mockRestore();
+});
+
+it('uploads from the image toolbar, attaches the file, and preserves the insertion range', async () => {
+  const image = { ...result, repoPath: 'content/assets/ast_one/rev_one/image.png', revision: { ...result.revision, original: { ...result.revision.original, path: 'rev_one/image.png', mediaType: 'image/png' } } };
+  vi.mocked(uploadResource).mockResolvedValueOnce(image);
+  resourcePreviewURLs.value[image.repoPath] = 'blob:http://localhost/image';
+  const { insertImageKey } = await import('../../lib/edit/imageAuthoring');
+  const { inject } = await import('vue');
+  const Toolbar = defineComponent({ setup: () => ({ open: inject(insertImageKey), field: ref<HTMLTextAreaElement>() }), template: '<textarea ref="field">The old description.</textarea><button @click="open(field)">Insert image</button>' });
+  w = mount(defineComponent({ components: { ResourceEditor, Toolbar }, setup: () => ({ body: ref('## Why it matters\n\nThe old description.\n') }), template: '<ResourceEditor v-model:body="body" visibility="Internal"><Toolbar /></ResourceEditor>' }));
+  await flushPromises();
+  w.get('textarea').element.setSelectionRange(4, 7);
+  await w.findAll('button').find(b => b.text() === 'Insert image')!.trigger('click');
+  await flushPromises();
+  const dialog = document.querySelector('[role=dialog][aria-label="Insert image"]')!;
+  const input = dialog.querySelector('input[type=file]')!;
+  Object.defineProperty(input, 'files', { value: [new File(['image'], 'image.png', { type: 'image/png' })] });
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  await flushPromises();
+  expect((w.vm as any).body).toContain('The old description.');
+  expect((w.vm as any).body).toContain('## Resources\n\n- [Evidence](../../assets/ast_one/rev_one/image.png)');
+  expect(dialog.querySelector('.image-choice[aria-pressed=true]')).not.toBeNull();
+  dialog.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await flushPromises();
+  expect((w.vm as any).body).toContain('The ![Evidence](../../assets/ast_one/rev_one/image.png) description.');
+  expect(useEditStore().snapshot().assets.attach).toHaveLength(1);
+  expect(resourceTransferCount.value).toBe(0);
+});
+
+it('prevents duplicate attachments and previews the existing revision when reusing an inline image', async () => {
+  const old = { ...result.revision, original: { ...result.revision.original, path: 'rev_one/image.png', mediaType: 'image/png' } };
+  vi.mocked(listResources).mockResolvedValueOnce([{ schemaVersion: 1, id: result.assetId, name: result.name, visibility: 'Internal', sha: 'manifest', revisions: [old, { ...old, id: 'rev_new', original: { ...old.original, path: 'rev_new/image.png' } }] }]);
+  resourcePreviewURLs.value['content/assets/ast_one/rev_one/image.png'] = 'blob:original';
+  await setup('## What ships\n\n![Evidence](../../assets/ast_one/rev_one/image.png)\n');
+  await w.findAll('button').find(b => b.text() === 'Add resource')!.trigger('click');
+  await w.findAll('button').find(b => b.text() === 'Choose existing')!.trigger('click');
+  expect(w.get('.existing-resource-choice img').attributes('src')).toBe('blob:original');
+  await w.get('.existing-resource-choice').trigger('click');
+  await w.get('.resource-picker form').trigger('submit');
+  expect((w.vm as any).body).toContain('- [Evidence](../../assets/ast_one/rev_one/image.png)');
+  expect((w.vm as any).body).not.toContain('rev_new');
+  await w.findAll('button').find(b => b.text() === 'Add resource')!.trigger('click');
+  await w.findAll('button').find(b => b.text() === 'Choose existing')!.trigger('click');
+  expect(w.get('.existing-resource-choice').attributes('disabled')).toBeDefined();
+  expect(w.get('.existing-resource-choice').text()).toContain('Already attached');
 });

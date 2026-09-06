@@ -5,16 +5,37 @@ import { trapFocus, isTopFocusTrap } from "../../lib/focusTrap";
 import { markdownLabel } from "../../lib/resources";
 import type { ImageChoice } from "../../lib/edit/imageAuthoring";
 
-const props = defineProps<{ images: ImageChoice[] }>();
+const props = defineProps<{ images: ImageChoice[]; uploadImage?: (file: File, signal: AbortSignal, onProgress: (progress: number) => void) => Promise<ImageChoice> }>();
 const emit = defineEmits<{ insert: [markdown: string]; cancel: [] }>();
 const source = ref<"resources" | "url">(
-  props.images.length ? "resources" : "url",
+  props.images.length || props.uploadImage ? "resources" : "url",
 );
 const selected = ref(""),
   url = ref(""),
   alt = ref(""),
   search = ref(""),
   error = ref("");
+const uploadInput = ref<HTMLInputElement>();
+const uploading = ref(false), progress = ref(0);
+let uploadController: AbortController | undefined;
+async function upload(file?: File) {
+  if (!file || !props.uploadImage || uploading.value) return;
+  error.value = '';
+  uploading.value = true;
+  progress.value = 0;
+  const controller = new AbortController();
+  uploadController = controller;
+  try {
+    const image = await props.uploadImage(file, controller.signal, p => { progress.value = p; });
+    if (controller.signal.aborted) return;
+    choose(image);
+    source.value = 'resources';
+    search.value = '';
+  } catch (e) {
+    if (!controller.signal.aborted) error.value = (e as Error).message;
+  } finally { uploading.value = false; }
+}
+function close() { uploadController?.abort(); emit('cancel'); }
 const panel = ref<HTMLElement>();
 const choices = computed(() =>
   props.images.filter((i) =>
@@ -30,6 +51,7 @@ function choose(image: ImageChoice) {
   error.value = "";
 }
 function insert() {
+  if (uploading.value) return;
   let target = href.value;
   if (source.value === "url") {
     try {
@@ -51,7 +73,7 @@ function onKey(event: KeyboardEvent) {
   if (event.key === "Escape" && isTopFocusTrap(panel.value)) {
     event.preventDefault();
     event.stopPropagation();
-    emit("cancel");
+    close();
   }
 }
 onMounted(async () => {
@@ -60,13 +82,14 @@ onMounted(async () => {
   document.addEventListener("keydown", onKey);
 });
 onUnmounted(() => {
+  uploadController?.abort();
   release?.();
   document.removeEventListener("keydown", onKey);
 });
 </script>
 <template>
   <Teleport to="body">
-    <div class="image-picker-overlay" @mousedown.self="emit('cancel')">
+    <div class="image-picker-overlay" @mousedown.self="close()">
       <section
         ref="panel"
         class="image-picker"
@@ -78,12 +101,12 @@ onUnmounted(() => {
         <header>
           <div>
             <h2 class="font-display">Insert image</h2>
-            <p>Choose a resource or use an image URL.</p>
+            <p>Choose an image, upload one, or use an image URL.</p>
           </div>
           <button
             type="button"
             aria-label="Close image picker"
-            @click="emit('cancel')"
+            @click="close()"
           >
             ✕
           </button>
@@ -109,6 +132,12 @@ onUnmounted(() => {
           >
             Image URL
           </button>
+        </div>
+        <div v-if="uploadImage" class="image-upload">
+          <input ref="uploadInput" type="file" accept="image/*" hidden @change="upload(($event.target as HTMLInputElement).files?.[0]); ($event.target as HTMLInputElement).value = ''" />
+          <button type="button" :disabled="uploading" @click="uploadInput?.click()">Upload image</button>
+          <small v-if="!uploading">Also saved to this item’s resources.</small>
+          <span v-else role="status">{{ progress === 100 ? 'Processing image…' : `Uploading ${progress}%…` }}</span>
         </div>
         <form @submit.prevent="insert">
           <template v-if="source === 'resources'">
@@ -141,8 +170,7 @@ onUnmounted(() => {
               <p v-if="!choices.length">No images match your search.</p>
             </div>
             <p v-else class="image-empty">
-              No image resources yet. Upload one using Add resource, or paste an
-              Image URL.
+              No image resources yet. Upload an image or use an image URL.
             </p>
           </template>
           <label v-else
@@ -172,11 +200,11 @@ onUnmounted(() => {
             Inserts <code>![alt text](image-url)</code>
           </p>
           <footer>
-            <button type="button" @click="emit('cancel')">Cancel</button
+            <button type="button" @click="close()">Cancel</button
             ><button
               type="submit"
               class="image-insert-action"
-              :disabled="!href"
+              :disabled="!href || uploading"
             >
               Insert image
             </button>
@@ -187,6 +215,7 @@ onUnmounted(() => {
   </Teleport>
 </template>
 <style scoped>
+.image-upload { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin: 0 0 1rem; }
 .image-picker-overlay {
   position: fixed;
   inset: 0;
