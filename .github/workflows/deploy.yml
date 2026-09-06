@@ -75,7 +75,10 @@ jobs:
 
       # canvas-drop expects a zip whose root is the site root (index.html at top).
       - name: Package the static site
-        run: (cd site/dist && zip -qr "$GITHUB_WORKSPACE/site.zip" .)
+        run: |
+          # Canvas Drop ignores dotfiles; this marker is only for GitHub Pages.
+          rm -f site/dist/.nojekyll
+          (cd site/dist && zip -qr "$GITHUB_WORKSPACE/site.zip" .)
 
       - name: Deploy to canvas-drop
         env:
