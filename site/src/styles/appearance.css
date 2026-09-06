@@ -233,3 +233,10 @@
   .roadmap-action { transition: none; }
   .roadmap-action:active { transform: none; }
 }
+
+/* Keep compact icon controls usable on touch screens without changing desktop density. */
+@media (pointer: coarse) {
+  :root button:is(.size-5, .size-6, .size-7, .size-8, .size-9),
+  :root [role="button"].roadmap-drag-handle { min-width: 44px; min-height: 44px; }
+  :root [role="option"] { min-height: 44px; display: flex; align-items: center; }
+}

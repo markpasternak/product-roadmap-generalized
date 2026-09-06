@@ -48,7 +48,7 @@ async function setup(body = "## What ships\n\nA clear story\n") {
       setup() {
         return { body: ref(body) };
       },
-      template: '<ResourceEditor v-model:body="body" visibility="Internal" />',
+      template: '<ResourceEditor v-model:body="body" visibility="Internal" item-id="TEST-001"><textarea :value="body" /></ResourceEditor>',
     }),
   );
   await flushPromises();
@@ -103,7 +103,7 @@ describe("resource authoring lifecycle", () => {
     resourcePreviewURLs.value[image.repoPath] = 'blob:http://localhost/image';
     const { insertImageKey } = await import('../../lib/edit/imageAuthoring');
     const { inject } = await import('vue');
-    const Toolbar = defineComponent({ setup() { return { open: inject(insertImageKey) }; }, template: '<button @click="open()">Insert image</button>' });
+    const Toolbar = defineComponent({ setup() { return { open: inject(insertImageKey), field: ref<HTMLTextAreaElement>() }; }, template: '<textarea ref="field">A story</textarea><button @click="open(field)">Insert image</button>' });
     w = mount(defineComponent({ components: { ResourceEditor, Toolbar }, setup: () => ({ body: ref('## What ships\n\nA story\n') }), template: '<ResourceEditor v-model:body="body" visibility="Internal"><Toolbar /></ResourceEditor>' }));
     await flushPromises();
     await chooseFile();
@@ -181,6 +181,7 @@ describe("resource authoring lifecycle", () => {
   it("lets authors remove an existing legacy document link", async () => {
     await setup("## Links\n\n- PRD: ../../prds/design.md\n");
     expect(w.text()).toContain("PRD");
+    await w.findAll("button").find(b => b.text() === "Edit")!.trigger("click");
     await w
       .findAll("button")
       .find((b) => b.text() === "Remove")!
@@ -221,4 +222,90 @@ describe("resource authoring lifecycle", () => {
     expect(useEditStore().snapshot().assets.attach).toEqual([]);
     expect((w.vm as any).body).toContain("evidence.txt");
   });
+});
+
+describe('resource management', () => {
+  const asset = { schemaVersion: 1 as const, id: result.assetId, name: result.name, visibility: 'Internal' as const, sha: 'manifest', revisions: [result.revision], usages: ['content/items/test/TEST-001-example.md'] };
+  it('shows only this item’s resources, with one-step editing and explicit library browsing', async () => {
+    vi.mocked(listResources).mockResolvedValueOnce([asset, { ...asset, id: 'ast_other', name: 'Other file' }]);
+    await setup('## What ships\n\n[Evidence](../../assets/ast_one/rev_one/evidence.txt)\n');
+    expect(w.findAll('.resource-row')).toHaveLength(1);
+    await w.get('[aria-label="Edit Evidence"]').trigger('click');
+    expect(w.get('.resource-inspector').text()).toContain('In this item');
+    expect(w.text()).not.toContain('content/items/');
+    await w.get('[aria-label="Remove from What ships"]').trigger('click');
+    expect((w.vm as any).body).not.toContain('evidence.txt');
+    expect(w.find('.resource-inspector').exists()).toBe(true);
+    expect(w.findAll('button').find(b => b.text() === 'Delete from library…')!.attributes('disabled')).toBeUndefined();
+    await w.findAll('button').find(b => b.text() === 'Browse library')!.trigger('click');
+    expect(w.findAll('.resource-row')).toHaveLength(2);
+    await w.get('input[type=search]').setValue('Other');
+    expect(w.findAll('.resource-row')).toHaveLength(1);
+    expect(w.get('.resource-row').text()).toContain('Other file');
+  });
+  it('removes one placement without removing the other uses of the file', async () => {
+    vi.mocked(listResources).mockResolvedValueOnce([asset]);
+    await setup('## What ships\n\n[Evidence](../../assets/ast_one/rev_one/evidence.txt)\n\n## Resources\n\n- [Evidence](../../assets/ast_one/rev_one/evidence.txt)\n');
+    await w.get('[aria-label="Edit Evidence"]').trigger('click');
+    await w.get('[aria-label="Remove from Resources"]').trigger('click');
+    expect((w.vm as any).body.match(/evidence.txt/g)).toHaveLength(1);
+    expect(w.get('.resource-placements').text()).toContain('What ships');
+    expect(w.findAll('button').find(b => b.text() === 'Delete from library…')!.attributes('disabled')).toBeDefined();
+  });
+
+});
+
+it('inserts into the empty section the author selected', async () => {
+  const { default: SectionEditor } = await import('./SectionEditor.vue');
+  vi.mocked(listResources).mockResolvedValueOnce([{ schemaVersion: 1, id: result.assetId, name: result.name, visibility: 'Internal', sha: 'manifest', revisions: [result.revision] }]);
+  w = mount(defineComponent({ components: { ResourceEditor, SectionEditor }, setup: () => ({ body: ref('## Resources\n\n- [Evidence](../../assets/ast_one/rev_one/evidence.txt)\n') }), template: '<ResourceEditor v-model:body="body" visibility="Internal"><SectionEditor v-model="body" /></ResourceEditor>' }));
+  await flushPromises();
+  await w.findAll('[data-test="spine-display"]')[0].trigger('click');
+  await flushPromises();
+  await w.findAll('button').find(b => b.attributes('aria-label') === 'Insert image')!.trigger('click');
+  await flushPromises();
+  const dialog = document.querySelector('[role=dialog][aria-label="Insert image"]')!;
+  const url = dialog.querySelector('input[type=url]') as HTMLInputElement;
+  url.value = 'https://example.com/image.png';
+  url.dispatchEvent(new Event('input', { bubbles: true }));
+  await flushPromises();
+  dialog.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await flushPromises();
+  expect((w.vm as any).body).toContain('## Why it matters\n\n![](https://example.com/image.png)');
+  expect((w.vm as any).body).not.toContain('## What ships');
+});
+
+it('cancels replacement mode before choosing a new upload', async () => {
+  vi.mocked(listResources).mockResolvedValueOnce([{ schemaVersion: 1, id: result.assetId, name: result.name, visibility: 'Internal', sha: 'manifest', revisions: [result.revision] }]);
+  await setup('## Resources\n\n- [Evidence](../../assets/ast_one/rev_one/evidence.txt)\n');
+  await w.get('[aria-label="Edit Evidence"]').trigger('click');
+  await w.findAll('button').find(b => b.text() === 'Replace file…')!.trigger('click');
+  expect(w.get('input[type=file]').attributes('multiple')).toBeUndefined();
+  await w.get('input[type=file]').trigger('cancel');
+  vi.mocked(uploadResource).mockResolvedValueOnce({ ...result, assetId: 'ast_new' });
+  await chooseFile();
+  await flushPromises();
+  expect(vi.mocked(uploadResource).mock.calls[0][1]).toBeUndefined();
+});
+
+it('keeps insertion in the text toolbar and protects originals used elsewhere', async () => {
+  vi.mocked(listResources).mockResolvedValueOnce([{ schemaVersion: 1, id: result.assetId, name: result.name, visibility: 'Internal', sha: 'manifest', revisions: [result.revision], usages: ['content/items/test/TEST-002-other.md'] }]);
+  await setup();
+  await w.findAll('button').find(b => b.text() === 'Browse library')!.trigger('click');
+  await w.get('[aria-label="Edit Evidence"]').trigger('click');
+  expect(w.get('.resource-shelf').text()).not.toContain('Insert');
+  expect(w.findAll('button').find(b => b.text() === 'Delete from library…')!.attributes('disabled')).toBeDefined();
+  expect(w.text()).toContain('Still used elsewhere');
+});
+
+it('downloads the version used by this item rather than silently switching files', async () => {
+  vi.mocked(listResources).mockResolvedValueOnce([{ schemaVersion: 1, id: result.assetId, name: result.name, visibility: 'Internal', sha: 'manifest', revisions: [result.revision, { ...result.revision, id: 'rev_new', original: { ...result.revision.original, path: 'rev_new/new.txt' } }] }]);
+  resourcePreviewURLs.value[result.repoPath] = 'blob:original';
+  resourcePreviewURLs.value['content/assets/ast_one/rev_new/new.txt'] = 'blob:new';
+  let href = '';
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { href = this.href; });
+  await setup('## Resources\n\n- [Evidence](../../assets/ast_one/rev_one/evidence.txt)\n');
+  await w.get('[aria-label="Download Evidence"]').trigger('click');
+  expect(href).toBe('blob:original');
+  click.mockRestore();
 });

@@ -130,8 +130,8 @@ const primaryCls =
       <div class="flex-1 overflow-y-auto px-6 py-5">
         <div class="space-y-4">
           <div>
-            <label :class="labelCls">Product</label>
-            <Select v-model="product" :options="productOptions" aria-label="Product" />
+            <label :class="labelCls" for="ai-product">Product</label>
+            <Select id="ai-product" v-model="product" :options="productOptions" aria-label="Product" />
           </div>
           <div>
             <label :class="labelCls" for="ai-prompt">What should this item cover?</label>
@@ -146,15 +146,14 @@ const primaryCls =
               @keydown.meta.enter="generate"
               @keydown.ctrl.enter="generate"
             />
-            <p class="text-single-sm-medium text-text-subtle-default mt-1.5">
-              AI drafts a full item — all sections, plus a suggested stage, horizon, and tags — for you to review before it's saved.
-            </p>
+<p class="text-single-sm-medium text-text-subtle-default mt-1.5">The generated item opens as a private draft. Review it before publishing.</p>
           </div>
         </div>
 
         <p
           v-if="error"
           data-test="ai-error"
+          role="alert"
           class="bg-surface-transparent-orange-25 text-single-sm-medium mt-4 rounded-lg px-3 py-2 text-[color:var(--color-accent-brand-default)]"
         >
           {{ error }}

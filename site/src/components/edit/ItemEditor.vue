@@ -204,6 +204,10 @@ const panel = ref<HTMLElement>();
 const titleInput = ref<HTMLInputElement>();
 let releaseFocus: (() => void) | null = null;
 
+function closeActions(event: Event) {
+  const menu = panel.value?.querySelector<HTMLDetailsElement>('[data-test=item-actions][open]');
+  if (menu && event.target instanceof Node && !menu.contains(event.target)) menu.open = false;
+}
 function onKey(e: KeyboardEvent) {
   if (!isTopFocusTrap(panel.value)) return;
   // While the Rewrite panel is open, Escape belongs to IT (closing just the panel) — its
@@ -211,12 +215,14 @@ function onKey(e: KeyboardEvent) {
   // pressing Escape would also close the whole item editor underneath it.
   if (e.key === 'Escape') {
     const menu = panel.value?.querySelector<HTMLDetailsElement>('[data-test=item-actions][open]');
-    if (menu) { menu.open = false; e.stopPropagation(); } else onClose();
+    if (menu) { menu.open = false; menu.querySelector('summary')?.focus(); e.preventDefault(); e.stopPropagation(); } else onClose();
   }
 }
 
 onMounted(() => {
   document.addEventListener('keydown', onKey);
+  document.addEventListener('pointerdown', closeActions);
+  document.addEventListener('focusin', closeActions);
   if (panel.value) releaseFocus = trapFocus(panel.value);
   // trapFocus above moves focus to the first focusable element in the panel (the
   // Close button, which precedes the metadata column in DOM order). Move it to the
@@ -226,6 +232,8 @@ onMounted(() => {
 });
 onUnmounted(() => {
   document.removeEventListener('keydown', onKey);
+  document.removeEventListener('pointerdown', closeActions);
+  document.removeEventListener('focusin', closeActions);
   releaseFocus?.();
   releaseFocus = null;
 });
@@ -565,7 +573,7 @@ const historyRows = computed(() => [
         </div>
 
         <div class="min-h-[420px] min-w-0 overflow-x-auto lg:min-h-0">
-          <ResourceEditor v-model:body="bodyModel" :visibility="visibilityModel"><SectionEditor v-model="bodyModel" /></ResourceEditor>
+          <ResourceEditor :item-id="item.id" v-model:body="bodyModel" :visibility="visibilityModel" v-slot="resources"><SectionEditor v-model="bodyModel" managed-resources :managed-resource-hrefs="resources.managedResourceHrefs" /></ResourceEditor>
         </div>
       </div>
     </div>

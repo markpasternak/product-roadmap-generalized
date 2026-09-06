@@ -143,6 +143,12 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
+function onFocusOut(event: FocusEvent) {
+  if (event.relatedTarget instanceof Node && !containerRef.value?.contains(event.relatedTarget)) {
+    isOpen.value = false;
+    activeIndex.value = -1;
+  }
+}
 function onPointerDown(e: MouseEvent) {
   if (!containerRef.value || containerRef.value.contains(e.target as Node)) return;
   isOpen.value = false;
@@ -158,7 +164,7 @@ function focusInput() {
 </script>
 
 <template>
-  <div ref="containerRef" class="relative">
+  <div ref="containerRef" class="relative" @focusout="onFocusOut">
     <div
       class="border-border-subtle-default bg-card/80 flex min-h-10 flex-wrap items-center gap-1.5 rounded-lg border px-2 py-1.5 transition-colors focus-within:border-[color:var(--color-accent-brand-default)] focus-within:bg-card"
       data-test="taginput-container"

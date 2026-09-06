@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from "vue";
 import { fetchItems, type ApiItem } from "../../lib/edit/client";
-import { trapFocus } from "../../lib/focusTrap";
+import { trapFocus, isTopFocusTrap } from "../../lib/focusTrap";
 const props = defineProps<{
   ids: string[];
   drafts: Record<
@@ -33,10 +33,18 @@ watch(
   },
   { immediate: true },
 );
+function onKey(event: KeyboardEvent) {
+  if (event.key === 'Escape' && isTopFocusTrap(panel.value)) {
+    event.preventDefault();
+    event.stopPropagation();
+    emit('close');
+  }
+}
 onMounted(() => {
+  document.addEventListener('keydown', onKey);
   if (panel.value) release = trapFocus(panel.value);
 });
-onUnmounted(() => release?.());
+onUnmounted(() => { release?.(); document.removeEventListener('keydown', onKey); });
 </script>
 <template>
   <div class="publication-conflicts">
@@ -77,7 +85,7 @@ onUnmounted(() => release?.());
             <pre>{{ drafts[id]?.body }}</pre>
           </div>
           <div>
-            <h4>Latest in Git</h4>
+            <h4>Latest published version</h4>
             <template v-if="latest.find((i) => i.id === id)"
               ><dl>
                 <template v-for="(_, key) in drafts[id]?.fields" :key="key"
@@ -135,7 +143,7 @@ onUnmounted(() => release?.());
   gap: 1rem;
 }
 .publication-conflicts h2 {
-  font-family: var(--font-serif);
+  font-family: 'Source Serif Pro', Georgia, serif;
   font-size: 1.6rem;
 }
 .publication-conflicts p,
@@ -198,6 +206,7 @@ onUnmounted(() => release?.());
 .publication-conflicts footer {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 0.6rem;
 }
 @media (max-width: 650px) {

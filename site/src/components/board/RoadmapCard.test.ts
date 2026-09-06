@@ -274,3 +274,12 @@ describe('RoadmapCard — search highlighting', () => {
     expect(w.find('mark').exists()).toBe(false);
   });
 });
+
+it('provides arrow-key equivalents for moving cards without opening the item', async () => {
+  const w = mountCard({ draggable: true, editing: true });
+  const handle = w.get('[data-test="drag-handle"]');
+  await handle.trigger('keydown', { key: 'ArrowRight' });
+  await handle.trigger('keydown', { key: 'ArrowUp' });
+  expect(w.emitted('move')).toEqual([['right'], ['up']]);
+  expect(w.emitted('select')).toBeUndefined();
+});

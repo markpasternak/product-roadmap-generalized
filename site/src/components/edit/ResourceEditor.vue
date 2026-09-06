@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch, provide } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch, provide, nextTick } from "vue";
 import ConfirmAction from "../ui/ConfirmAction.vue";
 import ImagePicker from './ImagePicker.vue';
 import ImageThumbnail from '../markdown/ImageThumbnail.vue';
+import { parseSections } from '../../lib/edit/sections';
 import { insertImageKey } from '../../lib/edit/imageAuthoring';
 import { useEditStore } from "../../lib/edit/store";
 import { authedRequest } from "../../lib/edit/client";
@@ -30,15 +31,22 @@ import {
   type ResourceUpload,
   isImageResource,
 } from "../../lib/resources";
-const props = defineProps<{ body: string; visibility: string }>();
+const props = defineProps<{ body: string; visibility: string; itemId?: string }>();
 const emit = defineEmits<{ "update:body": [body: string] }>();
 const store = useEditStore();
 const locked = computed(() => !!store.snapshot().requestPayload);
 const loading = ref(true);
 const picker = ref<"upload" | "link" | "existing" | null>(null),
-  manage = ref(false),
+  expanded = ref<string | null>(null),
+  showLibrary = ref(false),
+  librarySearch = ref(""),
   error = ref(""),
   notice = ref("");
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+watch(notice, value => {
+  clearTimeout(noticeTimer);
+  if (value) noticeTimer = setTimeout(() => { notice.value = ''; }, 6000);
+});
 const library = ref<ResourceAsset[]>([]),
   uploads = ref<ResourceUpload[]>([]);
 const fileInput = ref<HTMLInputElement>();
@@ -55,12 +63,12 @@ type Pending = {
   error: string;
   controller: AbortController;
   assetId?: string;
-  anchor?: { text: string; offset: number; length: number };
+  anchor?: { text: string; offset: number; length: number; emptySection?: string };
 };
 const pending = ref<Pending[]>([]);
 let serial = 0,
   loadEpoch = 0;
-let bookmark: Pending["anchor"];
+const bookmark = ref<Pending["anchor"]>();
 let markdownSelection: (() => { from: number; to: number } | undefined) | null =
   null;
 provide("resource-markdown-selection", (read: typeof markdownSelection) => {
@@ -98,9 +106,22 @@ const allAssets = computed(() => {
       ),
     }));
 });
-const rows = computed(() => allAssets.value.filter(a => manage.value || a.placements.length));
-function shownRevision(asset: typeof allAssets.value[number]) {
-  const used = asset.placements.map(p => repositoryAssetPath(p.href));
+const attached = computed(() => allAssets.value.filter(a => a.placements.length));
+const rows = computed(() => allAssets.value.filter(a =>
+  showLibrary.value ? a.name.toLowerCase().includes(librarySearch.value.toLowerCase()) : a.placements.length || a.id === expanded.value || a.remove,
+));
+function toggleResource(id: string) { expanded.value = expanded.value === id ? null : id; }
+async function removePlacement(placement: typeof placements.value[number], event?: Event) {
+  const row = (event?.currentTarget as HTMLElement | null)?.closest('.resource-row');
+  const shelf = row?.closest('.resource-shelf');
+  emit('update:body', removeResourcePlacement(props.body, placement));
+  notice.value = repositoryAssetPath(placement.href) ? 'Removed from this item. The original file is still in your library.' : 'Link removed from this item.';
+  await nextTick();
+  const target = row?.isConnected ? row : shelf;
+  target?.querySelector<HTMLButtonElement>('button[aria-expanded]')?.focus();
+}
+function shownRevision(asset: ResourceAsset & { placements?: typeof placements.value }) {
+  const used = (asset.placements ?? []).map(p => repositoryAssetPath(p.href));
   return asset.revisions.find(r => used.includes(`content/assets/${asset.id}/${r.original.path}`)) ?? asset.revisions.at(-1)!;
 }
 function imageHref(asset: typeof allAssets.value[number]) {
@@ -122,10 +143,26 @@ provide(insertImageKey, (target) => {
 });
 function insertImage(markdown: string) {
   if (locked.value) { imagePickerOpen.value = false; return; }
-  const inserted = placeInline(props.body, markdown, bookmark);
-  emit('update:body', inserted ?? appendToResourceSection(props.body, 'What ships', markdown));
-  notice.value = inserted ? 'Image inserted.' : 'The insertion point changed. Image added to What ships.';
+  const next = placeInline(props.body, markdown, bookmark.value);
+  if (next !== null) {
+    emit('update:body', next);
+    notice.value = 'Image inserted.';
+  } else error.value = 'Choose a position in the write-up, then use its image toolbar again.';
+  bookmark.value = undefined;
   imagePickerOpen.value = false;
+}
+function usedElsewhere(asset: ResourceAsset) {
+  return (asset.usages ?? []).filter(path => {
+    const id = path.split('/').at(-1)?.match(/^([a-z]+-\d+)(?:-|\.md$)/i)?.[1];
+    return !props.itemId || id?.toLowerCase() !== props.itemId.toLowerCase();
+  });
+}
+function fileStatus(asset: typeof allAssets.value[number]) {
+  if (asset.remove) return 'Deletion in draft';
+  if (!asset.sha) return 'Ready in draft';
+  const changes = dirtyAssets();
+  return changes.update.some(c => c.id === asset.id) || changes.attach.some(c => c.resource?.assetId === asset.id)
+    ? 'Changes in draft' : 'Published';
 }
 const fileConflicts = computed(() =>
   library.value.filter((asset) => {
@@ -158,11 +195,6 @@ const external = computed(() =>
       ["Resources", "Links"].includes(p.section),
   ),
 );
-const attached = computed(() =>
-  rows.value.filter((a) =>
-    a.placements.some((p) => ["Resources", "Links"].includes(p.section)),
-  ),
-);
 watch(
   pending,
   (jobs) => {
@@ -176,29 +208,36 @@ function rememberSelection(
 ) {
   if (!(target instanceof HTMLTextAreaElement)) {
     const selection = markdownSelection?.();
-    if (!selection) {
-      bookmark = undefined;
-      return;
-    }
+    if (!selection) { bookmark.value = undefined; return; }
     const left = Math.max(0, selection.from - 80),
       right = Math.min(props.body.length, selection.to + 80);
-    bookmark = {
+    bookmark.value = {
       text: props.body.slice(left, right),
       offset: selection.from - left,
       length: selection.to - selection.from,
     };
     return;
   }
-  const start = props.body.indexOf(target.value);
-  if (start < 0 || start !== props.body.lastIndexOf(target.value)) {
-    bookmark = undefined;
+  const heading = target.dataset.resourceHeading;
+  const sections = heading ? parseSections(props.body).sections.filter(s => s.heading.toLowerCase() === heading.toLowerCase()) : [];
+  if (heading && !target.value.trim() && sections.length <= 1 && !sections[0]?.body.trim()) {
+    bookmark.value = { text: '', offset: 0, length: 0, emptySection: sections[0]?.heading ?? heading };
+    return;
+  }
+  const section = sections.length === 1 ? sections[0] : undefined;
+  const prefix = section ? `## ${section.heading}\n` : '';
+  const needle = prefix + target.value;
+  const found = props.body.indexOf(needle);
+  const start = found + prefix.length;
+  if (found < 0 || found !== props.body.lastIndexOf(needle)) {
+    bookmark.value = undefined;
     return;
   }
   const a = start + target.selectionStart,
     b = start + target.selectionEnd;
   const left = Math.max(0, a - 80),
     right = Math.min(props.body.length, b + 80);
-  bookmark = {
+  bookmark.value = {
     text: props.body.slice(left, right),
     offset: a - left,
     length: b - a,
@@ -209,6 +248,11 @@ function placeInline(
   markdown: string,
   anchor?: Pending["anchor"],
 ) {
+  if (anchor?.emptySection) {
+    const sections = parseSections(body).sections.filter(s => s.heading.toLowerCase() === anchor.emptySection!.toLowerCase());
+    if (sections.length > 1 || sections[0]?.body.trim()) return null;
+    return appendToResourceSection(body, anchor.emptySection, markdown);
+  }
   if (anchor) {
     const at = body.indexOf(anchor.text);
     if (at >= 0 && at === body.lastIndexOf(anchor.text))
@@ -219,7 +263,7 @@ function placeInline(
       );
     return null;
   }
-  return appendToResourceSection(body, "What ships", markdown);
+  return null;
 }
 async function load() {
   const epoch = ++loadEpoch;
@@ -270,7 +314,7 @@ async function load() {
       if (epoch !== loadEpoch) return;
       if (claim.resource) uploads.value.push(claim.resource);
       error.value = claim.resource
-        ? `${claim.resource.name} is unavailable. Replace it with a new upload, or remove its placements and delete it from Manage resources.`
+        ? `${claim.resource.name} is unavailable. Replace it with a new upload, or remove its placements and delete it from the file library.`
         : (e as Error).message;
     }
   }
@@ -351,6 +395,11 @@ async function runUpload(job: Pending) {
     else job.error = (e as Error).message;
   }
 }
+async function chooseUpload(assetId?: string) {
+  replaceID.value = assetId;
+  await nextTick();
+  fileInput.value?.click();
+}
 function queue(files: File[], inline = false) {
   if (locked.value) {
     error.value = "Finish the pending publication before adding files.";
@@ -367,8 +416,8 @@ function queue(files: File[], inline = false) {
       progress: 0,
       error: "",
       controller: new AbortController(),
-      assetId: replaceID.value,
-      anchor: inline ? bookmark : undefined,
+      assetId: inline ? undefined : replaceID.value,
+      anchor: inline ? bookmark.value : undefined,
     };
     pending.value.push(job);
     void runUpload(pending.value.at(-1)!);
@@ -462,29 +511,6 @@ function editAlt(start: number, label: string) {
         props.body.slice(p.end),
     );
 }
-function removeUse(asset: ResourceAsset, section: "inline" | "list") {
-  let body = props.body;
-  const matches = placements.value.filter(
-    (p) =>
-      repositoryAssetPath(p.href)?.startsWith(`content/assets/${asset.id}/`) &&
-      ["Resources", "Links"].includes(p.section) === (section === "list"),
-  );
-  for (const p of matches.reverse()) body = removeResourcePlacement(body, p);
-  emit("update:body", body);
-  notice.value = "Placement removed. The file remains available.";
-}
-function insert(asset: ResourceAsset) {
-  const revision = asset.revisions.at(-1)!;
-  const href = markdownAssetPath(
-    `content/assets/${asset.id}/${revision.original.path}`,
-  );
-  const md = `${revision.original.mediaType.startsWith("image/") ? "!" : ""}[${markdownLabel(asset.name)}](${href})`;
-  emit(
-    "update:body",
-    placeInline(props.body, md) ?? attachResource(props.body, asset.name, href),
-  );
-  notice.value = "Inserted in What ships.";
-}
 function rename(asset: ResourceAsset, name: string) {
   if (!name.trim()) return;
   const changes = dirtyAssets();
@@ -559,7 +585,7 @@ async function removeFile() {
     });
     store.setAssets(changes);
     notice.value =
-      "File marked for deletion. Publish to remove it from the current repository.";
+      "File marked for deletion. Publish to remove it from your library.";
   } else {
     for (const u of uploads.value.filter((u) => u.assetId === asset.id)) {
       try {
@@ -576,8 +602,9 @@ async function removeFile() {
     notice.value = "Unpublished upload removed.";
   }
 }
-async function download(asset: ResourceAsset) {
-  const file = asset.revisions.at(-1)!.original;
+async function download(asset: ResourceAsset & { placements?: typeof placements.value }) {
+  const file = shownRevision(asset).original;
+  try {
   const p = `content/assets/${asset.id}/${file.path}`;
   let url = resourcePreviewURLs.value[p];
   let temporary = false;
@@ -597,6 +624,7 @@ async function download(asset: ResourceAsset) {
   a.download = file.path.split("/").pop()!;
   a.click();
   if (temporary) setTimeout(() => URL.revokeObjectURL(url!), 60000);
+  } catch { error.value = "Could not download this file. Please try again."; }
 }
 onMounted(async () => {
   await load();
@@ -617,6 +645,7 @@ watch(
   },
 );
 onUnmounted(() => {
+  clearTimeout(noticeTimer);
   loadEpoch++;
   pending.value.forEach((p) => p.controller.abort());
   resourceTransferCount.value = 0;
@@ -643,7 +672,6 @@ onUnmounted(() => {
         ><button
           type="button"
           :aria-expanded="!!picker"
-          @mousedown="rememberSelection()"
           @click="picker = picker ? null : 'upload'"
         >
           Add resource
@@ -681,7 +709,7 @@ onUnmounted(() => {
           <p v-if="visibility === 'Public'" class="resource-muted">
             This item is Public. New files will be public when you publish.
           </p>
-          <button type="button" @click="fileInput?.click()">
+          <button type="button" @click="chooseUpload()">
             Choose files
           </button>
         </div>
@@ -729,7 +757,8 @@ onUnmounted(() => {
       <input
         ref="fileInput"
         type="file"
-        multiple
+        :multiple="!replaceID"
+        @cancel="replaceID = undefined"
         hidden
         @change="
           (event) => {
@@ -804,234 +833,94 @@ onUnmounted(() => {
         </div>
       </article>
     </section>
-    <slot />
+    <slot :managed-resource-hrefs="[...attached.flatMap(a => a.placements.map(p => p.href)), ...external.map(p => p.href)]" />
     <ImagePicker v-if="imagePickerOpen" :images="imageChoices" @insert="insertImage" @cancel="imagePickerOpen = false" />
     <fieldset :disabled="locked" class="resource-controls">
       <section class="resource-shelf" aria-label="Resources">
-        <p v-if="loading" role="status" class="resource-muted">
-          Loading your resource library…
-        </p>
         <div class="resource-shelf-heading">
-          <h3>
-            Resources
-            <span v-if="attached.length + external.length"
-              >· {{ attached.length + external.length }}</span
-            >
-          </h3>
-          <button
-            type="button"
-            :aria-expanded="manage"
-            @click="manage = !manage"
-          >
-            {{ manage ? "Done managing" : "Manage resources" }}
+          <div><h3>{{ showLibrary ? 'File library' : 'Resources' }} <span class="resource-count">{{ showLibrary ? allAssets.length : attached.length + external.length }}</span></h3>
+          <p class="resource-muted">{{ showLibrary ? 'Reusable files across the roadmap.' : 'Files and links used in this item.' }}</p></div>
+          <button type="button" class="resource-quiet" :aria-expanded="showLibrary" @click="showLibrary = !showLibrary; librarySearch = ''">
+            {{ showLibrary ? 'Back to this item' : 'Browse library' }}
           </button>
         </div>
-        <p
-          v-if="!loading && !rows.length && !external.length"
-          class="resource-muted"
-        >
-          Keep supporting files and links with this item.
+        <label v-if="showLibrary" class="resource-library-search">Find a file in your library
+          <input v-model="librarySearch" type="search" placeholder="Search by name…" />
+        </label>
+        <p v-if="loading" role="status" class="resource-muted">Loading resources…</p>
+        <p v-else-if="!rows.length && (showLibrary || !external.length)" class="resource-empty">
+          {{ showLibrary ? 'No files found.' : 'Add supporting files or links using Add resource above.' }}
         </p>
-        <article
-          v-for="asset in manage ? rows : attached"
-          :key="asset.id"
-          class="resource-row"
-        >
+        <article v-for="asset in rows" :key="asset.id" class="resource-row" :class="{ 'resource-row-expanded': expanded === asset.id }">
           <div class="resource-row-main">
             <ImageThumbnail v-if="shownRevision(asset).original.mediaType.startsWith('image/')" :href="imageHref(asset)" authenticated />
-            <span v-else class="resource-kind">{{
-              asset.revisions.at(-1)?.original.mediaType.startsWith("image/")
-                ? "Image"
-                : asset.revisions
-                    .at(-1)
-                    ?.original.path.split(".")
-                    .pop()
-                    ?.toUpperCase()
-            }}</span>
-            <div>
-              <strong>{{ asset.name }}</strong
-              ><span v-if="asset.remove" class="resource-muted">
-                · Marked for deletion</span
-              >
-              <p class="resource-muted">
-                {{ readableBytes(asset.revisions.at(-1)?.original.bytes ?? 0) }}
-                · {{ asset.sha ? "Published" : "Ready in draft"
-                }}<template v-if="manage">
-                  ·
-                  {{
-                    asset.placements.length
-                      ? [
-                          ...new Set(
-                            asset.placements.map(
-                              (p) => p.section || "Write-up",
-                            ),
-                          ),
-                        ].join(", ")
-                      : "Not used in this item"
-                  }}</template
-                >
+            <span v-else class="resource-kind">{{ shownRevision(asset).original.path.split('.').pop()?.toUpperCase() }}</span>
+            <div class="resource-identity"><strong>{{ asset.name }}</strong>
+              <p class="resource-muted">{{ readableBytes(shownRevision(asset).original.bytes) }} · {{ fileStatus(asset) }}
+                <span v-if="!asset.placements.length"> · Not used here</span>
               </p>
             </div>
-            <button type="button" @click="download(asset)">Download</button>
+            <button type="button" class="resource-quiet" :aria-label="`Download ${asset.name}`" @click="download(asset)">Download</button>
+            <button v-if="!asset.remove" type="button" :aria-label="`${expanded === asset.id ? 'Close' : 'Edit'} ${asset.name}`" :aria-expanded="expanded === asset.id" @click="toggleResource(asset.id)">{{ expanded === asset.id ? 'Done' : 'Edit' }}</button>
+            <button v-else type="button" @click="store.setAssets({ ...dirtyAssets(), update: dirtyAssets().update.filter(c => c.id !== asset.id) })">Undo deletion</button>
           </div>
-          <button
-            v-if="asset.remove"
-            type="button"
-            @click="
-              store.setAssets({
-                ...dirtyAssets(),
-                update: dirtyAssets().update.filter((c) => c.id !== asset.id),
-              })
-            "
-          >
-            Undo deletion
-          </button>
-          <p
-            v-if="visibility === 'Public' && asset.visibility !== 'Public'"
-            class="resource-error"
-          >
-            This file is Internal.
-            <button type="button" @click="makePublic(asset)">
-              Make file public
-            </button>
+          <p v-if="visibility === 'Public' && asset.visibility !== 'Public'" class="resource-error">
+            This file is internal. <button type="button" @click="makePublic(asset)">Make file public</button>
           </p>
-          <details v-if="manage && !asset.remove">
-            <summary>Edit and manage</summary>
-            <label
-              >Display name<input
-                :value="asset.name"
-                @change="
-                  rename(asset, ($event.target as HTMLInputElement).value)
-                " /></label
-            ><label
-              v-for="placement in asset.placements.filter((p) => p.image)"
-              :key="placement.start"
-              >Image description<input
-                :value="placement.label"
-                placeholder="Describe what the image shows"
-                @change="
-                  editAlt(
-                    placement.start,
-                    ($event.target as HTMLInputElement).value,
-                  )
-                "
-            /></label>
-            <div class="resource-actions">
-              <button type="button" @click="insert(asset)">
-                Insert in What ships</button
-              ><button
-                v-if="
-                  asset.placements.some(
-                    (p) => !['Resources', 'Links'].includes(p.section),
-                  )
-                "
-                type="button"
-                @click="removeUse(asset, 'inline')"
-              >
-                Remove from text</button
-              ><button
-                v-if="
-                  asset.placements.some((p) =>
-                    ['Resources', 'Links'].includes(p.section),
-                  )
-                "
-                type="button"
-                @click="removeUse(asset, 'list')"
-              >
-                Remove from Resources</button
-              ><button
-                v-else
-                type="button"
-                @click="
-                  emit(
-                    'update:body',
-                    attachResource(
-                      body,
-                      asset.name,
-                      markdownAssetPath(
-                        `content/assets/${asset.id}/${asset.revisions.at(-1)!.original.path}`,
-                      ),
-                    ),
-                  )
-                "
-              >
-                List in Resources</button
-              ><button
-                type="button"
-                @click="
-                  replaceID = asset.id;
-                  fileInput?.click();
-                "
-              >
-                Replace file</button
-              ><button
-                v-if="visibility === 'Public' && asset.visibility !== 'Public'"
-                type="button"
-                @click="makePublic(asset)"
-              >
-                Make file public</button
-              ><button
-                type="button"
-                :disabled="!!asset.placements.length"
-                @click="deleteAsset = asset"
-              >
-                Delete file…
-              </button>
+          <div v-if="expanded === asset.id && !asset.remove" class="resource-inspector">
+            <div class="resource-details">
+              <label>Display name<input :value="asset.name" @change="rename(asset, ($event.target as HTMLInputElement).value)" /></label>
+              <label v-for="placement in asset.placements.filter(p => p.image)" :key="placement.start">
+                Image description · {{ placement.section || 'Write-up' }}
+                <input :value="placement.label" placeholder="Describe what the image shows" @change="editAlt(placement.start, ($event.target as HTMLInputElement).value)" />
+              </label>
+              <p v-if="asset.placements.some(p => p.image)" class="resource-muted">Describe the image for people using a screen reader.</p>
             </div>
-            <p v-if="asset.usages?.length" class="resource-muted">
-              Repository uses: {{ asset.usages.join(", ") }}
-            </p>
-          </details>
-        </article>
-        <article
-          v-for="link in external"
-          :key="link.start"
-          class="resource-row resource-row-main"
-        >
-          <ImageThumbnail v-if="link.image || isImageResource(link.href)" :href="link.href" />
-          <div>
-            <template v-if="manage"
-              ><label
-                >Name<input
-                  :value="link.label"
-                  @change="
-                    editExternal(
-                      link.start,
-                      'label',
-                      ($event.target as HTMLInputElement).value,
-                    )
-                  " /></label
-              ><label
-                >Link<input
-                  :value="link.href"
-                  @change="
-                    editExternal(
-                      link.start,
-                      'href',
-                      ($event.target as HTMLInputElement).value,
-                    )
-                  " /></label></template
-            ><template v-else
-              ><strong>{{ link.label }}</strong>
-              <p class="resource-muted">{{ link.href }}</p></template
-            >
+            <div class="resource-placements">
+              <h4>In this item</h4>
+              <ul v-if="asset.placements.length">
+                <li v-for="placement in asset.placements" :key="placement.start">
+                  <span>{{ placement.section || 'Write-up' }}<small>{{ placement.image ? 'Inline image' : ['Resources', 'Links'].includes(placement.section) ? 'Attachment' : 'Text link' }}</small></span>
+                  <button type="button" class="resource-quiet" :aria-label="`Remove from ${placement.section || 'write-up'}`" @click="removePlacement(placement, $event)">Remove</button>
+                </li>
+              </ul>
+              <p v-else class="resource-muted">This file is available in your library.</p>
+              <div v-if="!asset.placements.some(p => ['Resources', 'Links'].includes(p.section))" class="resource-actions">
+                <button type="button" class="resource-quiet" @click="emit('update:body', attachResource(body, asset.name, imageHref(asset)))">Attach to item</button>
+              </div>
+            </div>
+            <footer class="resource-file-actions">
+              <div><button type="button" class="resource-quiet" @click="chooseUpload(asset.id)">Replace file…</button></div>
+              <div class="resource-delete"><button type="button" class="resource-quiet resource-danger" :disabled="!!asset.placements.length || !!usedElsewhere(asset).length" @click="deleteAsset = asset">Delete from library…</button>
+                <small v-if="usedElsewhere(asset).length">Still used elsewhere on the roadmap.</small>
+                <small v-else-if="asset.placements.length">Remove its uses in this item first.</small>
+              </div>
+            </footer>
           </div>
-          <a :href="resourceHref(link.href)" target="_blank" rel="noopener"
-            >Open</a
-          ><button
-            type="button"
-            @click="emit('update:body', removeResourcePlacement(body, link))"
-          >
-            Remove
-          </button>
         </article>
+        <template v-if="!showLibrary">
+          <article v-for="link in external" :key="link.start" class="resource-row">
+            <div class="resource-row-main">
+              <ImageThumbnail v-if="link.image || isImageResource(link.href)" :href="link.href" />
+              <span v-else class="resource-kind">LINK</span>
+              <div class="resource-identity"><strong>{{ link.label || 'Untitled link' }}</strong><p class="resource-muted resource-link-url">{{ link.href }}</p></div>
+              <a :href="resourceHref(link.href)" target="_blank" rel="noopener">Open</a>
+              <button type="button" :aria-expanded="expanded === `link-${link.start}`" @click="toggleResource(`link-${link.start}`)">{{ expanded === `link-${link.start}` ? 'Done' : 'Edit' }}</button>
+            </div>
+            <div v-if="expanded === `link-${link.start}`" class="resource-link-editor">
+              <label>Display name<input :value="link.label" @change="editExternal(link.start, 'label', ($event.target as HTMLInputElement).value)" /></label>
+              <label>Link<input :value="link.href" @change="editExternal(link.start, 'href', ($event.target as HTMLInputElement).value)" /></label>
+              <button type="button" class="resource-quiet resource-danger" @click="removePlacement(link, $event); expanded = null">Remove</button>
+            </div>
+          </article>
+        </template>
       </section>
     </fieldset>
     <ConfirmAction
       v-if="deleteAsset"
       title="Delete this file?"
-      message="This removes an unused file from the current repository when you publish. Earlier Git commits and existing shared snapshots may still contain it."
-      confirm-label="Mark for deletion"
+      message="This deletes the unused file from the library when you publish. Existing shared copies and version history are kept."
+      confirm-label="Delete on publish"
       @cancel="deleteAsset = null"
       @confirm="removeFile"
     />
@@ -1069,12 +958,12 @@ onUnmounted(() => {
   font-size: 0.8rem;
   color: var(--color-text-subtle-default);
 }
-.resource-authoring button,
-.resource-authoring input,
-.resource-authoring select {
+.resource-controls button,
+.resource-controls input,
+.resource-controls select {
   font: inherit;
 }
-.resource-authoring button {
+.resource-controls button, .resource-picker button {
   min-height: 38px;
   border: 1px solid var(--color-border-subtle-default);
   border-radius: 7px;
@@ -1084,11 +973,11 @@ onUnmounted(() => {
   color: var(--color-text-primary-default);
   cursor: pointer;
 }
-.resource-authoring button:disabled {
+.resource-controls button:disabled, .resource-picker button:disabled {
   opacity: 0.45;
   cursor: default;
 }
-.resource-authoring button:hover:not(:disabled) {
+.resource-controls button:hover:not(:disabled), .resource-picker button:hover:not(:disabled) {
   background: var(--color-surface-primary-hover);
 }
 .resource-picker,
@@ -1125,14 +1014,14 @@ onUnmounted(() => {
   gap: 0.8rem;
   padding-top: 1rem;
 }
-.resource-authoring label {
+.resource-controls label {
   display: grid;
   gap: 0.3rem;
   font-size: 0.8rem;
   max-width: 480px;
 }
-.resource-authoring input,
-.resource-authoring select {
+.resource-controls input,
+.resource-controls select {
   width: 100%;
   border: 1px solid var(--color-border-subtle-default);
   background: var(--color-card);
@@ -1159,7 +1048,7 @@ onUnmounted(() => {
 }
 .resource-row-main > div {
   flex: 1;
-  min-width: 140px;
+  min-width: 0;
 }
 .resource-row strong {
   font-size: 0.86rem;
@@ -1175,19 +1064,6 @@ onUnmounted(() => {
   text-align: center;
   color: var(--color-text-subtle-default);
 }
-.resource-row details {
-  margin-top: 0.5rem;
-}
-.resource-row summary {
-  font-size: 0.78rem;
-  color: var(--color-accent-brand-default);
-  cursor: pointer;
-  padding: 0.3rem 0;
-  min-height: 28px;
-}
-.resource-row details label {
-  margin: 0.5rem 0;
-}
 .resource-actions {
   margin: 0.7rem 0;
 }
@@ -1200,12 +1076,49 @@ onUnmounted(() => {
   color: var(--color-text-link-default);
   text-decoration: underline;
 }
+/* The shelf reads as a list; only the selected resource opens an inspector. */
+.resource-shelf { padding: 1rem 1rem .25rem; }
+.resource-count { color: var(--color-text-subtle-default); font-size: .8rem; margin-left: .35rem; font-variant-numeric: tabular-nums; }
+.resource-row-main { flex-wrap: nowrap; gap: .75rem; }
+.resource-row-main :deep(.image-thumbnail), .resource-kind { width: 48px; height: 48px; flex: 0 0 48px; display: grid; place-items: center; }
+.resource-row-main .resource-identity { min-width: 0; }
+.resource-controls .resource-quiet { border-color: transparent; background: transparent; }
+.resource-controls :is(button, input, select):focus-visible { outline: 2px solid var(--color-accent-brand-default); outline-offset: 3px; }
+.resource-inspector { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem 2rem; padding: 1rem 0 .25rem 3.75rem; }
+.resource-details { display: grid; gap: .7rem; align-content: start; }
+.resource-inspector label { max-width: none; }
+.resource-placements h4 { font-size: .8rem; font-weight: 500; margin-bottom: .5rem; }
+.resource-placements ul { list-style: none; padding: 0; margin: 0; }
+.resource-placements li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .35rem 0; font-size: .8rem; }
+.resource-placements small, .resource-delete small { display: block; font-size: .72rem; color: var(--color-text-subtle-default); }
+.resource-file-actions { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: start; gap: 1rem; padding-top: .75rem; border-top: 1px solid var(--color-border-subtle-default); }
+.resource-file-actions > div:first-child { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+.resource-delete { text-align: right; }
+.resource-controls .resource-danger { color: var(--color-feedback-error-text-independent-default); }
+.resource-link-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-link-editor { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: .75rem; align-items: end; padding: 1rem 0 .25rem 3.75rem; }
+.resource-library-search { margin-bottom: 1rem; }
+.resource-empty { padding: .75rem 0 1rem; color: var(--color-text-subtle-default); font-size: .82rem; }
+.resource-picker-tabs { gap: .25rem; padding-bottom: .75rem; border-bottom: 1px solid var(--color-border-subtle-default); }
+.resource-picker-tabs button { border-color: transparent; background: transparent; }
+.resource-picker-tabs button:last-child { margin-left: auto; }
+.resource-picker form button { justify-self: start; }
+@media (max-width: 640px) {
+  .resource-inspector { grid-template-columns: 1fr; padding-left: 0; gap: 1rem; }
+  .resource-row-main { gap: .4rem; flex-wrap: wrap; }
+  .resource-row-main .resource-identity { flex-basis: calc(100% - 60px); }
+  .resource-row-main > button:first-of-type, .resource-row-main > a { margin-left: auto; }
+  .resource-link-editor { grid-template-columns: 1fr; padding-left: 0; }
+  .resource-link-editor > button { justify-self: start; }
+  .resource-file-actions { flex-wrap: wrap; }
+  .resource-delete { text-align: left; }
+}
 @media (pointer: coarse) {
-  .resource-authoring button {
+  .resource-controls button, .resource-picker button {
     min-height: 44px;
   }
-  .resource-authoring input,
-  .resource-authoring select {
+  .resource-controls input,
+  .resource-controls select {
     font-size: 16px;
   }
 }

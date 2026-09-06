@@ -39,6 +39,7 @@ const emit = defineEmits<{
   (e: 'discard', id: string): void;
   (e: 'rename', payload: { id: string; title: string }): void;
   (e: 'duplicate', id: string): void;
+  (e: 'move', direction: 'up' | 'down' | 'left' | 'right'): void;
 }>();
 
 // Edit mode only: the local changeset store is a singleton, so reading it here (rather
@@ -262,7 +263,12 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
     role="button"
     tabindex="0"
     aria-label="Drag to reorder"
-    title="Drag to reorder"
+    title="Drag to move. Use arrow keys when focused."
+    aria-description="Up and down change priority. Left and right move between visible horizons."
+    @keydown.up.prevent.stop="emit('move', 'up')"
+    @keydown.down.prevent.stop="emit('move', 'down')"
+    @keydown.left.prevent.stop="emit('move', 'left')"
+    @keydown.right.prevent.stop="emit('move', 'right')"
   >
     <PhDotsSixVertical :size="18" weight="bold" />
   </span>

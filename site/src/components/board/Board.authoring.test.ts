@@ -136,6 +136,13 @@ describe("account drafts and recoverable publication", () => {
     localStorage.setItem("rm-edit-mode", "1");
     return mountBoard();
   }
+  it('moves cards by keyboard using the same draft path as dragging', async () => {
+    const w = await editing();
+    await (w.vm as any).moveCard(item(), 'right');
+    expect(useEditStore().snapshot().fields['TALK-1'].horizon).toBe('Next');
+    await (w.vm as any).moveCard(item(), 'up');
+    expect(w.text()).toContain('To change priority, choose one product');
+  });
   it("shows one save status in editing and inside the item editor", async () => {
     const w = await editing();
     expect(w.find('[data-test="save-status"]').exists()).toBe(false);
@@ -174,7 +181,7 @@ describe("account drafts and recoverable publication", () => {
     await send(w);
     await flushPromises();
     expect(useEditStore().dirtyCount.value).toBe(0);
-    expect(status(w).text()).toContain("Published to Git");
+    expect(status(w).text()).toContain("Changes saved");
     expect(status(w).text()).not.toContain("Your changes are live");
   });
   it("keeps typing during publication as a new unpublished change", async () => {
@@ -238,7 +245,7 @@ describe("account drafts and recoverable publication", () => {
     await flushPromises();
     expect(w.text()).toContain("Review overlapping changes");
     expect(w.text()).toContain("Your draft");
-    expect(w.text()).toContain("Latest in Git");
+    expect(w.text()).toContain("Latest published version");
     expect(useEditStore().bodyValue("TALK-1")).toBe("mine");
     expect(useEditStore().snapshot().requestPayload).toBeNull();
   });
@@ -281,7 +288,7 @@ describe("account drafts and recoverable publication", () => {
     useEditStore().recordCommit("a".repeat(40), "{}");
     const w = await editing();
     expect(deployStatusMock).toHaveBeenCalled();
-    expect(status(w).text()).toContain("Published to Git");
+    expect(status(w).text()).toContain("Changes saved");
   });
   it("does not build a no-op publication", async () => {
     const w = await editing();
@@ -323,7 +330,7 @@ describe("account drafts and recoverable publication", () => {
     useEditStore().setField("TALK-1", "title", "Next edit");
     await flushPromises();
     expect(status(w).text()).toContain("1 unpublished change");
-    expect(status(w).text()).not.toContain("Published to Git");
+    expect(status(w).text()).not.toContain("Changes saved");
   });
 
 });

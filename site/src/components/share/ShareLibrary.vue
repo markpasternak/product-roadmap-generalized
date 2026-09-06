@@ -5,7 +5,6 @@ import {
   PhCopy,
   PhCheck,
   PhLinkBreak,
-  PhBrowsers,
   PhGlobe,
   PhUsersThree,
   PhKey,
@@ -493,16 +492,6 @@ onMounted(loadShares);
               <PhArrowSquareOut :size="16" />
               Open share
             </a>
-            <a
-              :href="shareCanvasHref(share)"
-              target="_blank"
-              rel="noreferrer"
-              :data-test="'open-canvas-' + share.id"
-              class="roadmap-action border-border-subtle-default bg-card text-single-base-medium text-text-primary-default hover:bg-surface-primary-hover inline-flex min-h-11 items-center gap-2 rounded-lg border px-3"
-            >
-              <PhBrowsers :size="16" />
-              Manage in Canvas Drop
-            </a>
             <button
               v-if="isPublishedRoadmapShare(share)"
               type="button"
@@ -513,6 +502,15 @@ onMounted(loadShares);
               <component :is="copied && copiedId === share.id ? PhCheck : PhCopy" :size="16" />
               {{ copied && copiedId === share.id ? 'Copied' : 'Copy link' }}
             </button>
+            <a
+              :href="shareCanvasHref(share)"
+              target="_blank"
+              rel="noreferrer"
+              :data-test="'open-canvas-' + share.id"
+              class="roadmap-action text-single-sm-medium text-text-subtle-default hover:text-text-primary-default inline-flex min-h-11 items-center gap-2 rounded-lg px-3"
+            >
+              Manage in Canvas Drop
+            </a>
             <button
               v-if="isUnpublishableRoadmapShare(share)"
               type="button"

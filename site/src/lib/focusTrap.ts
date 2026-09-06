@@ -1,5 +1,5 @@
 // Only the top dialog owns keyboard focus. Nested dialogs share the scroll lock.
-const FOCUSABLE = 'a[href], button, input, select, textarea, iframe, [contenteditable="true"], [tabindex]';
+const FOCUSABLE = 'a[href], button, summary, input, select, textarea, iframe, [contenteditable="true"], [tabindex]';
 const stack: { panel: HTMLElement }[] = [];
 let previousOverflow = '';
 

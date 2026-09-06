@@ -11,6 +11,7 @@ const model = defineModel<string>({ required: true });
       v-for="opt in options"
       :key="opt.value"
       type="button"
+      :aria-pressed="model === opt.value"
       :class="
         cn(
           'text-single-sm-medium rounded-full px-3.5 py-1.5 transition-colors',

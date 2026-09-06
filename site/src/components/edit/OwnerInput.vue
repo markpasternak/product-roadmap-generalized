@@ -130,6 +130,12 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
+function onFocusOut(event: FocusEvent) {
+  if (event.relatedTarget instanceof Node && !containerRef.value?.contains(event.relatedTarget)) {
+    isOpen.value = false;
+    activeIndex.value = -1;
+  }
+}
 function onPointerDown(e: MouseEvent) {
   if (!containerRef.value || containerRef.value.contains(e.target as Node)) return;
   isOpen.value = false;
@@ -141,7 +147,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onPointerDown));
 </script>
 
 <template>
-  <div ref="containerRef" class="relative">
+  <div ref="containerRef" class="relative" @focusout="onFocusOut">
     <input
       :id="id"
       ref="inputRef"

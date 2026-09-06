@@ -519,3 +519,22 @@ Quick summary.
     );
   });
 });
+
+it('delegates resource-only sections without losing Markdown or hiding explanatory prose', async () => {
+  const body = '## Resources\n\n- [Design](https://example.com/design)\n';
+  const w = mount(SectionEditor, { props: { modelValue: body, managedResources: true, managedResourceHrefs: ["https://example.com/design"] } });
+  expect(w.get('[data-test="optional-field"]').attributes('style')).toContain('display: none');
+  expect(w.emitted('update:modelValue')).toBeUndefined();
+  w.unmount();
+  const prose = mount(SectionEditor, { props: { modelValue: body + '\nRead this before planning.\n', managedResources: true, managedResourceHrefs: ["https://example.com/design"] } });
+  expect(prose.get('[data-test="optional-field"]').attributes('style') ?? '').not.toContain('display: none');
+  expect(prose.get('[data-test="optional-display"]').text()).toContain('Read this before planning.');
+  prose.unmount();
+});
+
+it('keeps resource links readable when the library cannot resolve them', () => {
+  const w = mount(SectionEditor, { props: { modelValue: '## Resources\n\n- [Design](../../assets/ast_missing/rev_missing/design.png)\n', managedResources: true, managedResourceHrefs: [] } });
+  expect(w.get('[data-test="optional-field"]').attributes('style') ?? '').not.toContain('display: none');
+  expect(w.get('[data-test="optional-display"]').text()).toContain('Design');
+  w.unmount();
+});

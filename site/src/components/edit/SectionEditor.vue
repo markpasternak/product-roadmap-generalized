@@ -11,6 +11,7 @@
 // prose) is kept internally so it round-trips, but is never rendered — a roadmap item
 // HAS a known shape, and that shape starts at "One-liner", not at a raw text box.
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
+import { resourcePlacements, removeResourcePlacement } from '../../lib/resources';
 import { insertImageKey } from '../../lib/edit/imageAuthoring';
 import {
   parseSections,
@@ -44,6 +45,7 @@ import {
 } from '@phosphor-icons/vue';
 import { toneSurfaceStrong, toneText, type Tone } from '../../lib/display';
 
+const props = defineProps<{ managedResources?: boolean; managedResourceHrefs?: string[] }>();
 const model = defineModel<string>({ default: '' });
 const requestImage = inject(insertImageKey, undefined);
 
@@ -73,6 +75,15 @@ type OptionalRow = Section & { id: number };
 const preamble = ref('');
 const canonicalBodies = ref<string[]>(CANONICAL_SECTIONS.map(() => ''));
 const optional = ref<OptionalRow[]>([]);
+function managedSection(row: OptionalRow) {
+  if (!props.managedResources || !['resources', 'links'].includes(row.heading.toLowerCase())) return false;
+  const prefix = `## ${row.heading}\n`;
+  let remainder = prefix + row.body;
+  const uses = resourcePlacements(remainder);
+  if (uses.some(p => !props.managedResourceHrefs?.includes(p.href))) return false;
+  for (const placement of uses.reverse()) remainder = removeResourcePlacement(remainder, placement);
+  return !remainder.slice(prefix.length).trim();
+}
 let nextId = 0;
 
 function loadFromModel() {
@@ -240,7 +251,7 @@ const customInputRef = ref<HTMLInputElement>();
 
 const addOptions = computed(() => {
   const present = new Set(optional.value.map((s) => s.heading.toLowerCase()));
-  const available = OPTIONAL_SECTIONS.filter((h) => !present.has(h.toLowerCase()));
+  const available = OPTIONAL_SECTIONS.filter((h) => !present.has(h.toLowerCase()) && !(props.managedResources && ['resources', 'links'].includes(h.toLowerCase())));
   return [
     { value: ADD_PLACEHOLDER, label: '+ Add section' },
     ...available.map((h) => ({ value: h, label: h })),
@@ -493,6 +504,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
               <textarea
                 :id="`spine-${i}`"
                 data-test="spine-textarea"
+                :data-resource-heading="CANONICAL_SECTIONS[i]"
                 :ref="(el) => bindEditingTextarea(el as Element | null)"
                 rows="2"
                 placeholder="Add detail…"
@@ -534,6 +546,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
         <div
           v-for="(row, i) in optional"
           :key="row.id"
+          v-show="!managedSection(row)"
           data-test="optional-field"
           draggable="true"
           class="group/row relative -mx-2 flex flex-col gap-1.5 rounded-lg border-t-2 border-transparent px-2 py-2.5 transition-colors duration-150"
@@ -566,10 +579,11 @@ function onToolbarKeydown(e: KeyboardEvent) {
                 {{ row.heading }}
               </span>
             </div>
-            <div class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100">
+            <div class="section-actions flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100">
               <button
                 type="button"
                 data-test="move-up"
+                title="Move section up"
                 :disabled="i === 0"
                 aria-label="Move section up"
                 class="text-icons-subtle-default hover:text-text-primary-default grid size-6 place-items-center rounded-md disabled:pointer-events-none disabled:opacity-30"
@@ -580,6 +594,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
               <button
                 type="button"
                 data-test="move-down"
+                title="Move section down"
                 :disabled="i === optional.length - 1"
                 aria-label="Move section down"
                 class="text-icons-subtle-default hover:text-text-primary-default grid size-6 place-items-center rounded-md disabled:pointer-events-none disabled:opacity-30"
@@ -623,6 +638,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
             <textarea
               :ref="(el) => bindEditingTextarea(el as Element | null)"
               data-test="optional-textarea"
+              :data-resource-heading="row.heading"
               rows="3"
               placeholder="Add detail…"
               class="se-field roadmap-prose w-full resize-none overflow-hidden bg-transparent outline-none placeholder:text-text-subtle-default/70"
@@ -727,5 +743,15 @@ function onToolbarKeydown(e: KeyboardEvent) {
   color: var(--color-text-subtle-default);
   opacity: 0.7;
   font-style: italic;
+}
+</style>
+
+<style scoped>
+@media (hover: none) {
+  .section-actions { opacity: 1; }
+}
+@media (pointer: coarse) {
+  .section-actions button, [role="toolbar"] button { min-width: 44px; min-height: 44px; }
+  [role="toolbar"] { flex-wrap: wrap; max-width: 100%; }
 }
 </style>

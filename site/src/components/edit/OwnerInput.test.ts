@@ -128,3 +128,13 @@ describe('OwnerInput', () => {
     });
   });
 });
+
+it('closes suggestions when keyboard focus leaves the control', async () => {
+  const w = mount(OwnerInput, { props: { modelValue: '', suggestions: ['Design'] } });
+  await w.get('input').trigger('focus');
+  expect(w.find('[role="listbox"]').exists()).toBe(true);
+  const next = document.createElement('button');
+  await w.get('input').trigger('focusout', { relatedTarget: next });
+  expect(w.find('[role="listbox"]').exists()).toBe(false);
+  w.unmount();
+});

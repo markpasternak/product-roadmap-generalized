@@ -904,6 +904,34 @@ function onLaneSortEnd(fromKey: string, toKey: string, itemId: string, newIndex:
   reorderWithinLane(lane, itemId, newIndex);
 }
 
+const moveAnnouncement = ref('');
+async function moveCard(item: ItemVM, direction: 'up' | 'down' | 'left' | 'right') {
+  if (!canEdit.value || !editMode.value || editStore.snapshot().requestPayload) return;
+  const laneIndex = lanes.value.findIndex(l => l.items.some(i => i.id === item.id));
+  const lane = lanes.value[laneIndex];
+  if (!lane || (projectedById.value.get(item.id) as (ItemVM & { pending?: string }) | undefined)?.pending === 'deleted') return;
+  if (direction === 'left' || direction === 'right') {
+    const target = lanes.value[laneIndex + (direction === 'left' ? -1 : 1)];
+    if (filters.group !== 'horizon' || !target) return;
+    onLaneSortEnd(lane.key, target.key, item.id, 0);
+    moveAnnouncement.value = `${item.title} moved to ${target.key}.`;
+  } else {
+    if (!canReorder.value) {
+      moveAnnouncement.value = 'To change priority, choose one product, sort by Priority, and clear other filters.';
+      return;
+    }
+    const index = lane.items.findIndex(i => i.id === item.id) + (direction === 'up' ? -1 : 1);
+    if (index < 0 || index >= lane.items.length) return;
+    onLaneSortEnd(lane.key, lane.key, item.id, index);
+    moveAnnouncement.value = `${item.title} moved ${direction}.`;
+  }
+  await nextTick();
+  for (const el of laneListEls.values()) {
+    const card = [...el.querySelectorAll<HTMLElement>('[data-item-id]')].find(el => el.dataset.itemId === item.id);
+    card?.querySelector<HTMLElement>('.roadmap-drag-handle')?.focus();
+  }
+}
+
 // --- SortableJS wiring -----------------------------------------------------------------
 //
 // The store (via `lanes`, derived from `projectBoard`) stays the one source of truth for
@@ -1949,6 +1977,7 @@ const editActionBtn =
     :data-editing="canEdit && editMode ? 'true' : undefined"
     :class="isFull ? 'bg-background overflow-y-auto p-6' : ''"
   >
+    <p class="sr-only" role="status" aria-live="polite">{{ moveAnnouncement }}</p>
     <div
       v-if="newVersion && !editingItem && !shareOpen"
       class="flex flex-wrap items-center justify-between gap-3 mb-4 rounded-xl border border-border-subtle-default p-3 text-sm"
@@ -2445,6 +2474,7 @@ const editActionBtn =
                     @discard="editStore.revertItem($event)"
                     @rename="onCardRename"
                     @duplicate="onCardDuplicate"
+                    @move="moveCard(it, $event)"
                   />
                   <p
                     v-if="!lane.items.length"

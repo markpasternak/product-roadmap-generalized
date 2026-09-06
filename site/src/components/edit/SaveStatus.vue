@@ -29,10 +29,10 @@ const visible = computed(() => props.dirty || props.pending || props.error || sh
 const publicationText = computed(() => props.publication?.stage === 'live'
   ? 'Your changes are live'
   : props.publication?.stage === 'failed'
-    ? 'Published to Git · site update failed'
+    ? 'Changes saved · site update failed'
     : props.publication?.stage === 'no_build'
-      ? 'Published to Git · live update not confirmed'
-      : 'Published to Git · updating the site…');
+      ? 'Changes saved · live update not confirmed'
+      : 'Changes saved · updating the site…');
 const primary = computed(() => props.pending ? 'Publishing your changes…'
   : props.dirty ? `${props.dirty} unpublished ${props.dirty === 1 ? 'change' : 'changes'}`
     : showPublication.value ? publicationText.value
@@ -51,7 +51,7 @@ const primary = computed(() => props.pending ? 'Publishing your changes…'
       </p>
       <div v-if="showPublication && !pending" class="save-status-secondary publication-status">
         <span v-if="dirty">{{ publicationText }}</span>
-        <span v-if="publication?.stage === 'no_build'">Your commit is safe. You can keep working.</span>
+        <span v-if="publication?.stage === 'no_build'">Your changes are safe. You can keep working.</span>
         <a v-if="publication?.htmlUrl" :href="publication.htmlUrl" target="_blank" rel="noopener">View build</a>
         <button v-if="publication?.stage === 'failed' || publication?.stage === 'no_build'" type="button" class="save-status-link" @click="$emit('retry')">Check again</button>
         <button type="button" class="save-status-link" aria-label="Dismiss publication status" @click="dismiss">Dismiss</button>
