@@ -69,10 +69,10 @@ describe('projectBoard', () => {
     // overridden product's lane rather than the one originally passed to addItem.
     const cs: BoardChangeset = {
       ...emptyChangeset(),
-      created: [{ id: 'new-1', product: 'Core Platform & Data', title: 'Moved before sync', frontmatter: {} }],
+      created: [{ id: 'new-1', product: 'Spotify for Artists', title: 'Moved before sync', frontmatter: {} }],
     };
     const [created] = projectBoard([], cs);
-    expect(created.product).toBe('Core Platform & Data');
+    expect(created.product).toBe('Spotify for Artists');
   });
 
   it('defaults a created entry with no frontmatter to Next/Discovery', () => {

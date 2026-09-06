@@ -18,15 +18,11 @@ const STAGE_DESCRIPTION: Record<(typeof STAGES)[number], string> = {
 };
 
 const PRODUCT_DESCRIPTION: Record<(typeof PRODUCTS)[number], string> = {
-  'Music App': 'Listening, discovery, personalisation and social on the consumer app. content/items/music-app/, IDs MUSIC-NNN.',
-  'Podcasts & Audiobooks':
-    'Spoken-word catalogue, video podcasts, audiobook entitlements and creator publishing. content/items/podcasts-audiobooks/, IDs TALK-NNN.',
-  'Spotify for Artists':
-    'Analytics, promotion and release tooling for artists, labels and their teams. content/items/spotify-for-artists/, IDs ARTISTS-NNN.',
-  'Ads Platform':
-    'Advertiser demand — buying, targeting, measurement and brand safety. content/items/ads-platform/, IDs ADS-NNN.',
-  'Core Platform & Data':
-    'Shared infrastructure: identity, data platform, ML serving and reliability. content/items/core-platform-data/, IDs PLATFORM-NNN.',
+  'Spotify for Artists': 'Its own folder and ID prefix — items live under content/items/spotify-for-artists/ as ARTISTS-NNN.',
+  'Ads Platform': 'Its own folder and ID prefix — items live under content/items/ads-platform/ as ADS-NNN.',
+  'Core Platform & Data': 'Its own folder and ID prefix — items live under content/items/core-platform-data/ as PLATFORM-NNN.',
+  'Music App': 'Its own folder and ID prefix — items live under content/items/music-app/ as MUSIC-NNN.',
+  'Podcasts & Audiobooks': 'Its own folder and ID prefix — items live under content/items/podcasts-audiobooks/ as TALK-NNN.',
 };
 
 const TOC = [
@@ -48,38 +44,69 @@ const TOC = [
 ---
 
 <Base
-  title="Help · Roadmap"
+  title="How the roadmap works · Roadmap"
   active="help"
-  description="Every concept on the board, and how the in-app editor actually works — a full guide to reading and editing the roadmap."
+  description="A practical guide to reading, editing, and sharing the Product Roadmap product roadmap."
 >
-  <main class="page-reveal mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+  <main class="support-page page-reveal mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
     <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: 'Help' }]} />
-    <h1 class="font-display text-text-primary-default mt-6 text-[2rem] sm:text-[2.4rem]">Help</h1>
-    <p class="text-body-lg text-text-subtle-default mt-3 max-w-xl">
-      A <b class="text-text-primary-default">Now / Next / Later</b> roadmap. Instead of dates, items are grouped
-      by how sure we are they'll happen: we plan broadly but only commit to what's directly ahead. The closer to
-      <b class="text-text-primary-default">Now</b>, the more defined the work; the further out, the more it's a
-      direction we still need to shape.
-    </p>
-    <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-      This page covers the whole product: every concept on the board, how to read a card, and — since the board
-      is also the editor — exactly how changing something here reaches GitHub.
-    </p>
+    <section class="roadmap-masthead mt-6 rounded-[20px] px-5 py-5 sm:px-6 sm:py-6 lg:px-7">
+      <p class="roadmap-label">Roadmap guide</p>
+      <h1 class="roadmap-display roadmap-title mt-2 text-[2rem] sm:text-[2.55rem]">How the roadmap <em>works.</em></h1>
+      <p class="roadmap-muted text-body-lg mt-3 max-w-2xl">
+        This is a <b class="roadmap-title">Now / Next / Later</b> roadmap. Horizons communicate confidence and
+        sequence without pretending every idea has a reliable date.
+      </p>
+      <p class="roadmap-muted text-body-md mt-2 max-w-2xl">
+        Use this guide to read the board, understand its fields, edit the source safely, and publish a filtered snapshot.
+      </p>
+    </section>
 
-    <nav class="border-border-subtle-default bg-card mt-6 rounded-xl border px-4 py-3" aria-label="On this page">
-      <p class="text-single-sm-medium text-text-subtle-default font-semibold uppercase tracking-wide">On this page</p>
-      <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
-        {
-          TOC.map((t) => (
-            <li>
-              <a href={t.href} class="text-single-sm-medium text-text-primary-default underline decoration-border-subtle-default underline-offset-4 hover:decoration-current">
-                {t.label}
-              </a>
-            </li>
-          ))
-        }
-      </ul>
-    </nav>
+    <div class="mt-5 grid items-start gap-5 lg:grid-cols-[230px_minmax(0,1fr)]">
+      <nav class="roadmap-glass rounded-2xl p-3 lg:sticky lg:top-17" aria-label="On this page">
+        <details class="lg:hidden">
+          <summary class="text-single-sm-medium text-text-primary-default flex cursor-pointer items-center justify-between gap-3 px-2 py-1 font-semibold">
+            <span class="roadmap-label">On this page</span>
+            <span class="text-text-subtle-default font-normal">{TOC.length} sections</span>
+          </summary>
+          <ul class="mt-2 grid gap-0.5 sm:grid-cols-2">
+            {
+              TOC.map((t, index) => (
+                <li>
+                  <a
+                    href={t.href}
+                    class="roadmap-action text-single-sm-medium text-text-subtle-default hover:bg-surface-primary-hover hover:text-text-primary-default flex items-start gap-2 rounded-lg px-2 py-1.5"
+                  >
+                    <span class="mt-0.5 w-5 shrink-0 text-right text-[0.68rem] tabular-nums opacity-55">{String(index + 1).padStart(2, '0')}</span>
+                    <span>{t.label}</span>
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+        </details>
+
+        <div class="hidden lg:block">
+          <p class="roadmap-label px-2 pt-1">On this page</p>
+          <ul class="mt-2 grid gap-0.5">
+            {
+              TOC.map((t, index) => (
+                <li>
+                  <a
+                    href={t.href}
+                    class="roadmap-action text-single-sm-medium text-text-subtle-default hover:bg-surface-primary-hover hover:text-text-primary-default flex items-start gap-2 rounded-lg px-2 py-1.5"
+                  >
+                    <span class="mt-0.5 w-5 shrink-0 text-right text-[0.68rem] tabular-nums opacity-55">{String(index + 1).padStart(2, '0')}</span>
+                    <span>{t.label}</span>
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+      </nav>
+
+      <article class="help-article roadmap-panel rounded-[24px] px-5 pb-8 sm:px-7 lg:px-9">
 
     <section id="mental-model" class="mt-10 scroll-mt-24">
       <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">The mental model</h2>
@@ -185,8 +212,8 @@ const TOC = [
         <div>
           <dt class="text-single-base-medium text-text-primary-default font-semibold">Owner</dt>
           <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
-            The person accountable for the item. Shown as initials on the card, in full in the detail drawer.
-            Hidden on public builds and shares (see <a href="#shares" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Sharing a view</a>).
+            The person accountable for the item. Shown by name on internal cards and in the detail drawer.
+            Hidden in presentation mode, public builds, and shares (see <a href="#shares" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Sharing a view</a>).
           </dd>
         </div>
         <div>
@@ -204,11 +231,11 @@ const TOC = [
         <div>
           <dt class="text-single-base-medium text-text-primary-default font-semibold">Visibility</dt>
           <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
-            {VISIBILITIES.join(' or ')}, defaulting to Internal. This is the only field that decides what a
-            <b class="text-text-primary-default">public build or a share</b> shows: a public snapshot filters
-            down to <b class="text-text-primary-default">Public</b> items only, and hides owners and the
-            "Edit on GitHub" link on top of that. Internal is the right default for anything still being shaped;
-            flip an item to Public once its framing is safe for an outside audience.
+            {VISIBILITIES.join(' or ')}, defaulting to Internal. Visibility decides whether an item appears on a
+            <b class="text-text-primary-default">public build of the roadmap</b>. A share is different: it starts
+            from the board’s current filtered view and its review list, so an Internal item can be included if the
+            author selects it. Share payloads still omit owner names and editing links. Review the item list before
+            publishing anything outside the team.
           </dd>
         </div>
         <div>
@@ -235,21 +262,25 @@ const TOC = [
     <section id="reading-the-board" class="mt-10 scroll-mt-24">
       <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Reading the board</h2>
       <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        A card shows the shorthand: product mark, title, horizon dot, stage, impact/effort chips if scored, and
-        up to a few tags. Click a card to open the <b class="text-text-primary-default">detail drawer</b> — the
+        A card shows the shorthand: product mark, title, short description, stage, and
+        the owner on internal views. Sizing, tags, and resources stay in the <b class="text-text-primary-default">detail drawer</b>. Click a card to read the
         full write-up (One-liner, Why it matters, Target outcome, What ships, and whatever optional sections the
         item has), the owner, and — when you're signed in and not viewing a public build — an
         <b class="text-text-primary-default">"Edit on GitHub"</b> link that jumps straight to that item's markdown
         file in GitHub's own web editor.
       </p>
       <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        Above the lanes: <b class="text-text-primary-default">filters</b> for product, stage, impact, effort,
-        visibility and tags (plus the horizon chips described above), a <b class="text-text-primary-default">sort</b>
-        picker — Priority (the manual drag order), Impact (high to low), Effort (low to high), Recently updated, or
-        Title (A–Z) — and <b class="text-text-primary-default">search</b> (press <kbd class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">/</kbd> from
-        anywhere on the board to jump into it). Toggle <b class="text-text-primary-default">Group: Horizon</b> vs
-        <b class="text-text-primary-default"> Group: Product</b> to change what the lanes represent, as covered in
-        <a href="#products" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Products</a> above.
+        <b class="text-text-primary-default">Filters</b> chooses which items appear: product, owner and visibility (internal views),
+        stage, impact, effort, linked resources, and tags. Item visibility is separate from access to a shared link.
+        <b class="text-text-primary-default">Layout</b> groups the lanes by horizon or product and sets the sort order:
+        Priority (the manual drag order), Highest impact, Lowest effort, Recently updated, or Title (A–Z).
+        Use <b class="text-text-primary-default">search</b> to find items, or press <kbd class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">/</kbd> to jump into it.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        <b class="text-text-primary-default">More</b> contains presentation and full-screen actions. Starting a presentation hides
+        the board controls; copying its link leaves your current view intact. The link opens the live board and uses its existing access rules.
+        <b class="text-text-primary-default">Share</b> creates a separate snapshot, with its own access settings.
+        Use <b class="text-text-primary-default">Account</b> in the top navigation for editing sign-in and light or dark appearance.
       </p>
       <div class="border-border-subtle-default bg-card mt-5 flex items-center justify-between gap-3 rounded-lg border px-4 py-3">
         <span class="text-single-base-medium text-text-primary-default font-semibold">Keyboard shortcuts</span>
@@ -266,15 +297,15 @@ const TOC = [
 
       <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">1. Sign in, then flip into edit mode</h3>
       <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
-        Sign in with GitHub from the board. If you have write access, an <b class="text-text-primary-default">edit
-        mode</b> toggle appears — turning it on is visually unmistakable: a colored banner takes over the top of
-        the page for as long as it's on, cards grow drag handles and an inline "+ Add item" control appears in
+        Open <b class="text-text-primary-default">Account → Sign in to edit</b> and sign in with GitHub.
+        If you have write access, an <b class="text-text-primary-default">Edit</b> button appears on the board.
+        In edit mode, cards show drag handles and an inline "+ Add item" control appears in
         every lane, and clicking a card opens the full-screen editor instead of the read-only drawer.
       </p>
 
-      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">2. Everything you do is a local working copy</h3>
+      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">2. Your draft saves automatically</h3>
       <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
-        Nothing you do in edit mode touches GitHub yet — it all accumulates in a draft in your browser. That draft covers:
+        Your draft saves to this device as you type, then to your account. The save bar tells you when the account copy is saved or the connection is unavailable. Git changes only when you publish. Your draft covers:
       </p>
       <ul class="text-body-md text-text-subtle-default mt-2 max-w-xl list-disc space-y-1.5 pl-5">
         <li>Editing any field — title, product (new items only), horizon, stage, owner, impact, effort, visibility, tags.</li>
@@ -294,15 +325,27 @@ const TOC = [
         Your working copy persists across a refresh, so you can step away mid-edit without losing anything.
       </p>
 
-      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">3. Sync publishes everything as one commit</h3>
+      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">3. Attach evidence where it belongs</h3>
       <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
-        Nothing is public until you press <b class="text-text-primary-default">Sync</b>. It bundles every change in
-        your working copy — every edited field, every new or deleted item, every reorder — into a
-        <b class="text-text-primary-default">single commit</b> to the repo, and the site rebuilds (about a minute).
-        Your working copy stays visible exactly as you left it through that window — nothing you added or changed
-        vanishes before the new version is actually live — then reconciles automatically once it is: anything the
-        rebuilt site already reflects quietly drops out of the draft, and anything you keep editing in the meantime
-        stays.
+        Use <b class="text-text-primary-default">Add resource</b> to upload a file, paste a link or choose an existing file or source document.
+        Paste images into the write-up or drop files onto it. Use <b class="text-text-primary-default">Manage resources</b> to change a name, edit an image description, insert a file inline, replace its revision or remove a placement.
+        Image resources show thumbnail previews. The <b class="text-text-primary-default">Insert image</b> button in either editor toolbar lets you choose a resource or paste an external image URL, add alt text, and insert it at your cursor using <code>![alt text](image-url)</code>. Images render in the preview and published write-up.
+        Removing a placement keeps the file available. Deleting an unused file removes it from the current repository when you publish; Git history retains previous versions.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
+        PNG, JPEG, GIF, WebP, PDF, MP4, WebM, Office, ZIP and text files are supported, up to 25 MiB each and 100 MiB per publication.
+        Unpublished uploads are kept for 30 days. Published originals live in Git alongside the Markdown, with a checksum and a separate path for every revision.
+        Replacing a file updates this item's references; other items keep their selected revision. Public items require Public files.
+      </p>
+      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">4. Publish when the changes are ready</h3>
+      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
+        <b class="text-text-primary-default">Review</b> lists your unpublished changes. <b class="text-text-primary-default">Publish changes</b> commits items, files and resource metadata together.
+        The save bar first confirms the Git commit, then confirms when that version is live. You can keep writing while the site updates; those later edits remain in your draft.
+        If the connection drops, retrying checks the original publication and avoids duplicate items or commits. Overlapping edits show both versions for review.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
+        Leaving edit mode keeps your draft. Publishing does not change access permissions or update existing shares.
+        When sharing, choose explicitly which links and published files to include; selected files are copied into that snapshot.
       </p>
 
       <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">The alternative: edit the file directly on GitHub</h3>
@@ -319,12 +362,12 @@ const TOC = [
       <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
         A <b class="text-text-primary-default">"Recent changes"</b> card sits on the board itself, and its
         <b class="text-text-primary-default">"View all →"</b> link opens the full history page. Both are built
-        straight from the repo's Sync commit history — one commit
-        (<a href="#editing" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Sync</a>
+        straight from the repo's publication commit history — one commit
+        (<a href="#editing" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Publish changes</a>
         or a direct commit) is one row.
       </p>
       <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        Each row shows <b class="text-text-primary-default">who</b> changed things (the editor who synced, not the
+        Each row shows <b class="text-text-primary-default">who</b> changed things (the editor who published, not the
         bot that makes the commit), <b class="text-text-primary-default">what</b> (how many items were updated,
         created, deleted, or reordered, plus the titles of the items involved), a relative timestamp, and a
         link out to that <b class="text-text-primary-default">exact commit on GitHub</b>. A manual commit made
@@ -343,7 +386,7 @@ const TOC = [
         The draft opens straight in the same full-screen editor you'd use for any item, as a normal
         <b class="text-text-primary-default">working-copy created item</b> — nothing about it is special or
         locked. Read it over, change anything you like, or delete it outright. Like every other edit, it's only a
-        local draft: <b class="text-text-primary-default">nothing publishes until you Sync</b>.
+        saved draft: <b class="text-text-primary-default">nothing publishes until you choose Publish changes</b>.
       </p>
     </section>
 
@@ -360,7 +403,7 @@ const TOC = [
         <b class="text-text-primary-default">Apply</b>: the AI returns the full item rewritten, keeping the exact
         same section structure, and you get a <b class="text-text-primary-default">before/after diff, shown
         section by section</b>. <b class="text-text-primary-default">Accept</b> writes the rewrite into your
-        working copy (same as any other edit — it publishes on Sync); <b class="text-text-primary-default">
+        working copy (same as any other edit — it publishes when you choose Publish changes); <b class="text-text-primary-default">
         Discard</b> throws it away and keeps your conversation so you can try again.
       </p>
     </section>
@@ -377,7 +420,7 @@ const TOC = [
         In edit mode specifically, you'll also see a soft <b class="text-text-primary-default">"X is also
         editing"</b> nudge when another editor is active at the same time. It's advisory only — a heads-up so you
         can coordinate — not a lock: the roadmap still works on a last-write-wins basis, and nothing stops either
-        of you from syncing.
+        of you from publishing.
       </p>
       <div class="border-border-subtle-default bg-card mt-5 rounded-xl border px-4 py-3.5">
         <p class="text-body-md text-text-subtle-default max-w-xl">
@@ -392,22 +435,50 @@ const TOC = [
     <section id="how-it-connects" class="mt-10 scroll-mt-24">
       <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">How it connects to GitHub</h2>
       <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        In-app Sync, "Edit on GitHub", and a direct commit or PR all converge on the same files under
+        In-app publishing, "Edit on GitHub", and a direct commit or PR all converge on the same files under
         <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">content/items/**</code> on
         <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">main</code>. A push there
         triggers a rebuild that redeploys this site, and a validation check runs on every change to catch a bad ID,
         a missing required field, or a misplaced file — gating the merge on a PR, flagging the problem after the
-        fact on a direct push or Sync. (There's no GitHub Project board in this pipeline — that integration is retired.)
+        fact on a direct push or publication. (There's no GitHub Project board in this pipeline — that integration is retired.)
       </p>
     </section>
 
     <section id="shares" class="mt-10 scroll-mt-24">
       <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Sharing a view</h2>
       <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        <b class="text-text-primary-default">Share this view</b> publishes whatever you currently have filtered and
-        sorted as a public, read-only snapshot — its own link, independent of the team-only main site, with an
-        expiry you set. It's a point-in-time copy: it won't update as the board changes underneath it, and it
-        respects the same visibility rule as a public build (Internal items and owner names never leave the team-only site).
+        Use <b class="text-text-primary-default">Save view</b> on the internal board to name a combination of
+        filters, horizons, grouping, and sort order. Views are saved in this browser. Owner filters affect which
+        items are selected for sharing; owner names and saved-view names are not included in the snapshot.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
+        The board’s <b class="text-text-primary-default">Share</b> action starts with exactly the items in your
+        current filtered and sorted view. Review that list and deselect anything you do not want to include, then
+        publish it as a read-only snapshot at its own URL. It is a point-in-time copy; later roadmap changes do not
+        appear until you update that share.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        In share settings, choose <b class="text-text-primary-default">Preview as recipient</b> to inspect the
+        selected content in the published layout, at full width or mobile size. The preview follows the chosen
+        light or dark appearance and includes selected empty lanes. It previews content; access still follows
+        your sharing settings. Presentation mode is a view of the main roadmap and retains its access requirements.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        New shares default to <b class="text-text-primary-default">Restricted</b>. You can instead choose Whole org
+        or Public link, and optionally add a password. Manage expiry, added people, and teams in Canvas Drop.
+        These are separate controls: no expiry is added automatically, and existing expiry and memberships remain
+        in place when you update the content.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        Updating an existing share keeps its URL and current settings unless you deliberately change them. An
+        unpublished share stays in Shares and can be republished by updating it. Owner names, editing links, and
+        linked documents, resources, and other internal-only fields are omitted from every snapshot.
+        Review all selected content before choosing Public link; selecting an Internal item does not prevent you
+        from including it in a share.
+      </p>
+      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
+        <b class="text-text-primary-default">Canvas owner</b> in the share list describes your management role on
+        that Canvas Drop canvas. It is not the share’s audience, and it is unrelated to the owner of a roadmap item.
       </p>
     </section>
 
@@ -419,5 +490,25 @@ const TOC = [
         get there. The one date we promise is the ship date: when something ships, it moves to Completed.
       </p>
     </section>
+      </article>
+    </div>
   </main>
 </Base>
+
+<style>
+  .help-article > section:first-child {
+    margin-top: 0;
+    padding-top: 2rem;
+  }
+
+  .help-article > section + section {
+    border-top: 1px solid var(--color-border-subtle-default);
+    padding-top: 2.25rem;
+  }
+
+  @media (min-width: 640px) {
+    .help-article > section:first-child {
+      padding-top: 2.5rem;
+    }
+  }
+</style>

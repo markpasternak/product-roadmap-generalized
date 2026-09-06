@@ -19,8 +19,11 @@ export function parseSections(md: string): { preamble: string; sections: Section
   const sections: Section[] = [];
   let current: { heading: string; lines: string[] } | null = null;
 
+  let fence = '';
   for (const line of lines) {
-    const m = line.match(HEADING_RE);
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (marker) { if (!fence) fence = marker[1]; else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && line.trim() === marker[1]) fence = ''; }
+    const m = !fence && !marker ? line.match(HEADING_RE) : null;
     if (m) {
       if (current) sections.push({ heading: current.heading, body: current.lines.join('\n') });
       current = { heading: m[1].trim(), lines: [] };
@@ -61,12 +64,14 @@ export const CANONICAL_SECTIONS: string[] = ['One-liner', 'Why it matters', 'Wha
  * the "+ Add section" menu. Also derived from the real corpus.
  */
 export const OPTIONAL_SECTIONS: string[] = [
+  'Bottom line',
   "Who it's for",
   'Target outcome',
   'Acceptance criteria',
   'Open questions',
   'Current behavior',
   'In the codebase',
+  'Resources',
   'Links',
   'What shipped',
 ];

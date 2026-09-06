@@ -1,15 +1,34 @@
+import type { ResourceUpload } from '../resources';
 // Local, id-keyed changeset store for in-app editing. Persists to localStorage on every
 // mutation so a crash/reload never loses in-progress edits, and survives a rebuilt base
 // (see design spec: "Edit → Sync → rebuild → keep editing").
 import { ref, computed } from 'vue';
 
 export const KEY = 'rm-edit-draft';
-type Draft = {
+export type Draft = {
   fields: Record<string, Record<string, string>>;
   bodies: Record<string, string>;
   created: { id: string; product: string; title: string; frontmatter?: Record<string, string> }[];
   deleted: string[];
   reorder: Record<string, Record<string, string[]>>;
+  bases: Record<string, { sha: string; content: string }>;
+  assets: {
+    attach: {
+      uploadId: string;
+      resource?: ResourceUpload;
+      name?: string;
+      baseManifestSha?: string;
+      visibility?: 'Public' | 'Internal';
+    }[];
+    update: {
+      id: string;
+      baseManifestSha: string;
+      name?: string;
+      visibility?: 'Public' | 'Internal';
+      remove?: boolean;
+    }[];
+  };
+  requestPayload: any | null;
   // U3 (R3/KTD3): the crypto-random id for the in-flight (or last-unresolved) Sync attempt.
   // Persisted BEFORE the request is sent (see ensureRequestId below) so a crash between
   // persist and send still reuses it on the next attempt instead of minting a fresh one the
@@ -46,6 +65,9 @@ const empty = (): Draft => ({
   created: [],
   deleted: [],
   reorder: {},
+  bases: {},
+  assets: { attach: [], update: [] },
+  requestPayload: null,
   requestId: null,
   requestIdSnapshot: null,
   requestIdAt: null,
@@ -74,9 +96,20 @@ function randomRequestId(): string {
 }
 
 export function createEditStore() {
+  let storageKey = KEY;
+  const revision = ref(0);
+  let tabId = '';
+  try {
+    tabId = sessionStorage.getItem('rm-edit-tab') ?? randomRequestId();
+    sessionStorage.setItem('rm-edit-tab', tabId);
+  } catch {}
+  const recoveryKey = () => `${storageKey}:tab:${tabId}`;
   const load = (): Draft => {
     try {
-      return { ...empty(), ...JSON.parse(localStorage.getItem(KEY) || '{}') };
+      return {
+        ...empty(),
+        ...JSON.parse((tabId && localStorage.getItem(recoveryKey())) || localStorage.getItem(storageKey) || '{}'),
+      };
     } catch {
       return empty();
     }
@@ -94,11 +127,13 @@ export function createEditStore() {
   const persistFailed = ref(false);
   const persist = () => {
     try {
-      localStorage.setItem(KEY, JSON.stringify(d.value));
+      if (tabId) localStorage.setItem(recoveryKey(), JSON.stringify(d.value));
+      localStorage.setItem(storageKey, JSON.stringify(d.value));
       persistFailed.value = false;
     } catch {
       persistFailed.value = true;
     }
+    revision.value += 1;
   };
 
   // U9 (R10): a quiet, dismissible flag — distinct from the silent last-write-wins replace
@@ -121,19 +156,40 @@ export function createEditStore() {
   // instead of silently drifting apart.
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', (e: StorageEvent) => {
-      if (e.key !== KEY) return;
-      const next = load();
+      if (e.key !== storageKey) return;
+      let next: Draft;
+      try {
+        next = { ...empty(), ...JSON.parse(e.newValue ?? localStorage.getItem(storageKey) ?? '{}') };
+      } catch {
+        return;
+      }
       if (JSON.stringify(next) === JSON.stringify(d.value)) return; // no real change; skip
-      d.value = next;
+      // Preserve this tab's work. A competing tab never overwrites an active draft.
+      if (dirtyCount.value === 0 && !d.value.requestPayload) {
+        d.value = next;
+        try {
+          if (tabId) localStorage.setItem(recoveryKey(), JSON.stringify(next));
+        } catch {
+          persistFailed.value = true;
+        }
+        revision.value += 1;
+      }
       crossTabChanged.value = true;
     });
   }
 
+  const availableBases = new Map<string, { sha: string; content: string }>();
+  const rememberBase = (id: string) => {
+    const base = availableBases.get(id);
+    if (base && !d.value.bases[id]) d.value.bases[id] = { ...base };
+  };
   const setField = (id: string, key: string, val: string) => {
+    rememberBase(id);
     (d.value.fields[id] ||= {})[key] = val;
     persist();
   };
   const setBody = (id: string, body: string) => {
+    rememberBase(id);
     d.value.bodies[id] = body;
     persist();
   };
@@ -169,6 +225,7 @@ export function createEditStore() {
       persist();
       return;
     }
+    rememberBase(id);
     if (!d.value.deleted.includes(id)) d.value.deleted.push(id);
     // A delete supersedes any pending edit on the same real item — otherwise the changeset
     // would send both an `updated` entry AND a `deletedId` for the same id.
@@ -181,7 +238,11 @@ export function createEditStore() {
     persist();
   };
   const clear = () => {
-    d.value = empty();
+    try {
+      localStorage.setItem(`${storageKey}:discarded`, JSON.stringify(d.value));
+    } catch {}
+    const { committedSha, committedAt, committedSnapshot } = d.value;
+    d.value = { ...empty(), committedSha, committedAt, committedSnapshot };
     // A full clear discards the draft entirely — any secondary notice tied to that now-gone
     // state (a persist failure on edits that no longer exist, a cross-tab replace of a draft
     // nobody's looking at anymore) has nothing left to refer to, so reset both here too rather
@@ -239,16 +300,7 @@ export function createEditStore() {
   // here would never reconcile and would show as permanently "edited" even once the base
   // item's value catches up (e.g. a synced product move should clear the "edited" badge, not
   // leave it stuck forever).
-  const SCALAR_FIELDS = new Set([
-    'product',
-    'title',
-    'horizon',
-    'stage',
-    'owner',
-    'impact',
-    'effort',
-    'visibility',
-  ]);
+  const SCALAR_FIELDS = new Set(['product', 'title', 'horizon', 'stage', 'owner', 'impact', 'effort', 'visibility']);
   // Split a pending comma-separated tags string into a trimmed, non-empty, case-folded set.
   const tagSet = (csv: string): Set<string> =>
     new Set(
@@ -278,21 +330,7 @@ export function createEditStore() {
     // happen to share a title don't both get eaten by a single base match.
     // Residual limitation: a create whose title collides with a pre-existing (never-synced-by-
     // us) item can still be mistakenly pruned — accepted as rare.
-    const claimedBaseIds = new Set<string>();
-    for (const c of [...d.value.created]) {
-      const title = d.value.fields[c.id]?.title ?? c.title;
-      if (!title.trim()) continue;
-      const match = items.find(
-        (it) =>
-          !claimedBaseIds.has(it.id) &&
-          it.product === c.product &&
-          normField(it.title).toLowerCase() === title.trim().toLowerCase(),
-      );
-      if (match) {
-        claimedBaseIds.add(match.id);
-        revertItem(c.id);
-      }
-    }
+    // Creates are acknowledged using the server's stable identity mapping only.
 
     // 2. Landed field/body edits: an id (not a created temp id) whose every pending field
     // already equals the base value has landed. A pending body edit additionally needs its own
@@ -310,8 +348,7 @@ export function createEditStore() {
         // The item was deleted upstream (no longer in the base at all): a pending field/body
         // edit on it is orphaned — sending it would 422 the next Sync (there's no file left to
         // update). Drop the pending state rather than leaving it to poison future syncs.
-        delete d.value.fields[id];
-        delete d.value.bodies[id];
+        // Keep orphaned edits recoverable; publication will offer an explicit resolution.
         continue;
       }
 
@@ -371,7 +408,8 @@ export function createEditStore() {
         // Only decide "landed" when the base actually carries an `order` for each of these items
         // (real published data always does; without it the order is ambiguous, so keep the
         // reorder rather than risk dropping a genuinely-pending one).
-        const hasAllOrders = laneBase.length === kept.length && laneBase.every((it) => Number.isFinite(it.order as number));
+        const hasAllOrders =
+          laneBase.length === kept.length && laneBase.every((it) => Number.isFinite(it.order as number));
         const baseOrder = [...laneBase].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((it) => it.id);
         const landed = !hasTempId && hasAllOrders && kept.every((id, i) => id === baseOrder[i]);
         if (!landed) nextLanes[horizon] = kept;
@@ -415,7 +453,7 @@ export function createEditStore() {
       ),
     );
     const reorderN = Object.values(d.value.reorder).reduce((n, lanes) => n + Object.keys(lanes).length, 0);
-    return ids.size + d.value.created.length + reorderN;
+    return ids.size + d.value.created.length + reorderN + d.value.assets.attach.length + d.value.assets.update.length;
   });
 
   // The plain changeset shape, with no base-version/idempotency data — used everywhere that
@@ -428,7 +466,12 @@ export function createEditStore() {
     return {
       updated: Object.keys({ ...d.value.fields, ...Object.fromEntries(Object.keys(d.value.bodies).map((k) => [k, 1])) })
         .filter((id) => !d.value.deleted.includes(id) && !createdIds.has(id))
-        .map((id) => ({ id, frontmatter: d.value.fields[id] || {}, body: d.value.bodies[id] || '' })),
+        .map((id) => ({
+          id,
+          frontmatter: d.value.fields[id] || {},
+          body: d.value.bodies[id] || '',
+          bodySet: id in d.value.bodies,
+        })),
       // `id` here is a client-only temp id for the working-copy projection; the server's
       // ItemNew has no id field and ignores unknown JSON keys, so it's safe to send.
       created: d.value.created.map((c) => ({
@@ -459,6 +502,7 @@ export function createEditStore() {
           ),
         ]),
       ),
+      assets: d.value.assets,
     };
   };
 
@@ -486,7 +530,105 @@ export function createEditStore() {
           }),
         )
       : undefined;
-    return { ...core, baseShas };
+    const relevant = new Set([...core.updated.map((u) => u.id), ...core.deletedIds]);
+    const bases = Object.entries(d.value.bases).filter(([id]) => relevant.has(id));
+    const captured = Object.fromEntries(bases.map(([id, b]) => [id, b.sha]));
+    return {
+      ...core,
+      baseShas: baseShaMap ? { ...baseShas, ...captured } : undefined,
+      baseContents: Object.fromEntries(bases.map(([id, b]) => [id, b.content])),
+    };
+  };
+
+  const snapshot = (): Draft => JSON.parse(JSON.stringify(d.value));
+  const restore = (data: Partial<Draft>) => {
+    d.value = { ...empty(), ...JSON.parse(JSON.stringify(data)) };
+    persist();
+  };
+  const activate = (login: string) => {
+    const legacy = snapshot();
+    storageKey = `${KEY}:markpasternak/product-roadmap-generalized:${login}`;
+    let exists: string | null = null;
+    try {
+      exists = localStorage.getItem(storageKey);
+      if (exists) d.value = load();
+      else if (!localStorage.getItem(`${KEY}:migrated`)) {
+        d.value = legacy;
+        localStorage.setItem(`${KEY}:recovery`, JSON.stringify(legacy));
+        localStorage.setItem(`${KEY}:migrated`, login);
+      } else d.value = empty();
+    } catch {
+      persistFailed.value = true;
+    }
+    persist();
+  };
+  const captureBase = (id: string, sha: string, content: string, replace = false) => {
+    if (!sha) return;
+    availableBases.set(id, { sha, content });
+    if ((isDirty(id) || d.value.deleted.includes(id)) && (!d.value.bases[id] || replace)) {
+      d.value.bases[id] = { sha, content };
+      persist();
+    }
+  };
+  const setAssets = (assets: Draft['assets']) => {
+    d.value.assets = JSON.parse(JSON.stringify(assets));
+    persist();
+  };
+  const preparePublication = (baseShaMap: Map<string, string>) => {
+    if (!d.value.requestPayload) {
+      const requestId = randomRequestId();
+      d.value.requestPayload = JSON.parse(JSON.stringify({ ...changeset(baseShaMap), requestId }));
+      persist();
+    }
+    return JSON.parse(JSON.stringify(d.value.requestPayload));
+  };
+  const releasePublication = () => {
+    d.value.requestPayload = null;
+    persist();
+  };
+  const acknowledge = (sent: any, createdIDs: Record<string, string> = {}) => {
+    for (const edit of sent.updated ?? []) {
+      for (const [key, value] of Object.entries(edit.frontmatter ?? {})) {
+        if (d.value.fields[edit.id]?.[key] === value) delete d.value.fields[edit.id]![key];
+      }
+      if (d.value.fields[edit.id] && !Object.keys(d.value.fields[edit.id]!).length) delete d.value.fields[edit.id];
+      if ((edit.bodySet || edit.body) && d.value.bodies[edit.id] === edit.body) delete d.value.bodies[edit.id];
+      delete d.value.bases[edit.id];
+    }
+    for (const item of sent.created ?? []) {
+      const realID = createdIDs[item.id];
+      if (!realID) continue;
+      const current = changesetCore().created.find((c) => c.id === item.id);
+      if (!current) {
+        if (!d.value.deleted.includes(realID)) d.value.deleted.push(realID);
+        continue;
+      }
+      const fields: Record<string, string> = {};
+      const currentFields = { ...current.frontmatter, title: current.title, product: current.product };
+      const sentFields = { ...item.frontmatter, title: item.title, product: item.product };
+      for (const [k, v] of Object.entries(currentFields)) if (v !== sentFields[k]) fields[k] = v;
+      d.value.created = d.value.created.filter((c) => c.id !== item.id);
+      delete d.value.fields[item.id];
+      delete d.value.bodies[item.id];
+      if (Object.keys(fields).length) d.value.fields[realID] = fields;
+      if (current.body !== item.body) d.value.bodies[realID] = current.body;
+      for (const lanes of Object.values(d.value.reorder))
+        for (const [lane, ids] of Object.entries(lanes)) lanes[lane] = ids.map((id) => (id === item.id ? realID : id));
+    }
+    d.value.deleted = d.value.deleted.filter((id) => !(sent.deletedIds ?? []).includes(id));
+    for (const [product, lanes] of Object.entries(sent.reorder ?? {}) as [string, Record<string, string[]>][]) {
+      for (const [lane, ids] of Object.entries(lanes))
+        if (JSON.stringify(d.value.reorder[product]?.[lane]) === JSON.stringify(ids))
+          delete d.value.reorder[product]![lane];
+      if (d.value.reorder[product] && !Object.keys(d.value.reorder[product]!).length) delete d.value.reorder[product];
+    }
+    for (const kind of ['attach', 'update'] as const)
+      d.value.assets[kind] = d.value.assets[kind].filter(
+        (change) => !(sent.assets?.[kind] ?? []).some((old: unknown) => JSON.stringify(old) === JSON.stringify(change)),
+      ) as any;
+    d.value.requestPayload = null;
+    d.value.requestId = null;
+    persist();
   };
 
   // U3 (R3/KTD3): mint (or reuse) the crypto-random requestId for the NEXT Sync attempt and
@@ -543,6 +685,16 @@ export function createEditStore() {
   const committedAt = computed(() => d.value.committedAt);
 
   return {
+    revision,
+    recoveryKey,
+    snapshot,
+    restore,
+    activate,
+    captureBase,
+    setAssets,
+    preparePublication,
+    releasePublication,
+    acknowledge,
     setField,
     setBody,
     addItem,

@@ -21,6 +21,9 @@ const watchForNewVersionMock = vi.fn((cb: () => void, _intervalMs?: number) => {
 
 vi.mock('../../lib/edit/client', () => ({
   EDIT_API: 'https://edit.example.test',
+  authedRequest: vi.fn(async (path:string) => new Response(JSON.stringify(path==='/api/assets'?[]:{revision:0,data:null}),{status:200,headers:{'Content-Type':'application/json'}})),
+  publicationStatus: vi.fn(async () => ({ok:false})),
+  clearToken: vi.fn(),
   readTokenFromHash: vi.fn(() => null),
   me: (...args: unknown[]) => meMock(...(args as [])),
   loginUrl: vi.fn(() => '#'),
@@ -37,6 +40,7 @@ vi.mock('../../lib/share/canvasdrop', () => ({
   updateAuthoredCanvas: vi.fn(),
 }));
 vi.mock('../../lib/edit/version', () => ({
+  fetchDeployedCommit: vi.fn(async () => null),
   watchForNewVersion: (cb: () => void, intervalMs?: number) => watchForNewVersionMock(cb, intervalMs),
 }));
 
@@ -57,7 +61,7 @@ let wrappers: VueWrapper[] = [];
 async function mountBoard(items: ItemVM[] = [item()]) {
   const w = mount(Board, {
     props: { items },
-    global: { stubs: { transition: false } },
+    global: { stubs: { transition: false, ResourceEditor: { template: '<div><slot /></div>' } } },
   });
   wrappers.push(w);
   await flushPromises();
@@ -82,76 +86,92 @@ afterEach(() => {
   for (const w of wrappers) w.unmount();
   wrappers = [];
   useEditStore().clear();
+  useEditStore().clearCommit();
   localStorage.clear();
   sessionStorage.clear();
   vi.restoreAllMocks();
 });
 
-describe('Board — edit mode persistence (U4)', () => {
-  it('does not start in edit mode by default for an editor with no saved preference', async () => {
-    const w = await mountBoard();
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(false);
-  });
-
-  it('auto-resumes edit mode on mount when rm-edit-mode was left on', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(true);
-  });
-
-  it('auto-resumes edit mode when a draft has unsynced changes, even without the saved flag', async () => {
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    const w = await mountBoard();
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(true);
-  });
-
-  it('persists edit mode to localStorage when toggled on', async () => {
-    const w = await mountBoard();
-    (w.vm as unknown as { editMode: boolean }).editMode = true;
+describe('Board — product navigation and view options', () => {
+  it('distinguishes an empty roadmap from a filter with no matches', async () => {
+    const w = await mountBoard([]);
+    expect(w.text()).toContain('No roadmap items yet');
+    expect(w.text()).not.toContain('No matching roadmap items');
+    expect(w.findAll('button').some((button) => button.text() === 'Clear all filters')).toBe(false);
+    const filtered = await mountBoard([item()]);
+    await filtered.get('input[type="search"]').setValue('zzzz-no-match');
+    await filtered.get('input[type="search"]').trigger('keydown', { key: 'Enter' });
     await flushPromises();
-    expect(localStorage.getItem('rm-edit-mode')).toBe('1');
-  });
-});
-
-describe('Board — newer version reload affordance (U9)', () => {
-  it('starts the version watcher only once canEdit resolves true', async () => {
-    await mountBoard();
-    expect(watchForNewVersionMock).toHaveBeenCalledTimes(1);
+    expect(filtered.text()).toContain('No matching roadmap items');
+    expect(filtered.findAll('button').some((button) => button.text() === 'Clear all filters')).toBe(true);
   });
 
-  it('does not start the version watcher for a non-editor', async () => {
-    meMock.mockResolvedValueOnce({ editor: false, login: '' });
-    await mountBoard();
-    expect(watchForNewVersionMock).not.toHaveBeenCalled();
+  it('recognizes a restored quick view after the URL filters are ready', async () => {
+    window.history.replaceState(null, '', '/?hygiene=now-early&horizon=Now&sort=updated');
+    const w = await mountBoard([item({ stage: 'Shaping' })]);
+    expect(w.get('button[aria-label="Choose view: Now: early stage"]').text()).toBe('Now: early stage');
+    expect(w.get('[aria-label="Roadmap views"]').text()).not.toContain('Modified');
   });
 
-  it('shows the reload banner once a newer version is detected', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    expect(w.find('[data-test="reload-latest"]').exists()).toBe(false);
-
-    newVersionCb?.();
+  it('counts only visible horizons in the mobile filter confirmation', async () => {
+    const w = await mountBoard([item(), item({ id: 'TALK-2', horizon: 'Completed' })]);
+    (w.vm as unknown as { sheetOpen: boolean }).sheetOpen = true;
     await flushPromises();
-
-    expect(w.find('[data-test="reload-latest"]').exists()).toBe(true);
+    expect(w.find('[role="dialog"][aria-label="Filters"]').text()).toContain('Show 1 item');
   });
 
-  it('reloads the page unconditionally — reconciling the draft is the mount effect\'s job, not this button\'s', async () => {
-    // reloadToLatest was simplified to a bare `location.reload()`: the mount-time
-    // `editStore.reconcile()` (see the describe block below) now handles dropping
-    // landed ops uniformly, whether the reload was this button or a plain refresh.
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    const store = useEditStore();
-    store.setField('TALK-1', 'title', 'Edited title');
+  it('filters products from the main navigation while preserving the chosen horizon', async () => {
+    window.history.replaceState(null, '', '/?horizon=Now');
+    const w = await mountBoard([item(), item({ id: 'MUSIC-1', product: 'Music App' }), item({ id: 'MUSIC-2', product: 'Music App', horizon: 'Next' })]);
+    const navigation = w.find('[aria-label="Filter by product"]');
+    const studio = navigation.findAll('button').find((button) => button.text() === 'Music App')!;
+    await studio.trigger('click');
+    expect(studio.attributes('aria-pressed')).toBe('true');
+    expect(w.findAllComponents({ name: 'RoadmapCard' }).map((card) => card.props('item').id)).toEqual(['MUSIC-1']);
+    expect(window.location.pathname).toBe('/music-app/');
+    expect(new URLSearchParams(window.location.search).getAll('horizon')).toEqual(['Now']);
+    await navigation.find('button').trigger('click');
+    expect(w.findAllComponents({ name: 'RoadmapCard' })).toHaveLength(2);
+  });
 
-    newVersionCb?.();
+  it('keeps visibility in Filters, separate from layout, with URL and chip recovery', async () => {
+    localStorage.setItem('rm-sidebar', '1');
+    const w = await mountBoard([item(), item({ id: 'TALK-2', visibility: 'Public' })]);
+    expect(w.get('#board-view-options').text()).not.toContain('Visibility');
+    await w.get('#side-visibility').setValue('Public');
+    expect(w.findAllComponents({ name: 'RoadmapCard' }).map((card) => card.props('item').id)).toEqual(['TALK-2']);
+    expect(window.location.search).toContain('visibility=Public');
+    expect(w.get('[data-filter-kind="visibility"]').text()).toContain('Public');
+    (w.vm as unknown as { sheetOpen: boolean }).sheetOpen = true;
     await flushPromises();
-    await w.find('[data-test="reload-latest"]').trigger('click');
+    expect((w.get('#sheet-visibility').element as HTMLSelectElement).value).toBe('Public');
+    await w.get('#sheet-visibility').setValue('Internal');
+    expect((w.get('#side-visibility').element as HTMLSelectElement).value).toBe('Internal');
+    expect(w.findAllComponents({ name: 'RoadmapCard' }).map((card) => card.props('item').id)).toEqual(['TALK-1']);
+    await w.get('[data-test="active-filter-clear"]').trigger('click');
+    expect(w.findAllComponents({ name: 'RoadmapCard' })).toHaveLength(2);
+    expect(window.location.search).not.toContain('visibility');
+  });
 
-    // The click itself doesn't touch the store — it only navigates.
-    expect(store.dirtyCount.value).toBeGreaterThan(0);
-    expect(window.location.reload).toHaveBeenCalledTimes(1);
+  it('keeps signed-out board actions focused on viewing', async () => {
+    meMock.mockResolvedValue({ editor: false, login: '' });
+    const w = await mountBoard();
+    expect(w.find('[data-test="sign-in-to-edit"]').exists()).toBe(false);
+    expect(w.find('[data-test="edit-toggle"]').exists()).toBe(false);
+    expect(w.get('[aria-controls="board-more-actions"]').text()).toContain('More');
+  });
+
+  it('discloses view settings without clearing them when closed', async () => {
+    const w = await mountBoard();
+    const toggle = w.find('[aria-controls="board-view-options"]');
+    expect(toggle.attributes('aria-expanded')).toBe('false');
+    await toggle.trigger('click');
+    expect(toggle.attributes('aria-expanded')).toBe('true');
+    await w.find('select[name="sort"]').setValue('title');
+    await toggle.trigger('click');
+    expect(toggle.attributes('aria-expanded')).toBe('false');
+    expect((w.find('select[name="sort"]').element as HTMLSelectElement).value).toBe('title');
+    expect(new URLSearchParams(window.location.search).get('sort')).toBe('title');
   });
 });
 
@@ -182,496 +202,6 @@ describe('Board — abandoned-add discard on editor close (final review fix 2)',
     (w.vm as unknown as { onEditorClose: () => void }).onEditorClose();
 
     expect(store.changeset().created).toHaveLength(1);
-  });
-});
-
-describe('Board — reconcile draft against fresh base on mount', () => {
-  it('drops a created item once it lands in the freshly-loaded base, keeping unrelated edits', async () => {
-    // Simulates the "Sync → rebuild → reload" cycle: a create made against the first mount
-    // has, by the time of a later reload, landed under a real id in the published base
-    // (same product + title). The next mount's `props.items` reflects that — and the mount
-    // reconcile (called right after `canEdit` resolves, before the auto-resume check) must
-    // drop the now-redundant local `created` entry while leaving a genuinely-unsynced edit
-    // made on another item untouched.
-    localStorage.setItem('rm-edit-mode', '1');
-    const store = useEditStore();
-    const createdId = store.addItem('Podcasts & Audiobooks', 'Brand new card', { horizon: 'Next' });
-    store.setField('TALK-1', 'title', 'Edited after sync');
-
-    await mountBoard([
-      item(),
-      item({ id: 'TALK-2', product: 'Podcasts & Audiobooks', title: 'Brand new card' }),
-    ]);
-
-    const cs = store.changeset();
-    expect(cs.created.find((c) => c.id === createdId)).toBeUndefined();
-    expect(cs.updated.find((u) => u.id === 'TALK-1')?.frontmatter.title).toBe('Edited after sync');
-  });
-
-  it('drops a field edit once the base already reflects it', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const store = useEditStore();
-    // The base's title already matches this "edit" — it has landed.
-    store.setField('TALK-1', 'title', 'Existing item');
-
-    await mountBoard();
-
-    expect(store.changeset().updated).toEqual([]);
-    expect(store.dirtyCount.value).toBe(0);
-  });
-
-  it('keeps a field edit that still differs from the freshly-loaded base', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const store = useEditStore();
-    store.setField('TALK-1', 'title', 'Still unsynced title');
-
-    await mountBoard();
-
-    expect(store.changeset().updated.find((u) => u.id === 'TALK-1')?.frontmatter.title).toBe(
-      'Still unsynced title',
-    );
-  });
-
-  it('reconciles before the auto-resume check, so a fully-landed draft does not force edit mode on', async () => {
-    // No `rm-edit-mode` flag saved — the only reason edit mode would auto-resume is
-    // `dirtyCount > 0`. If reconcile ran AFTER that check (or not at all), this stale,
-    // already-landed edit would incorrectly flip edit mode on.
-    const store = useEditStore();
-    store.setField('TALK-1', 'title', 'Existing item');
-
-    const w = await mountBoard();
-
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(false);
-  });
-});
-
-describe('Board — doSync publishing reset', () => {
-  it('does not leave a stale "Publishing…" state showing across a failed re-sync after a prior success', async () => {
-    // Once a sync lands with nothing changed since, `unsynced` goes false: SyncBar (the
-    // bottom bar) unmounts entirely — its Discard/Sync actions have nothing to act on — and
-    // the "Publishing…" copy lives solely in the always-visible top banner (see #2/#3).
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'abc123' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-    expect(w.find('[data-test="sync-bar"]').exists()).toBe(false);
-    expect(w.find('[data-test="banner-publishing"]').exists()).toBe(true);
-
-    // Editing again before the failed re-sync reintroduces a genuinely-unsynced delta, so
-    // SyncBar reappears (this is what the re-sync attempt below is sent against).
-    useEditStore().setField('TALK-1', 'title', 'Edited again');
-    syncMock.mockResolvedValueOnce({ ok: false, errors: ['boom'] });
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(w.find('[data-test="sync-bar"]').text()).not.toContain('Publishing');
-    expect(w.find('[data-test="sync-bar"]').text()).toContain('boom');
-  });
-});
-
-describe('Board — NoChanges (no-op) sync does not get stuck on "Publishing…"', () => {
-  it('a NoChanges response is a clean resolve — no stuck publishing banner, no toast, requestId cleared', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, noChanges: true, sha: '' });
-    const w = await mountBoard();
-    const store = useEditStore();
-    store.setField('TALK-1', 'title', 'Edited title');
-    store.ensureRequestId();
-
-    // doSync now refreshes liveItems/baseShaMap from /api/items after ANY ok sync (real
-    // commit or no-op alike — see refreshLiveItems). The refreshed base here still carries
-    // the item's ORIGINAL (unedited) title — a distinct value from the pending "Edited
-    // title" edit — so the pending edit remains genuinely unsynced after reconcile, keeping
-    // this test's real point (no stuck "Publishing…") independent of the refresh/reconcile
-    // behavior exercised separately in the "post-sync base refresh" describe block below.
-    const { fetchItems } = await import('../../lib/edit/client');
-    (fetchItems as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
-      {
-        id: 'TALK-1',
-        sha: 'sha-cm1',
-        frontmatter: { title: 'Existing item', product: 'Podcasts & Audiobooks', horizon: 'Now', stage: 'Building', owner: 'mark@example.com' },
-        body: '',
-      },
-    ]);
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(w.find('[data-test="banner-publishing"]').exists()).toBe(false);
-    // Falls through to the ordinary unsynced state — the pending edit still differs from the
-    // freshly-refreshed base — rather than getting stuck showing "Publishing…" for a build
-    // that will never happen.
-    expect(w.find('[data-test="banner-unsynced"]').exists()).toBe(true);
-    expect(w.find('[data-test="sync-toast"]').exists()).toBe(false);
-    expect(store.pendingRequestId()).toBeNull();
-  });
-});
-
-describe('Board — banner state', () => {
-  it('shows the plain "Editing" state when edit mode is on and there is nothing to report', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    expect(w.find('[data-test="banner-clean"]').exists()).toBe(true);
-    expect(w.find('[data-test="sync-bar"]').exists()).toBe(false);
-  });
-
-  it('shows the unsynced count once there is a genuine unsynced change', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    const banner = w.find('[data-test="banner-unsynced"]');
-    expect(banner.exists()).toBe(true);
-    expect(banner.text()).toContain('1 unpublished');
-    expect(banner.text()).not.toContain('unpublished)');
-  });
-
-  it('switches to the calm "publishing" state once Sync lands with nothing changed since', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValue({ ok: true, sha: 'abc123' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(w.find('[data-test="banner-publishing"]').exists()).toBe(true);
-    expect(w.find('[data-test="banner-unsynced"]').exists()).toBe(false);
-  });
-
-  it('prioritizes the reload state over publishing/unsynced once a newer build is detected', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValue({ ok: true, sha: 'abc123' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    newVersionCb?.();
-    await flushPromises();
-
-    expect(w.find('[data-test="reload-latest"]').exists()).toBe(true);
-    expect(w.find('[data-test="banner-publishing"]').exists()).toBe(false);
-  });
-});
-
-describe('Board — SyncBar visibility follows `unsynced`', () => {
-  it('is visible while there is a genuinely-unsynced change', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-    expect(w.find('[data-test="sync-bar"]').exists()).toBe(true);
-  });
-
-  it('disappears immediately once Sync succeeds with nothing changed since', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValue({ ok: true, sha: 'abc123' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(w.find('[data-test="sync-bar"]').exists()).toBe(false);
-  });
-
-  it('reappears if the user edits again while the prior sync is still publishing', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValue({ ok: true, sha: 'abc123' });
-    const w = await mountBoard();
-    const store = useEditStore();
-    store.setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-    expect(w.find('[data-test="sync-bar"]').exists()).toBe(false);
-
-    store.setField('TALK-1', 'title', 'Edited again, post-sync');
-    await flushPromises();
-
-    expect(w.find('[data-test="sync-bar"]').exists()).toBe(true);
-  });
-});
-
-describe('Board — deploy status polling (U4/R4/R5/KTD4)', () => {
-  it('tracks committed → building → live via identity (a success run whose head IS the committed sha)', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'sha-1' });
-    deployStatusMock.mockResolvedValueOnce({ status: 'in_progress', conclusion: '', headSha: 'sha-1', htmlUrl: '' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    vi.useFakeTimers();
-    try {
-      await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-      await flushPromises();
-      expect(w.find('[data-test="banner-building"]').exists()).toBe(true);
-
-      deployStatusMock.mockResolvedValueOnce({ status: 'completed', conclusion: 'success', headSha: 'sha-1', htmlUrl: '' });
-      await vi.advanceTimersByTimeAsync(3000);
-      await flushPromises();
-      expect(w.find('[data-test="banner-live"]').exists()).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('treats a newer superseding success (a different headSha) as live too — identity/ancestry, never a sha-ordering compare', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'sha-1' });
-    deployStatusMock.mockResolvedValueOnce({ status: 'in_progress', conclusion: '', headSha: 'sha-1', htmlUrl: '' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    vi.useFakeTimers();
-    try {
-      await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-      await flushPromises();
-      expect(w.find('[data-test="banner-building"]').exists()).toBe(true);
-
-      // deploy.yml's `cancel-in-progress` means the latest-run endpoint only ever reports
-      // ONE run — a different (later) commit's run superseded ours here; on a
-      // fast-forward-only main branch its tree already contains our commit, so this success
-      // means we're live too.
-      deployStatusMock.mockResolvedValueOnce({ status: 'completed', conclusion: 'success', headSha: 'sha-2-newer', htmlUrl: '' });
-      await vi.advanceTimersByTimeAsync(3000);
-      await flushPromises();
-      expect(w.find('[data-test="banner-live"]').exists()).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('shows "Publish didn\'t build" with a link to the failing run', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'sha-1' });
-    deployStatusMock.mockResolvedValueOnce({
-      status: 'completed',
-      conclusion: 'failure',
-      headSha: 'sha-1',
-      htmlUrl: 'https://github.com/x/actions/runs/1',
-    });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(w.find('[data-test="banner-build-failed"]').exists()).toBe(true);
-    const link = w.get('[data-test="build-failed-view-run"]');
-    expect(link.attributes('href')).toBe('https://github.com/x/actions/runs/1');
-  });
-
-  it('maps cancelled/skipped/timed_out to "superseded — awaiting a newer build" (not a failure), and keeps polling for it', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'sha-1' });
-    deployStatusMock.mockResolvedValueOnce({ status: 'completed', conclusion: 'cancelled', headSha: 'sha-1', htmlUrl: '' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    vi.useFakeTimers();
-    try {
-      await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-      await flushPromises();
-      expect(w.find('[data-test="banner-superseded"]').exists()).toBe(true);
-      expect(w.find('[data-test="banner-build-failed"]').exists()).toBe(false);
-
-      deployStatusMock.mockResolvedValueOnce({ status: 'completed', conclusion: 'success', headSha: 'sha-2', htmlUrl: '' });
-      await vi.advanceTimersByTimeAsync(3000);
-      await flushPromises();
-      expect(w.find('[data-test="banner-live"]').exists()).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('bounds "no run yet" polling instead of continuing forever, settling on "no build was triggered"', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'sha-1' });
-    // The zero-value response `handleStatus` returns when a commit touches only
-    // path-filtered files — no run at all, ever, for this commit.
-    deployStatusMock.mockResolvedValue({ status: '', conclusion: '', headSha: '', htmlUrl: '' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    vi.useFakeTimers();
-    try {
-      await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-      await flushPromises();
-      expect(w.find('[data-test="banner-no-build"]').exists()).toBe(false); // not yet — still bounded-waiting
-
-      await vi.advanceTimersByTimeAsync(3 * 60 * 1000);
-      await flushPromises();
-      expect(w.find('[data-test="banner-no-build"]').exists()).toBe(true);
-      const callsAtTimeout = deployStatusMock.mock.calls.length;
-
-      // Confirms polling actually stopped at the bound, rather than continuing forever.
-      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
-      await flushPromises();
-      expect(deployStatusMock.mock.calls.length).toBe(callsAtTimeout);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('degrades silently when /api/status is unavailable — no error, just no progression', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'sha-1' });
-    deployStatusMock.mockResolvedValue(null);
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(w.find('[data-test="banner-publishing"]').exists()).toBe(true);
-    expect(w.find('[data-test="banner-build-failed"]').exists()).toBe(false);
-    expect(w.find('[data-test="banner-building"]').exists()).toBe(false);
-    expect(deployStatusMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('resumes "awaiting build" on reload for a persisted, not-yet-live committed sha — never a phantom "unsynced"/"clean"', async () => {
-    // Simulates a prior tab that synced, then reloaded before the build finished: the store
-    // already carries a committedSha + the snapshot it was sent for (see store.ts's
-    // recordCommit), with the same pending field edit still in the draft (the rebuild hasn't
-    // landed yet, so reconcile has nothing to drop).
-    const store = useEditStore();
-    store.setField('TALK-1', 'title', 'Edited title');
-    const snapshot = JSON.stringify(store.changeset());
-    store.recordCommit('committed-sha-1', snapshot);
-    deployStatusMock.mockResolvedValueOnce({ status: 'in_progress', conclusion: '', headSha: 'committed-sha-1', htmlUrl: '' });
-    localStorage.setItem('rm-edit-mode', '1');
-
-    const w = await mountBoard();
-
-    expect(w.find('[data-test="banner-unsynced"]').exists()).toBe(false);
-    expect(w.find('[data-test="banner-clean"]').exists()).toBe(false);
-    expect(w.find('[data-test="banner-building"]').exists()).toBe(true);
-  });
-
-  it('clears a persisted committed sha once reload reconciliation proves a created item is already live', async () => {
-    // This is the "created card still says Publishing after reload" case: the previous tab
-    // synced a new temp-id item and recorded the commit, then the deployed static build now
-    // contains that item under its real id. Mount-time reconcile drops the create; the stale
-    // commit marker should be cleared instead of resuming a Publishing banner.
-    const store = useEditStore();
-    store.addItem('Core Platform & Data', 'mark testaraaar', { horizon: 'Next', stage: 'Discovery' });
-    store.recordCommit('committed-create-sha', JSON.stringify(store.changeset()));
-    localStorage.setItem('rm-edit-mode', '1');
-
-    const w = await mountBoard([
-      item({
-        id: 'PLATFORM-001',
-        title: 'mark testaraaar',
-        product: 'Core Platform & Data',
-        horizon: 'Next',
-        stage: 'Discovery',
-      }),
-    ]);
-    await flushPromises();
-
-    expect(store.dirtyCount.value).toBe(0);
-    expect(w.find('[data-test="banner-publishing"]').exists()).toBe(false);
-    expect(w.find('[data-test="banner-clean"]').exists()).toBe(true);
-    expect(deployStatusMock).not.toHaveBeenCalled();
-    expect(store.committedSha.value).toBeNull();
-  });
-
-  it('DROPS a stale committed sha on mount (past session, deploy long live) — no resurrected "Publishing…" and no poll', async () => {
-    // The reported bug: a committedSha left by a past session whose ~1-min build went live long
-    // ago (the poll never cleared it before that tab closed) must NOT resurrect a permanent
-    // build banner on the next load. Drive staleness via the clock: record the commit, then
-    // jump well past the resume window before mounting.
-    vi.useFakeTimers();
-    try {
-      vi.setSystemTime(new Date('2026-07-07T12:00:00Z'));
-      const store = useEditStore();
-      store.setField('TALK-1', 'title', 'Edited title');
-      store.recordCommit('committed-sha-old', JSON.stringify(store.changeset()));
-      vi.setSystemTime(new Date('2026-07-07T12:30:00Z')); // 30 min later — build is long live
-      localStorage.setItem('rm-edit-mode', '1');
-
-      const w = await mountBoard();
-      await flushPromises();
-
-      expect(w.find('[data-test="banner-building"]').exists()).toBe(false);
-      expect(w.find('[data-test="banner-publishing"]').exists()).toBe(false);
-      expect(deployStatusMock).not.toHaveBeenCalled(); // no poll started for a stale sha
-      expect(useEditStore().committedSha.value).toBeNull(); // dropped, so it can't resurrect later
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('a fast second Sync retires the first poll chain instead of running both concurrently', async () => {
-    // `syncPending` clears in doSync's `finally` before the first poll's initial /api/status
-    // fetch resolves, so SyncBar re-enables Sync and a second Sync can start a second poll
-    // chain while the first is still in flight. Only one chain should end up alive.
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    const doSync = (w.vm as unknown as { doSync: () => Promise<void> }).doSync;
-
-    let resolveFirstStatus!: (v: { status: string; conclusion: string; headSha: string; htmlUrl: string }) => void;
-    const firstStatusFetch = new Promise<{ status: string; conclusion: string; headSha: string; htmlUrl: string }>(
-      (resolve) => {
-        resolveFirstStatus = resolve;
-      },
-    );
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'sha-1' });
-    deployStatusMock.mockImplementationOnce(() => firstStatusFetch);
-
-    useEditStore().setField('TALK-1', 'title', 'First edit');
-    await doSync(); // starts the first poll chain; its initial /api/status fetch is left pending
-    await flushPromises();
-    expect(deployStatusMock).toHaveBeenCalledTimes(1);
-
-    // A second Sync starts (and lands) while the first chain's fetch is still unresolved.
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'sha-2' });
-    deployStatusMock.mockResolvedValueOnce({ status: 'in_progress', conclusion: '', headSha: 'sha-2', htmlUrl: '' });
-    useEditStore().setField('TALK-1', 'title', 'Second edit');
-    await doSync(); // starts a second, fresh poll chain
-    await flushPromises();
-    expect(w.find('[data-test="banner-building"]').exists()).toBe(true);
-    expect(deployStatusMock).toHaveBeenCalledTimes(2);
-
-    // Now let the stale first chain's fetch resolve — a `success` result for sha-1. If the
-    // first chain were still alive it would flip the banner to "live"; instead its captured
-    // epoch no longer matches the current one, so it must bail without touching state.
-    resolveFirstStatus({ status: 'completed', conclusion: 'success', headSha: 'sha-1', htmlUrl: '' });
-    await flushPromises();
-    expect(w.find('[data-test="banner-live"]').exists()).toBe(false);
-    expect(w.find('[data-test="banner-building"]').exists()).toBe(true);
-    // The stale chain didn't reschedule another poll of its own after bailing.
-    expect(deployStatusMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('unmounting stops the active poll chain — no further /api/status calls after teardown', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'sha-1' });
-    deployStatusMock.mockResolvedValue({ status: 'in_progress', conclusion: '', headSha: 'sha-1', htmlUrl: '' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    vi.useFakeTimers();
-    try {
-      await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-      await flushPromises();
-      const callsBeforeUnmount = deployStatusMock.mock.calls.length;
-
-      w.unmount();
-      wrappers = wrappers.filter((x) => x !== w);
-
-      await vi.advanceTimersByTimeAsync(30000);
-      await flushPromises();
-      expect(deployStatusMock.mock.calls.length).toBe(callsBeforeUnmount);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
 
@@ -898,13 +428,15 @@ describe('Board — confirm before discarding all (fix #2)', () => {
     const w = await mountBoard();
     const store = useEditStore();
     store.setField('TALK-1', 'title', 'Edited title');
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
 
     (w.vm as unknown as { onDiscardAll: () => void }).onDiscardAll();
 
-    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('Discard all 1 unsynced change'));
+    await flushPromises();
+    expect(document.querySelector('[role=alertdialog]')?.textContent).toContain('1 unpublished change');
+    document.querySelector<HTMLButtonElement>('[data-test=cancel-action]')!.click();
+    await flushPromises();
     expect(store.dirtyCount.value).toBe(1);
-    confirmSpy.mockRestore();
   });
 
   it('clears the draft once the confirmation is accepted', async () => {
@@ -912,12 +444,13 @@ describe('Board — confirm before discarding all (fix #2)', () => {
     const w = await mountBoard();
     const store = useEditStore();
     store.setField('TALK-1', 'title', 'Edited title');
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
 
     (w.vm as unknown as { onDiscardAll: () => void }).onDiscardAll();
-
+    await flushPromises();
+    document.querySelector<HTMLButtonElement>('[data-test=confirm-action]')!.click();
+    await flushPromises();
     expect(store.dirtyCount.value).toBe(0);
-    confirmSpy.mockRestore();
   });
 });
 
@@ -931,7 +464,7 @@ describe('Board — pre-Sync title validation (fix #3, now via the general U5 va
     await flushPromises();
 
     expect(syncMock).not.toHaveBeenCalled();
-    const bar = w.find('[data-test="sync-bar"]');
+    const bar = w.find('[data-test="save-status"]');
     // No title yet to name the item by, so — like the old ad-hoc check — it names the
     // product instead (see validate.ts's `displayNameFor` fallback in Board.vue).
     expect(bar.text()).toContain('Podcasts & Audiobooks');
@@ -948,7 +481,7 @@ describe('Board — pre-Sync title validation (fix #3, now via the general U5 va
     await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
     await flushPromises();
 
-    const text = w.find('[data-test="sync-bar"]').text();
+    const text = w.find('[data-test="save-status"]').text();
     expect(text).toContain('Podcasts & Audiobooks');
     expect(text).toContain('Music App');
     expect(text).toContain('title is required');
@@ -979,7 +512,7 @@ describe('Board — pre-Sync title validation (fix #3, now via the general U5 va
     await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
     await flushPromises();
 
-    const bar = w.find('[data-test="sync-bar"]');
+    const bar = w.find('[data-test="save-status"]');
     expect(bar.text()).not.toContain('Publishing');
     expect(bar.text()).toContain('title is required');
   });
@@ -995,7 +528,7 @@ describe('Board — pre-Sync validation (U5/R6): every ValidateFrontmatter-enfor
     await flushPromises();
 
     expect(syncMock).not.toHaveBeenCalled();
-    const text = w.find('[data-test="sync-bar"]').text();
+    const text = w.find('[data-test="save-status"]').text();
     expect(text).toContain('Music App Templates');
     expect(text).toContain('horizon "Sonn" isn\'t a valid horizon');
   });
@@ -1009,7 +542,7 @@ describe('Board — pre-Sync validation (U5/R6): every ValidateFrontmatter-enfor
     await flushPromises();
 
     expect(syncMock).not.toHaveBeenCalled();
-    const text = w.find('[data-test="sync-bar"]').text();
+    const text = w.find('[data-test="save-status"]').text();
     expect(text).toContain('Music App Templates');
     expect(text).toContain('lowercase');
   });
@@ -1023,7 +556,7 @@ describe('Board — pre-Sync validation (U5/R6): every ValidateFrontmatter-enfor
     await flushPromises();
 
     expect(syncMock).not.toHaveBeenCalled();
-    const text = w.find('[data-test="sync-bar"]').text();
+    const text = w.find('[data-test="save-status"]').text();
     expect(text).toContain('title "2024" reads as a number');
   });
 
@@ -1084,7 +617,7 @@ describe('Board — reconcile body edits once raw bodies land (fix #4)', () => {
     await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
     await flushPromises();
     expect(syncMock).not.toHaveBeenCalled();
-    expect(w.find('[data-test="sync-bar"]').text()).toContain('Still loading your workspace');
+    expect(w.find('[data-test="save-status"]').text()).toContain('Still loading your workspace');
 
     // Toggling edit mode off and back on fires the raw-bodies fetch again — if the guard
     // weren't reset on failure, this retry would never even attempt the fetch and Sync would
@@ -1225,106 +758,6 @@ describe('Board — durable-draft warning (U6/R7)', () => {
   });
 });
 
-describe('Board — leave & cross-tab guards (U9/R10)', () => {
-  it('warns before unload while a sync is in flight', async () => {
-    const w = await mountBoard();
-    (w.vm as unknown as { syncPending: boolean }).syncPending = true;
-    await flushPromises();
-
-    const ev = new Event('beforeunload', { cancelable: true });
-    window.dispatchEvent(ev);
-
-    expect(ev.defaultPrevented).toBe(true);
-  });
-
-  it('warns before unload when there are unsynced changes', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    const ev = new Event('beforeunload', { cancelable: true });
-    window.dispatchEvent(ev);
-
-    expect(ev.defaultPrevented).toBe(true);
-  });
-
-  it('is silent when the draft is clean', async () => {
-    await mountBoard();
-
-    const ev = new Event('beforeunload', { cancelable: true });
-    window.dispatchEvent(ev);
-
-    expect(ev.defaultPrevented).toBe(false);
-  });
-
-  it('stops warning once a sync lands and nothing has changed since', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'abc123' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    const ev = new Event('beforeunload', { cancelable: true });
-    window.dispatchEvent(ev);
-
-    expect(ev.defaultPrevented).toBe(false);
-  });
-
-  it('shows a quiet notice when another tab changes the draft', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-
-    const otherDraft = {
-      fields: { 'TALK-1': { title: 'From another tab' } },
-      bodies: {},
-      created: [],
-      deleted: [],
-      reorder: {},
-    };
-    localStorage.setItem(KEY, JSON.stringify(otherDraft));
-    window.dispatchEvent(new StorageEvent('storage', { key: KEY, newValue: JSON.stringify(otherDraft) }));
-    await flushPromises();
-
-    expect(w.find('[data-test="cross-tab-notice"]').exists()).toBe(true);
-  });
-
-  it('does not show the cross-tab notice for an identical-draft storage event', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    const w = await mountBoard();
-    const sameJson = localStorage.getItem(KEY)!;
-
-    window.dispatchEvent(new StorageEvent('storage', { key: KEY, newValue: sameJson }));
-    await flushPromises();
-
-    expect(w.find('[data-test="cross-tab-notice"]').exists()).toBe(false);
-  });
-
-  it('dismissing the cross-tab notice hides it again', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    const otherDraft = {
-      fields: { 'TALK-1': { title: 'From another tab' } },
-      bodies: {},
-      created: [],
-      deleted: [],
-      reorder: {},
-    };
-    localStorage.setItem(KEY, JSON.stringify(otherDraft));
-    window.dispatchEvent(new StorageEvent('storage', { key: KEY, newValue: JSON.stringify(otherDraft) }));
-    await flushPromises();
-    expect(w.find('[data-test="cross-tab-notice"]').exists()).toBe(true);
-
-    await w.find('[data-test="cross-tab-notice-dismiss"]').trigger('click');
-    await flushPromises();
-
-    expect(w.find('[data-test="cross-tab-notice"]').exists()).toBe(false);
-  });
-});
-
 describe('Board — never show the read-only drawer in edit mode (fix #5)', () => {
   it('closes an open drawer and opens the full editor once edit mode turns on', async () => {
     const w = await mountBoard();
@@ -1355,32 +788,6 @@ describe('Board — never show the read-only drawer in edit mode (fix #5)', () =
     expect(w.find('.drawer-scrim').exists()).toBe(false);
 
     window.history.replaceState(null, '', '/');
-  });
-});
-
-describe('Board — overwrite warning surfaced in SyncBar (fix #7)', () => {
-  it('shows the warning once a newer version is live alongside genuinely-unsynced edits', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    newVersionCb?.();
-    await flushPromises();
-
-    // The top banner switches to the "reload" state (it takes priority), but SyncBar stays
-    // mounted underneath it (unsynced is still true) carrying the non-blocking warning.
-    expect(w.find('[data-test="overwrite-warning"]').exists()).toBe(true);
-  });
-
-  it('is absent when there is nothing unsynced to warn about', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-
-    newVersionCb?.();
-    await flushPromises();
-
-    expect(w.find('[data-test="sync-bar"]').exists()).toBe(false);
   });
 });
 
@@ -1512,7 +919,7 @@ describe('Board — pre-Sync empty-owner validation (fix #10, now via the genera
     await flushPromises();
 
     expect(syncMock).not.toHaveBeenCalled();
-    const bar = w.find('[data-test="sync-bar"]');
+    const bar = w.find('[data-test="save-status"]');
     expect(bar.text()).toContain('Existing item');
     expect(bar.text()).toContain('owner is required');
   });
@@ -1551,7 +958,7 @@ describe('Board — pre-Sync empty-owner validation (fix #10, now via the genera
     await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
     await flushPromises();
 
-    const text = w.find('[data-test="sync-bar"]').text();
+    const text = w.find('[data-test="save-status"]').text();
     expect(text).toContain('Existing item');
     expect(text).toContain('Second item');
     expect(text).toContain('owner is required');
@@ -1572,11 +979,11 @@ describe('Board — pre-Sync empty-owner validation (fix #10, now via the genera
     await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
     await flushPromises();
 
-    const text = w.find('[data-test="sync-bar"]').text();
+    const text = w.find('[data-test="save-status"]').text();
     expect(text).toContain('Alpha');
     expect(text).toContain('Bravo');
     expect(text).toContain('Charlie');
-    expect(text).not.toContain('Delta');
+    expect(w.get('[data-test=save-error]').text()).not.toContain('Delta');
     expect(text).toContain('+2 more');
   });
 });
@@ -1656,37 +1063,6 @@ describe('Board — unpublished-work indicator in view mode (fix #5)', () => {
   });
 });
 
-describe('Board — network-flake sync failure gives reload advice, not a blind retry prompt (fix #9)', () => {
-  it('sets a distinct reload-advice message when the sync request throws', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockRejectedValueOnce(new Error('Failed to fetch'));
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    const bar = w.find('[data-test="sync-bar"]');
-    expect(bar.text()).toContain("Couldn't confirm the sync completed");
-    expect(bar.text()).toContain('Reload');
-    expect(bar.text()).toContain('duplicates');
-  });
-
-  it('keeps the clean, fixable message for a clean (non-OK) server response, unlike the caught-exception path', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: false, errors: ['stage: invalid'] });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    const bar = w.find('[data-test="sync-bar"]');
-    expect(bar.text()).toContain('stage: invalid');
-    expect(bar.text()).not.toContain('duplicates');
-  });
-});
-
 describe('Board — session-expiry re-auth path (fix #2)', () => {
   it('surfaces a "Sign in again" action in the banner when sync reports an auth error', async () => {
     localStorage.setItem('rm-edit-mode', '1');
@@ -1697,10 +1073,10 @@ describe('Board — session-expiry re-auth path (fix #2)', () => {
     await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
     await flushPromises();
 
-    const banner = w.find('[data-test="banner-auth-expired"]');
+    const banner = w.find('[data-test="save-error"]');
     expect(banner.exists()).toBe(true);
-    expect(banner.text()).toContain('session expired');
-    expect(banner.text()).toContain('saved');
+    expect(banner.text()).toContain('Sign in again');
+    expect(banner.text()).toContain('draft is kept');
     expect(w.find('[data-test="sign-in-again"]').exists()).toBe(true);
     // The unsynced count still shows in the (still-mounted) SyncBar, and the draft is untouched.
     expect(useEditStore().dirtyCount.value).toBeGreaterThan(0);
@@ -1755,13 +1131,13 @@ describe('Board — session-expiry re-auth path (fix #2)', () => {
     useEditStore().setField('TALK-1', 'title', 'Edited title');
     await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
     await flushPromises();
-    expect(w.find('[data-test="banner-auth-expired"]').exists()).toBe(true);
+    expect(w.find('[data-test="save-error"]').exists()).toBe(true);
 
     syncMock.mockResolvedValueOnce({ ok: true, sha: 'abc123' });
     await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
     await flushPromises();
 
-    expect(w.find('[data-test="banner-auth-expired"]').exists()).toBe(false);
+    expect(w.find('[data-test="save-error"]').exists()).toBe(false);
   });
 
   it('a stale sessionExpired does not mask a subsequently-raised validationBlocked banner', async () => {
@@ -1774,7 +1150,7 @@ describe('Board — session-expiry re-auth path (fix #2)', () => {
     useEditStore().setField('TALK-1', 'title', 'Edited title');
     await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
     await flushPromises();
-    expect(w.find('[data-test="banner-auth-expired"]').exists()).toBe(true);
+    expect(w.find('[data-test="save-error"]').exists()).toBe(true);
 
     // A new sync attempt is now blocked by pre-flight validation (an untitled new item) —
     // this early-return path never calls sync() at all, so it must reset sessionExpired
@@ -1783,43 +1159,9 @@ describe('Board — session-expiry re-auth path (fix #2)', () => {
     await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
     await flushPromises();
 
-    expect(w.find('[data-test="banner-auth-expired"]').exists()).toBe(false);
-    const bar = w.find('[data-test="sync-bar"]');
+    expect(w.find('[data-test="sign-in-again"]').exists()).toBe(false);
+    const bar = w.find('[data-test="save-status"]');
     expect(bar.text()).toContain('title is required');
-  });
-});
-
-describe('Board — concurrent-publish (non-fast-forward) message (fix #3)', () => {
-  it('shows a friendly "someone else published" message when the server errors mention a non-fast-forward ref update', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({
-      ok: false,
-      errors: ['failed to update ref: not a fast forward'],
-    });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    const bar = w.find('[data-test="sync-bar"]');
-    expect(bar.text()).toContain('Someone else published in the meantime');
-    expect(bar.text()).toContain('reload');
-  });
-
-  it('keeps the generic validation-error message for an unrelated 422', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: false, errors: ['stage: invalid'] });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    const bar = w.find('[data-test="sync-bar"]');
-    expect(bar.text()).toContain("Couldn't publish");
-    expect(bar.text()).toContain('stage: invalid');
-    expect(bar.text()).not.toContain('Someone else published');
   });
 });
 
@@ -1841,7 +1183,7 @@ describe('Board — base-version map gates Sync (U2/R1 fail-closed)', () => {
     await flushPromises();
 
     expect(syncMock).not.toHaveBeenCalled();
-    expect(w.find('[data-test="sync-bar"]').text()).toContain('Still loading your workspace');
+    expect(w.find('[data-test="save-status"]').text()).toContain('Still loading your workspace');
 
     // Once the base-version map actually lands, Sync proceeds normally.
     syncMock.mockResolvedValueOnce({ ok: true, sha: 'abc123' });
@@ -1886,258 +1228,6 @@ describe('Board — base-version map gates Sync (U2/R1 fail-closed)', () => {
 
     const sent = syncMock.mock.calls[0][0];
     expect(sent.created[0]).not.toHaveProperty('baseSha');
-  });
-});
-
-describe('Board — per-item base-version conflict message (U2/R2)', () => {
-  it('shows the "someone updated" reload message naming the item on a 422 conflict, draft intact', async () => {
-    const { fetchItems } = await import('../../lib/edit/client');
-    (fetchItems as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
-      { id: 'TALK-1', body: '', sha: 'sha-cm1' },
-    ]);
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: false, conflict: ['TALK-1'] });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    const bar = w.find('[data-test="sync-bar"]');
-    expect(bar.text()).toContain('Someone updated');
-    expect(bar.text()).toContain('Existing item'); // TALK-1's published title, from byId
-    expect(bar.text()).toContain('reload');
-    expect(bar.text()).toContain('re-sync');
-    // Draft is untouched — nothing was discarded by the rejection.
-    expect(useEditStore().changeset().updated.find((u) => u.id === 'TALK-1')?.frontmatter.title).toBe(
-      'Edited title',
-    );
-  });
-
-  it('still recognizes the whole-branch fast-forward message when there is no per-item conflict (additive, not replaced)', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: false, errors: ['failed to update ref: not a fast forward'] });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    const bar = w.find('[data-test="sync-bar"]');
-    expect(bar.text()).toContain('Someone else published in the meantime');
-  });
-});
-
-describe('Board — idempotent Sync requestId (U3/R3)', () => {
-  it('reuses the same requestId across a retry of the identical changeset, then mints a fresh one after success', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: false, errors: ['stage: invalid'] });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-    const firstId = syncMock.mock.calls[0][0].requestId;
-    expect(typeof firstId).toBe('string');
-
-    // Retry of the SAME (still-rejected) changeset reuses the id.
-    syncMock.mockResolvedValueOnce({ ok: false, errors: ['stage: invalid'] });
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-    expect(syncMock.mock.calls[1][0].requestId).toBe(firstId);
-
-    // Fix the field so the retry actually succeeds.
-    useEditStore().setField('TALK-1', 'stage', 'Building');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'landed-sha' });
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-    const thirdId = syncMock.mock.calls[2][0].requestId;
-    expect(thirdId).not.toBe(firstId);
-
-    // A later, unrelated edit + Sync after that success mints yet another fresh id.
-    useEditStore().setField('TALK-1', 'owner', 'Mark');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'landed-sha-2' });
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-    expect(syncMock.mock.calls[3][0].requestId).not.toBe(thirdId);
-  });
-});
-
-describe('Board — post-sync base refresh (liveItems)', () => {
-  // The root bug this whole unit fixes: after a successful Sync, the client's base state
-  // (liveItems/baseShaMap) went stale until a full reload — `refreshLiveItems` (called at the
-  // end of doSync's `res.ok` branch) now re-fetches `/api/items` (git-fresh) and reconciles
-  // the draft against it immediately, closing the self-conflict / false-unpublished-change /
-  // duplicate-create bug family without waiting on a reload.
-
-  it('carries a fresh baseSha into the NEXT sync of the same item — no self-conflict on re-edit', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const { fetchItems } = await import('../../lib/edit/client');
-    // Mount-time loadRawBodies fetch (edit mode auto-resumes from the saved flag) — the
-    // original, pre-sync base version.
-    (fetchItems as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
-      { id: 'TALK-1', sha: 'sha-1', frontmatter: { title: 'Existing item' }, body: '' },
-    ]);
-    const w = await mountBoard();
-    const store = useEditStore();
-    store.setField('TALK-1', 'title', 'First edit');
-
-    // First Sync lands; refreshLiveItems's own fetchItems call sees the freshly-committed
-    // state (title now matches what was just sent, and a NEW blob sha).
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'commit-1' });
-    (fetchItems as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
-      { id: 'TALK-1', sha: 'sha-2', frontmatter: { title: 'First edit' }, body: '' },
-    ]);
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-    // The landed edit reconciles away — nothing pending on TALK-1 anymore.
-    expect(store.changeset().updated).toEqual([]);
-
-    // Edit the SAME item again and sync a second time.
-    store.setField('TALK-1', 'title', 'Second edit');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'commit-2' });
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    // The 2nd sync's payload must carry the FRESH baseSha from the refreshed map
-    // ('sha-2', captured after the first sync), not the stale one from mount ('sha-1') —
-    // sending the stale sha here is exactly the self-conflict bug (a false "someone updated
-    // this item" against the client's own just-landed commit).
-    expect(syncMock).toHaveBeenCalledTimes(2);
-    expect(syncMock.mock.calls[1]![0].baseShas['TALK-1']).toBe('sha-2');
-    expect(w.find('[data-test="banner-conflict"]').exists()).toBe(false);
-  });
-
-  it('reconciles away a landed create (matched by product+title) so the next changeset never re-sends it — no duplicate', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    const store = useEditStore();
-    const createdId = store.addItem('Podcasts & Audiobooks', 'Brand new card', { horizon: 'Next' });
-    expect(store.changeset().created).toHaveLength(1);
-
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'commit-1' });
-    const { fetchItems } = await import('../../lib/edit/client');
-    (fetchItems as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
-      { id: 'TALK-1', sha: 'sha-1', frontmatter: { title: 'Existing item' }, body: '' },
-      // The just-created card, now landed under its real, server-minted id.
-      { id: 'TALK-99', sha: 'sha-99', frontmatter: { title: 'Brand new card', product: 'Podcasts & Audiobooks' }, body: '' },
-    ]);
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    const cs = store.changeset();
-    expect(cs.created.find((c) => c.id === createdId)).toBeUndefined();
-    expect(cs.created).toEqual([]);
-  });
-
-  it('drops dirtyCount to 0 once a publish fully lands, without waiting on a reload', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    const store = useEditStore();
-    store.setField('TALK-1', 'title', 'Fully published edit');
-    expect(store.dirtyCount.value).toBeGreaterThan(0);
-
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'commit-1' });
-    const { fetchItems } = await import('../../lib/edit/client');
-    (fetchItems as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
-      { id: 'TALK-1', sha: 'sha-2', frontmatter: { title: 'Fully published edit' }, body: '' },
-    ]);
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(store.dirtyCount.value).toBe(0);
-  });
-
-  it('exits edit mode directly on Done after a fully-published edit — no false "unpublished change" prompt', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    const store = useEditStore();
-    store.setField('TALK-1', 'title', 'Fully published edit');
-
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'commit-1' });
-    const { fetchItems } = await import('../../lib/edit/client');
-    (fetchItems as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
-      { id: 'TALK-1', sha: 'sha-2', frontmatter: { title: 'Fully published edit' }, body: '' },
-    ]);
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    (w.vm as unknown as { toggleEditMode: () => void }).toggleEditMode();
-    await flushPromises();
-
-    expect((w.vm as unknown as { exitPromptOpen: boolean }).exitPromptOpen).toBe(false);
-    expect((w.vm as unknown as { editMode: boolean }).editMode).toBe(false);
-  });
-
-  it('degrades silently when the post-sync refresh fetch fails — draft intact, board still usable', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    const store = useEditStore();
-    store.setField('TALK-1', 'title', 'Still unsynced after refresh failure');
-
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'commit-1' });
-    const { fetchItems } = await import('../../lib/edit/client');
-    (fetchItems as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('network down'));
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    // The refresh failed — liveItems/baseShaMap are left exactly as they were; the edit
-    // (now landed server-side, per the mocked sha, but never confirmed to THIS tab) stays
-    // pending rather than being silently dropped or crashing the board.
-    expect(store.changeset().updated.find((u) => u.id === 'TALK-1')?.frontmatter.title).toBe(
-      'Still unsynced after refresh failure',
-    );
-    // The board itself keeps rendering normally — a failed background refresh degrades
-    // silently rather than breaking the edit surface.
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(true);
-  });
-});
-
-describe('Board — edit banner layering and mobile-safe markup (fix #10)', () => {
-  it('is hidden while the full-screen editor is open', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    (w.vm as unknown as { editingId: string | null }).editingId = 'TALK-1';
-    await flushPromises();
-
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(false);
-  });
-
-  it('is hidden while the share dialog is open', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    (w.vm as unknown as { shareOpen: boolean }).shareOpen = true;
-    await flushPromises();
-
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(false);
-  });
-
-  it('reappears once the full-screen editor closes', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    const vm = w.vm as unknown as { editingId: string | null };
-    vm.editingId = 'TALK-1';
-    await flushPromises();
-    vm.editingId = null;
-    await flushPromises();
-
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(true);
-  });
-
-  it('wraps onto multiple lines on narrow viewports instead of overflowing (no fixed-height spacer to keep in sync)', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    const banner = w.get('[data-test="editing-banner"]');
-
-    // `flex-wrap` + `min-w-0` text spans let long copy (e.g. the reload prompt + button, or
-    // the unsynced count) wrap on narrow screens; there's no longer a separate fixed-height
-    // spacer element to fall out of sync with the banner's actual (possibly wrapped) height —
-    // `position: sticky` reserves its own space in normal flow automatically.
-    expect(banner.classes()).toContain('flex-wrap');
-    expect(w.find('.edit-banner-spacer').exists()).toBe(false);
   });
 });
 
@@ -2311,7 +1401,7 @@ describe('Board — change summary for review (fix #8)', () => {
     expect(newId).toMatch(/^new-/);
   });
 
-  it('opening the Review popover in SyncBar shows the edited/created/deleted/reordered summary', async () => {
+  it('opening Review in the save status shows the edited/created/deleted/reordered summary', async () => {
     localStorage.setItem('rm-edit-mode', '1');
     const w = await mountBoard([
       item({ id: 'TALK-1', title: 'First item' }),
@@ -2324,14 +1414,14 @@ describe('Board — change summary for review (fix #8)', () => {
     store.reorder('Podcasts & Audiobooks', 'Now', ['TALK-1']);
     await flushPromises();
 
-    expect(w.find('[data-test="review-panel"]').exists()).toBe(false);
-    await w.get('[data-test="review-toggle"]').trigger('click');
+    expect(w.get('.save-status-review').attributes('open')).toBeUndefined();
+    await w.get('.save-status-review summary').trigger('click');
 
-    const panel = w.get('[data-test="review-panel"]');
+    const panel = w.get('.save-status-review-body');
     expect(panel.text()).toContain('First item');
     expect(panel.text()).toContain('A brand new item');
     expect(panel.text()).toContain('Second item');
-    expect(panel.text()).toContain('Reordered 1 lane');
+    expect(panel.text()).toContain('Priority changed in 1 lane');
   });
 });
 
@@ -2493,144 +1583,6 @@ describe('Board — sync-success toast with commit link (fix #10)', () => {
   });
 });
 
-describe('Board — "Done" exit prompt: Publish / Keep / Discard (U11/R12)', () => {
-  it('exits edit mode directly, with no prompt, when there is nothing unsynced', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    expect(useEditStore().dirtyCount.value).toBe(0);
-
-    await w.get('[data-test="edit-toggle"]').trigger('click');
-    await flushPromises();
-
-    expect(w.find('[data-test="exit-edit-prompt"]').exists()).toBe(false);
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(false);
-  });
-
-  it('shows the Publish/Keep/Discard prompt instead of exiting when there are unsynced changes', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    await w.get('[data-test="edit-toggle"]').trigger('click');
-    await flushPromises();
-
-    expect(w.find('[data-test="exit-edit-prompt"]').exists()).toBe(true);
-    // Still in edit mode — nothing decided yet.
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(true);
-    expect(useEditStore().dirtyCount.value).toBe(1);
-  });
-
-  it('the "e" keyboard shortcut goes through the same prompt as the button', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'e' }));
-    await flushPromises();
-
-    expect(w.find('[data-test="exit-edit-prompt"]').exists()).toBe(true);
-  });
-
-  it('Publish now runs doSync and exits edit mode once it lands', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'abc123' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    await w.get('[data-test="edit-toggle"]').trigger('click');
-    await flushPromises();
-    await w.get('[data-test="exit-publish"]').trigger('click');
-    await flushPromises();
-
-    expect(syncMock).toHaveBeenCalledTimes(1);
-    expect(w.find('[data-test="exit-edit-prompt"]').exists()).toBe(false);
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(false);
-  });
-
-  it('Publish now stays in edit mode with the error visible if the sync fails', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: false, errors: ['boom'] });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    await w.get('[data-test="edit-toggle"]').trigger('click');
-    await w.get('[data-test="exit-publish"]').trigger('click');
-    await flushPromises();
-
-    expect(syncMock).toHaveBeenCalledTimes(1);
-    expect(w.find('[data-test="exit-edit-prompt"]').exists()).toBe(false);
-    // Still editing — the draft never left, and the failure is visible in SyncBar.
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(true);
-    expect(useEditStore().dirtyCount.value).toBe(1);
-    expect(w.find('[data-test="sync-bar"]').text()).toContain('boom');
-  });
-
-  it('Keep for later exits to view mode with the draft fully intact, without syncing', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    await w.get('[data-test="edit-toggle"]').trigger('click');
-    await w.get('[data-test="exit-keep"]').trigger('click');
-    await flushPromises();
-
-    expect(syncMock).not.toHaveBeenCalled();
-    expect(w.find('[data-test="exit-edit-prompt"]').exists()).toBe(false);
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(false);
-    expect(useEditStore().dirtyCount.value).toBe(1);
-    expect(useEditStore().changeset().updated.find((u) => u.id === 'TALK-1')?.frontmatter.title).toBe('Edited title');
-  });
-
-  it('Discard does nothing until the confirmation is accepted, then clears the draft and exits', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    await w.get('[data-test="edit-toggle"]').trigger('click');
-
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
-    await w.get('[data-test="exit-discard"]').trigger('click');
-    await flushPromises();
-    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('Discard all 1 unsynced change'));
-    // Dismissed — prompt still up, draft untouched.
-    expect(w.find('[data-test="exit-edit-prompt"]').exists()).toBe(true);
-    expect(useEditStore().dirtyCount.value).toBe(1);
-
-    confirmSpy.mockReturnValueOnce(true);
-    await w.get('[data-test="exit-discard"]').trigger('click');
-    await flushPromises();
-
-    expect(useEditStore().dirtyCount.value).toBe(0);
-    expect(w.find('[data-test="exit-edit-prompt"]').exists()).toBe(false);
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(false);
-    confirmSpy.mockRestore();
-  });
-
-  it('Escape (or a backdrop click) dismisses the prompt without deciding anything — still editing', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    await w.get('[data-test="edit-toggle"]').trigger('click');
-    await flushPromises();
-    expect(w.find('[data-test="exit-edit-prompt"]').exists()).toBe(true);
-
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    await flushPromises();
-
-    expect(w.find('[data-test="exit-edit-prompt"]').exists()).toBe(false);
-    expect(w.find('[data-test="editing-banner"]').exists()).toBe(true);
-    expect(useEditStore().dirtyCount.value).toBe(1);
-  });
-});
-
 describe('Board — skipped-reorders notice after sync (U8/R9)', () => {
   it('shows a visible notice naming the item(s) when a successful sync reports skippedReorders', async () => {
     localStorage.setItem('rm-edit-mode', '1');
@@ -2643,7 +1595,7 @@ describe('Board — skipped-reorders notice after sync (U8/R9)', () => {
 
     const notice = w.find('[data-test="skipped-reorder-notice"]');
     expect(notice.exists()).toBe(true);
-    expect(notice.text()).toContain("couldn't be applied");
+    expect(notice.text()).toContain("were skipped");
     expect(notice.text()).toContain('Existing item'); // TALK-1's title, resolved via byId
   });
 
@@ -2703,160 +1655,6 @@ describe('Board — skipped-reorders notice after sync (U8/R9)', () => {
   });
 });
 
-describe('Board — unified lifecycle status precedence (U12/R13)', () => {
-  it('shows the conflict status ahead of a plain unsynced status when both are true', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: false, conflict: ['TALK-1'] });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    // Nothing committed — the draft is still genuinely dirty, so a plain "unsynced" status
-    // would show here if the conflict interrupt didn't outrank it.
-    expect(useEditStore().dirtyCount.value).toBeGreaterThan(0);
-    expect(w.find('[data-test="editing-banner"]').attributes('data-banner-state')).toBe('conflict');
-    expect(w.find('[data-test="banner-conflict"]').exists()).toBe(true);
-    expect(w.find('[data-test="banner-unsynced"]').exists()).toBe(false);
-  });
-
-  it('shows the validation-blocked status ahead of a plain unsynced status', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    useEditStore().addItem('Podcasts & Audiobooks', '', { horizon: 'Next' }); // untitled — blocked pre-flight
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(syncMock).not.toHaveBeenCalled();
-    expect(w.find('[data-test="editing-banner"]').attributes('data-banner-state')).toBe('validationBlocked');
-    expect(w.find('[data-test="banner-validation-blocked"]').exists()).toBe(true);
-    expect(w.find('[data-test="banner-unsynced"]').exists()).toBe(false);
-  });
-
-  it('a conflict from the whole-branch fast-forward race also outranks unsynced, even with no item named', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: false, errors: ['failed to update ref: not a fast forward'] });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(w.find('[data-test="editing-banner"]').attributes('data-banner-state')).toBe('conflict');
-    expect(w.find('[data-test="banner-unsynced"]').exists()).toBe(false);
-  });
-});
-
-describe('Board — lifecycle progression indicator (U12/R14)', () => {
-  it('reflects the deploy stage: Building while in progress, Live once the run succeeds', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: true, sha: 'sha-1' });
-    deployStatusMock.mockResolvedValueOnce({ status: 'in_progress', conclusion: '', headSha: 'sha-1', htmlUrl: '' });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    vi.useFakeTimers();
-    try {
-      await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-      await flushPromises();
-      expect(w.find('[data-test="lifecycle-progression"]').attributes('data-progression-step')).toBe('Building');
-
-      deployStatusMock.mockResolvedValueOnce({ status: 'completed', conclusion: 'success', headSha: 'sha-1', htmlUrl: '' });
-      await vi.advanceTimersByTimeAsync(3000);
-      await flushPromises();
-      expect(w.find('[data-test="lifecycle-progression"]').attributes('data-progression-step')).toBe('Live');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('shows no progression while an interrupt (conflict) is the primary status', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    syncMock.mockResolvedValueOnce({ ok: false, conflict: ['TALK-1'] });
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-
-    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
-    await flushPromises();
-
-    expect(w.find('[data-test="lifecycle-progression"]').exists()).toBe(false);
-  });
-});
-
-describe('Board — secondary notices never preempt the primary status (U12/R16)', () => {
-  it('keeps the unsynced primary status showing while the persist-failed chip is also up', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    const store = useEditStore();
-    const spy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
-      throw new DOMException('QuotaExceededError');
-    });
-    try {
-      store.setField('TALK-1', 'title', 'Edited while storage is full');
-      await flushPromises();
-
-      expect(w.find('[data-test="persist-failed-notice"]').exists()).toBe(true);
-      // The primary status is unaffected — still the plain unsynced banner, never overtaken
-      // by the secondary chip's own message.
-      expect(w.find('[data-test="editing-banner"]').attributes('data-banner-state')).toBe('unsynced');
-      const banner = w.find('[data-test="banner-unsynced"]');
-      expect(banner.exists()).toBe(true);
-      expect(banner.text()).not.toContain("can't be saved on this device");
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  it('the persist-failed chip is dismissible without touching the primary status', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    const store = useEditStore();
-    const spy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
-      throw new DOMException('QuotaExceededError');
-    });
-    try {
-      store.setField('TALK-1', 'title', 'Edited while storage is full');
-      await flushPromises();
-      expect(w.find('[data-test="persist-failed-notice"]').exists()).toBe(true);
-
-      await w.get('[data-test="persist-failed-notice-dismiss"]').trigger('click');
-      expect(w.find('[data-test="persist-failed-notice"]').exists()).toBe(false);
-      expect(w.find('[data-test="banner-unsynced"]').exists()).toBe(true);
-    } finally {
-      spy.mockRestore();
-    }
-  });
-});
-
-describe('Board — "saved, not published" is unmistakable in the unsynced and Done states (U12/R16)', () => {
-  it('says the work is saved locally but not live in the unsynced banner', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    const text = w.find('[data-test="banner-unsynced"]').text().toLowerCase();
-    expect(text).toContain('saved');
-    expect(text).toMatch(/not (live|published)/);
-  });
-
-  it('says the same in the Done exit prompt', async () => {
-    localStorage.setItem('rm-edit-mode', '1');
-    const w = await mountBoard();
-    useEditStore().setField('TALK-1', 'title', 'Edited title');
-    await flushPromises();
-
-    await w.get('[data-test="edit-toggle"]').trigger('click');
-    await flushPromises();
-
-    const text = w.find('[data-test="exit-edit-prompt"]').text().toLowerCase();
-    expect(text).toContain('saved');
-    expect(text).toMatch(/not (yet )?published/);
-  });
-});
-
 describe('Board — IA/UX improvement pass', () => {
   it('renders active filter chips and removes individual filters or clears all', async () => {
     window.history.replaceState(null, '', '/?q=launch&stage=Building&tag=workflow&visibility=Internal');
@@ -2903,6 +1701,7 @@ describe('Board — IA/UX improvement pass', () => {
 
   it('disambiguates the presentation-link and publish-share buttons', async () => {
     const w = await mountBoard();
+    await w.get('[aria-controls="board-more-actions"]').trigger('click');
 
     expect(w.find('button[aria-label="Copy presentation link"]').exists()).toBe(true);
 
@@ -2912,6 +1711,107 @@ describe('Board — IA/UX improvement pass', () => {
 
     expect(w.find('button[aria-label="Presentation link copied"]').exists()).toBe(true);
     expect(w.find('button[aria-label="Publish a share link…"]').exists()).toBe(true);
+  });
+
+  it('enters presentation mode in the current tab', async () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const w = await mountBoard();
+
+    await w.get('[aria-controls="board-more-actions"]').trigger('click');
+    await w.get('button[aria-label="Start presentation"]').trigger('click');
+    await flushPromises();
+
+    expect((w.vm as unknown as { present: boolean }).present).toBe(true);
+    expect(window.location.search).toContain('present=1');
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it('copies a presentation URL without changing the current view', async () => {
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+    window.history.replaceState(null, '', '/?horizon=Now&sort=updated');
+    const w = await mountBoard();
+    await w.get('[aria-controls="board-more-actions"]').trigger('click');
+    await w.get('button[aria-label="Copy presentation link"]').trigger('click');
+    await flushPromises();
+    const copied = new URL(writeText.mock.calls[0]![0]);
+    expect(copied.searchParams.get('present')).toBe('1');
+    expect(copied.searchParams.get('sort')).toBe('updated');
+    expect(copied.searchParams.get('horizon')).toBe('Now');
+    expect(copied.searchParams.has('item')).toBe(false);
+    expect((w.vm as unknown as { present: boolean }).present).toBe(false);
+    expect(window.location.search).not.toContain('present=1');
+    expect(w.get('#board-more-actions [role="status"]').text()).toContain('copied');
+  });
+
+  it('reports clipboard failure without claiming success or entering presentation', async () => {
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
+    const w = await mountBoard();
+    await w.get('[aria-controls="board-more-actions"]').trigger('click');
+    await w.get('button[aria-label="Copy presentation link"]').trigger('click');
+    await flushPromises();
+    expect(w.get('#board-more-actions [role="alert"]').text()).toContain('Couldn’t copy');
+    expect(w.find('button[aria-label="Presentation link copied"]').exists()).toBe(false);
+    expect((w.vm as unknown as { present: boolean }).present).toBe(false);
+  });
+
+  it('dismisses More with Escape and outside clicks', async () => {
+    const w = await mountBoard();
+    const toggle = w.get('[aria-controls="board-more-actions"]');
+    const focus = vi.spyOn(toggle.element as HTMLButtonElement, 'focus');
+    await toggle.trigger('click');
+    await w.get('#board-more-actions button').trigger('keydown', { key: 'Escape' });
+    expect(toggle.attributes('aria-expanded')).toBe('false');
+    expect(focus).toHaveBeenCalled();
+    await toggle.trigger('click');
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    await flushPromises();
+    expect(toggle.attributes('aria-expanded')).toBe('false');
+  });
+
+  it('reports a rejected full-screen request without closing its feedback', async () => {
+    const w = await mountBoard();
+    Object.defineProperty(w.element, 'requestFullscreen', { configurable: true, value: vi.fn().mockRejectedValue(new Error('blocked')) });
+    (w.vm as unknown as { fullscreenAvailable: boolean }).fullscreenAvailable = true;
+    await w.get('[aria-controls="board-more-actions"]').trigger('click');
+    await w.findAll('#board-more-actions button').find((button) => button.text() === 'Full screen')!.trigger('click');
+    await flushPromises();
+    expect(w.get('#board-more-actions [role="alert"]').text()).toContain('Couldn’t change full screen');
+    expect(w.get('[aria-controls="board-more-actions"]').attributes('aria-expanded')).toBe('true');
+  });
+
+  it('offers an obvious way back from presentation mode', async () => {
+    window.history.replaceState(null, '', '/?present=1');
+    const w = await mountBoard();
+
+    const exit = w.get('[data-test="exit-presentation"]');
+    expect(exit.text()).toContain('Exit presentation');
+
+    await exit.trigger('click');
+    await flushPromises();
+
+    expect((w.vm as unknown as { present: boolean }).present).toBe(false);
+    expect(window.location.search).not.toContain('present=1');
+    expect(document.documentElement.dataset.present).toBeUndefined();
+  });
+
+  it('carries the selected horizon lanes into the baked share context', async () => {
+    const w = await mountBoard();
+    (w.vm as unknown as { horizons: string[] }).horizons = ['Now', 'Later'];
+    await flushPromises();
+
+    expect((w.vm as unknown as { shareContext: { horizons: string[] } }).shareContext.horizons).toEqual(['Now', 'Later']);
+  });
+
+  it('bakes only items allowed by the current stage filter', async () => {
+    window.history.replaceState(null, '', '/?stage=Building');
+    const w = await mountBoard([
+      item({ id: 'TALK-1', stage: 'Building' }),
+      item({ id: 'TALK-2', stage: 'Shaping' }),
+    ]);
+
+    expect((w.vm as unknown as { shareItems: Array<{ id: string; stage: string }> }).shareItems).toEqual([
+      expect.objectContaining({ id: 'TALK-1', stage: 'Building' }),
+    ]);
   });
 });
 

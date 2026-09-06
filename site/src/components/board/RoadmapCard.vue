@@ -3,23 +3,14 @@ import { computed, nextTick, ref } from 'vue';
 import ProductMark from '../ui/ProductMark.vue';
 import HighlightedText from '../ui/HighlightedText.vue';
 import {
-  PhArrowUp,
   PhArrowUpRight,
   PhArrowCounterClockwise,
   PhCopy,
   PhDotsSixVertical,
-  PhGauge,
-  PhTrendUp,
 } from '@phosphor-icons/vue';
 import {
-  impactChipStyle,
-  toneSurface,
-  toneSurfaceStrong,
-  toneText,
-  tagTone,
   horizonDot,
 } from '../../lib/display';
-import { linkSource } from '../../lib/sources';
 import { useEditStore } from '../../lib/edit/store';
 import type { ItemVM } from '../../lib/filters';
 
@@ -134,15 +125,7 @@ function onRenameKeydown(e: KeyboardEvent) {
   }
 }
 
-const MAX_TAGS = 3;
-const MAX_LINKS = 2;
-const visibleLinks = computed(() => (props.client ? [] : props.item.links.slice(0, MAX_LINKS)));
-const hiddenLinkCount = computed(() => (props.client ? 0 : Math.max(0, props.item.links.length - MAX_LINKS)));
-const visibleTags = computed(() => (props.client ? [] : props.item.tags.slice(0, MAX_TAGS)));
-const hiddenTagCount = computed(() => (props.client ? 0 : Math.max(0, props.item.tags.length - MAX_TAGS)));
 const highlightQuery = computed(() => (props.client ? '' : (props.highlightQuery ?? '').trim()));
-
-const linkSrc = (label: string, target: string) => linkSource(label, target);
 
 // R4: working-copy status from projectBoard() — a subtle brand-accent treatment for
 // edited/new cards (ring + left accent bar, matching the existing `.roadmap-card-active`
@@ -229,7 +212,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
       </div>
     </div>
 
-    <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+    <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5" :class="editing ? 'pr-16' : ''">
       <span
         v-if="showHorizon"
         class="roadmap-quiet-chip text-single-sm-medium text-text-primary-default inline-flex items-center gap-1.5 rounded-lg px-2 py-1"
@@ -238,55 +221,10 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
         {{ item.horizon }}
       </span>
       <span class="roadmap-quiet-chip text-single-sm-medium text-text-subtle-default inline-flex items-center gap-1 rounded-lg px-2 py-1">
-        <PhTrendUp :size="12" />
         {{ item.stage }}
       </span>
-      <span
-        v-if="item.impact && !client"
-        class="text-single-sm-medium inline-flex items-center gap-1 rounded-lg border border-border-subtle-default/70 px-2 py-1 font-medium"
-        :style="impactChipStyle(item.impact)"
-      >
-        <PhArrowUp :size="12" weight="bold" /> {{ item.impact }}
-      </span>
-      <span v-if="item.effort && !client" class="text-single-sm-medium text-text-subtle-default inline-flex items-center gap-1">
-        <PhGauge :size="13" /> {{ item.effort }}
-      </span>
-    </div>
-
-    <div v-if="visibleLinks.length" class="mt-3 flex flex-wrap gap-1.5">
-      <span
-        v-for="ln in visibleLinks"
-        :key="ln.href"
-        class="text-single-sm-medium inline-flex items-center gap-1.5 rounded-lg border border-border-subtle-default/60 px-2 py-1"
-        :style="{ background: toneSurfaceStrong[linkSrc(ln.label, ln.target).tone], color: toneText[linkSrc(ln.label, ln.target).tone] }"
-      >
-        <component :is="linkSrc(ln.label, ln.target).Icon" :size="12" />
-        {{ ln.label }}
-      </span>
-      <span v-if="hiddenLinkCount" class="text-single-sm-medium text-text-subtle-default px-1 py-0.5 tabular-nums">
-        +{{ hiddenLinkCount }} resources
-      </span>
-    </div>
-
-    <div v-if="item.themes.length || visibleTags.length" class="mt-3 flex flex-wrap gap-1.5">
-      <span
-        v-for="t in item.themes"
-        :key="'th' + t"
-        class="text-single-sm-medium rounded-lg border border-border-subtle-default/60 px-2 py-1"
-        :style="{ background: toneSurface.orange, color: toneText.orange }"
-      >
-        {{ t }}
-      </span>
-      <span
-        v-for="t in visibleTags"
-        :key="t"
-        class="text-single-sm-medium rounded-lg border border-border-subtle-default/60 px-2 py-1"
-        :style="{ background: toneSurface[tagTone(t)], color: toneText[tagTone(t)] }"
-      >
-        {{ t }}
-      </span>
-      <span v-if="hiddenTagCount" class="text-single-sm-medium text-text-subtle-default px-1 py-0.5 tabular-nums">
-        +{{ hiddenTagCount }}
+      <span v-if="!client" class="text-single-sm-medium text-text-subtle-default" data-test="card-owner">
+        {{ item.owner || 'Unassigned' }}
       </span>
     </div>
   </button>

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { inlineMdToHtml, mdToHtml, parseSections } from './items';
+import { inlineMdToHtml, mdToHtml, parseSections, parseLinks } from './items';
+
+it('keeps Markdown images in Resources visible in published resource lists', () => {
+  expect(parseLinks('## Resources\n\n![Diagram](https://example.com/image?id=1)\n\n![Evidence](../../assets/ast_one/rev_one/image.png)', '/roadmap/')).toEqual([
+    { label: 'Diagram', kind: 'external', href: 'https://example.com/image?id=1', target: 'https://example.com/image?id=1', image: true },
+    { label: 'Evidence', kind: 'file', href: '/roadmap/assets/ast_one/rev_one/image.png', target: '../../assets/ast_one/rev_one/image.png', image: true },
+  ]);
+});
 
 const BODY = `---ignored---
 # Title

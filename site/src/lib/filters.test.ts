@@ -43,7 +43,7 @@ const mk = (over: Partial<ItemVM>): ItemVM => ({
 }) as ItemVM;
 
 const items: ItemVM[] = [
-  mk({ id: 'S1', product: 'Music App', horizon: 'Now', tags: ['ai'], themes: ['speed'], text: 'music-app ai now' }),
+  mk({ id: 'S1', product: 'Music App', horizon: 'Now', tags: ['ai'], themes: ['speed'], text: 'studio ai now' }),
   mk({ id: 'C1', product: 'Podcasts & Audiobooks', horizon: 'Next', tags: ['ai', 'import'], text: 'cm import' }),
   mk({
     id: 'S2',
@@ -52,10 +52,10 @@ const items: ItemVM[] = [
     stage: 'Discovery',
     impact: 'High',
     effort: 'Medium',
-    text: 'music-app later impact',
+    text: 'studio later impact',
     links: [
-      { label: 'Research microsite', kind: 'presentation', href: '/p/music-app-global-templates/', target: '/p/music-app-global-templates/', title: 'Music App Global Templates' },
-      { label: 'Proposal deck', kind: 'presentation', href: '/p/music-app-global-templates-deck/', target: '/p/music-app-global-templates-deck/', title: 'Music App Global Templates Deck' },
+      { label: 'Research microsite', kind: 'presentation', href: '/p/music-app-listening-demo/', target: '/p/music-app-listening-demo/', title: 'Music App Global Templates' },
+      { label: 'Proposal deck', kind: 'presentation', href: '/p/music-app-listening-demo-deck/', target: '/p/music-app-listening-demo-deck/', title: 'Music App Global Templates Deck' },
     ],
   }),
 ];
@@ -214,6 +214,16 @@ describe('filterItems', () => {
   it('ignores an unknown query gracefully (no matches)', () => {
     expect(filterItems(items, { ...emptyFilters(), q: 'zzz' })).toHaveLength(0);
   });
+});
+
+it('filters by exact owner label together with other filters and counts it for reorder safety', () => {
+  const filters = { ...emptyFilters(), owner: 'Axel & Billy', stage: ['Building'] };
+  expect(filterItems([
+    mk({ id: 'a', owner: 'Axel & Billy' }),
+    mk({ id: 'b', owner: 'Axel & Billy', stage: 'Discovery' }),
+    mk({ id: 'c', owner: 'Axel' }),
+  ], filters).map((item) => item.id)).toEqual(['a']);
+  expect(activeFilterCount(filters)).toBe(2);
 });
 
 describe('groupItems', () => {

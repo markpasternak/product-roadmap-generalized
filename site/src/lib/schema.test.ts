@@ -24,6 +24,10 @@ describe('itemSchema', () => {
   });
 
   it('accepts Data as a product track', () => {
+    expect(itemSchema.parse({ ...base, id: 'PLATFORM-001', product: 'Core Platform & Data' }).product).toBe('Core Platform & Data');
+  });
+
+  it('accepts Ads Platform as a product track', () => {
     expect(itemSchema.parse({ ...base, id: 'ADS-001', product: 'Ads Platform' }).product).toBe('Ads Platform');
   });
 

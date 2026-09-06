@@ -15,6 +15,17 @@ import { describe, it, expect } from 'vitest';
 import { renderMarkdown } from './renderMarkdown';
 
 describe('renderMarkdown', () => {
+  it('renders standard external and reference images with alt text', () => {
+    const html = renderMarkdown('![An accessible image](https://example.com/image.svg)\n\n![A second image][diagram]\n\n[diagram]: https://example.com/diagram.png');
+    expect(html).toContain('alt="An accessible image"');
+    expect(html).toContain('src="https://example.com/image.svg"');
+    expect(html).toContain('src="https://example.com/diagram.png"');
+  });
+  it('adds a thumbnail to an attached image link without changing the Markdown', () => {
+    const html = renderMarkdown('[Evidence](../../assets/ast_one/rev_one/image.png)');
+    expect(html).toContain('resource-link-thumbnail');
+    expect(html).toContain('href="/assets/ast_one/rev_one/image.png"');
+  });
   it('renders bold text', () => {
     expect(renderMarkdown('**bold**')).toContain('<strong>bold</strong>');
   });
@@ -24,7 +35,7 @@ describe('renderMarkdown', () => {
   });
 
   it('renders a link', () => {
-    expect(renderMarkdown('[text](https://example.com)')).toContain('<a href="https://example.com">text</a>');
+    expect(renderMarkdown('[text](https://example.com)')).toContain('href="https://example.com"');
   });
 
   it('renders a bullet list', () => {
@@ -67,5 +78,16 @@ describe('renderMarkdown', () => {
       expect(html).not.toContain('<script');
       expect(html).not.toContain('alert(1)');
     });
+  });
+});
+
+describe('authenticated upload previews', () => {
+  it('keeps generated blob previews while rejecting active URL schemes', async () => {
+    const { resourcePreviewURLs } = await import('./resourceClient');
+    const path = 'content/assets/ast_test/rev_test/image.png';
+    resourcePreviewURLs.value = {[path]:'blob:http://localhost/verified-preview'};
+    expect(renderMarkdown('![Description](../../assets/ast_test/rev_test/image.png)')).toContain('src="blob:http://localhost/verified-preview"');
+    expect(renderMarkdown('[Unsafe](javascript:alert(1))')).not.toContain('href="javascript:');
+    resourcePreviewURLs.value = {};
   });
 });

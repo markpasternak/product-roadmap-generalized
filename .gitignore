@@ -12,3 +12,6 @@ edit-service/.env.*
 !edit-service/.env.example
 edit-service/secrets/
 *.pem
+
+# Authenticated deployment verification report
+deployment-verification.json

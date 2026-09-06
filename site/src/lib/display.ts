@@ -1,7 +1,7 @@
 // Domain → visual mappings (tones, lane dot colors, initials). Kept out of components.
 // Every color is a design-system CSS variable so it theme-shifts with the token layer;
 // components apply them via inline style (var() resolves at paint time).
-import { PRODUCTS, type Product, type Horizon, type Level } from './schema';
+import type { Product, Horizon, Level } from './schema';
 
 export type Tone = 'gray' | 'blue' | 'violet' | 'green' | 'orange' | 'red' | 'yellow';
 
@@ -50,11 +50,11 @@ export const toneText: Record<Tone, string> = {
 };
 
 export const productTone: Record<Product, Tone> = {
-  'Music App': 'green',
-  'Podcasts & Audiobooks': 'violet',
   'Spotify for Artists': 'orange',
   'Ads Platform': 'red',
-  'Core Platform & Data': 'blue',
+  'Core Platform & Data': 'green',
+  'Music App': 'blue',
+  'Podcasts & Audiobooks': 'violet',
 };
 
 export const horizonTone: Record<Horizon, Tone> = {
@@ -68,7 +68,7 @@ export const horizonTone: Record<Horizon, Tone> = {
 /** One-line lane explanations, shown in the lane headers (doubles as an inline legend). */
 export const horizonDescription: Record<Horizon, string> = {
   Candidates: 'Ideas in intake. Not on the roadmap yet.',
-  Now: 'Active work, defined and broken down. Happening now.',
+  Now: 'Current priorities. Stage shows how far each item has progressed.',
   Next: 'Queued behind Now. Direction set, details still forming.',
   Later: 'Directional bets. Understood broadly, not yet scoped.',
   Completed: 'Shipped and live.',
@@ -106,25 +106,25 @@ export const impactChipStyle = (lvl: string | null | undefined) => {
 
 // Product accent colors, from the design-system data/brand accents.
 export const productColor: Record<Product, string> = {
-  'Music App': 'var(--roadmap-product-music-app)',
-  'Podcasts & Audiobooks': 'var(--roadmap-product-podcasts-audiobooks)',
   'Spotify for Artists': 'var(--roadmap-product-spotify-for-artists)',
   'Ads Platform': 'var(--roadmap-product-ads-platform)',
   'Core Platform & Data': 'var(--roadmap-product-core-platform-data)',
+  'Music App': 'var(--roadmap-product-music-app)',
+  'Podcasts & Audiobooks': 'var(--roadmap-product-podcasts-audiobooks)',
 };
 
 // Product shorthand, shown on the square product mark.
 export const productShort: Record<Product, string> = {
-  'Music App': 'MU',
-  'Podcasts & Audiobooks': 'PA',
   'Spotify for Artists': 'SA',
-  'Ads Platform': 'AD',
+  'Ads Platform': 'AP',
   'Core Platform & Data': 'CP',
+  'Music App': 'MA',
+  'Podcasts & Audiobooks': 'PA',
 };
 
 export const horizonStatLabel: Record<Horizon, string> = {
   Candidates: 'In intake',
-  Now: 'Actively building',
+  Now: 'Current priorities',
   Next: 'Planned next',
   Later: 'Future bets',
   Completed: 'Recently shipped',
@@ -155,9 +155,3 @@ export const initials = (name: string): string =>
     .slice(0, 2)
     .join('')
     .toUpperCase();
-
-/** The product list as prose — "A, B, C, D and E". Page descriptions and the
- *  board's subtitle read from this so a new product never leaves a stale
- *  hand-written enumeration behind. */
-export const productListSentence = (): string =>
-  new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(PRODUCTS);

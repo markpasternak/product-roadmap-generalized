@@ -5,6 +5,7 @@ import { PhMagnifyingGlass, PhX } from '@phosphor-icons/vue';
 const model = defineModel<string>({ default: '' });
 const props = defineProps<{ placeholder?: string; ariaLabel?: string; name?: string; debounce?: number }>();
 const focused = ref(false);
+const input = ref<HTMLInputElement>();
 const localValue = ref(model.value);
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -31,6 +32,7 @@ function scheduleCommit() {
 function clearSearch() {
   localValue.value = '';
   commit('');
+  input.value?.focus();
 }
 
 watch(model, (value) => {
@@ -48,6 +50,7 @@ onUnmounted(clearTimer);
       :size="18"
     />
     <input
+      ref="input"
       v-model="localValue"
       type="search"
       autocomplete="off"
@@ -60,7 +63,7 @@ onUnmounted(clearTimer);
       ]"
       @focus="focused = true"
       @blur="focused = false"
-      @keydown.enter="commit()"
+      @keydown.enter="!$event.isComposing && commit()"
     />
     <kbd
       v-if="!localValue && !focused"
@@ -72,7 +75,7 @@ onUnmounted(clearTimer);
     <button
       v-if="localValue"
       type="button"
-      class="text-icons-subtle-default hover:text-text-primary-default absolute top-1/2 right-3 -translate-y-1/2"
+      class="text-icons-subtle-default hover:text-text-primary-default absolute top-1/2 right-0 grid size-10 -translate-y-1/2 place-items-center rounded-lg"
       aria-label="Clear search"
       @click="clearSearch"
     >

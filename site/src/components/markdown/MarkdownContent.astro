@@ -13,12 +13,22 @@ type AnyEntry =
 
 interface Props {
   entry: AnyEntry;
+  showContents?: boolean;
 }
 
-const { entry } = Astro.props;
-const { Content } = await render(entry);
+const { entry, showContents = false } = Astro.props;
+const { Content, headings } = await render(entry);
+const sections = headings.filter((heading) => heading.depth === 2);
 ---
 
+{showContents && sections.length > 3 && (
+  <details class="document-disclosure mb-7">
+    <summary>On this page <span class="text-text-subtle-default">· {sections.length} sections</span></summary>
+    <nav aria-label="On this page" class="grid gap-1 pb-3">
+      {sections.map((heading) => <a href={`#${heading.slug}`} class="inline-flex min-h-10 items-center py-1 text-sm text-text-link-default underline-offset-4 hover:underline">{heading.text}</a>)}
+    </nav>
+  </details>
+)}
 <div class="roadmap-prose">
   <Content />
 </div>

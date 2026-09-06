@@ -34,18 +34,19 @@ describe('sync() (fix #2 — session expiry)', () => {
     expect(getToken()).toBeNull();
   });
 
-  it('treats a 403 the same way as a 401', async () => {
+  it('keeps a valid session when publishing permission is denied', async () => {
     saveToken('stale-token');
     vi.stubGlobal(
       'fetch',
-      vi.fn(() => Promise.resolve(new Response('', { status: 403 }))),
+      vi.fn(() => Promise.resolve(new Response(JSON.stringify({error:'You no longer have editing access.'}), { status: 403 }))),
     );
 
     const res = await sync({});
 
     expect(res.ok).toBe(false);
-    expect(res.authError).toBe(true);
-    expect(getToken()).toBeNull();
+    expect(res.authError).toBeUndefined();
+    expect(res.errors).toEqual(['You no longer have editing access.']);
+    expect(getToken()).toBe('stale-token');
   });
 
   it('parses the JSON body as before for a normal (non-auth) response', async () => {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -23,10 +24,12 @@ const (
 )
 
 type Server struct {
-	cfg   Config
-	gh    *GitHub
-	mux   *http.ServeMux
-	dedup *syncDedup
+	cfg       Config
+	gh        *GitHub
+	mux       *http.ServeMux
+	dedup     *syncDedup
+	stateMu   sync.Mutex
+	publishMu sync.Mutex
 }
 
 func NewServer(cfg Config) *Server {
@@ -48,13 +51,26 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/activity", s.handleActivity)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("POST /api/sync", s.handleSync)
+	s.mux.HandleFunc("GET /api/capabilities", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, 200, map[string]any{"version": version, "drafts": true, "resources": true, "publications": true, "maxUploadBytes": maxUploadBytes})
+	})
+	s.mux.HandleFunc("GET /api/draft", s.handleDraft)
+	s.mux.HandleFunc("PUT /api/draft", s.handleDraft)
+	s.mux.HandleFunc("POST /api/uploads", s.handleUpload)
+	s.mux.HandleFunc("GET /api/uploads/{id}", s.handleUploadStatus)
+	s.mux.HandleFunc("GET /api/uploads/{id}/content", s.handleUploadContent)
+	s.mux.HandleFunc("DELETE /api/uploads/{id}", s.handleUploadDelete)
+	s.mux.HandleFunc("GET /api/assets", s.handleAssets)
+	s.mux.HandleFunc("GET /api/assets/content", s.handleAssetContent)
+	s.mux.HandleFunc("POST /api/publish", s.handlePublish)
+	s.mux.HandleFunc("GET /api/publications/{id}", s.handlePublication)
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Origin") == s.cfg.AllowedOrigin {
 		w.Header().Set("Access-Control-Allow-Origin", s.cfg.AllowedOrigin)
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	}
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(204)
@@ -138,7 +154,13 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	files, err := s.gh.listItems(r.Context())
+	var files map[string]RepoFile
+	var err error
+	if at := r.URL.Query().Get("at"); at != "" {
+		files, err = s.gh.itemsAt(r.Context(), at)
+	} else {
+		files, err = s.gh.listItems(r.Context())
+	}
 	if err != nil {
 		log.Printf("/api/items: list items failed: %v", err)
 		http.Error(w, "github error", http.StatusBadGateway)
@@ -151,11 +173,12 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 		Git         ItemGitMetadata   `json:"git"`
 		Frontmatter map[string]string `json:"frontmatter"`
 		Body        string            `json:"body"`
+		Content     string            `json:"content"`
 	}
 	var out []outItem
 	for id, rf := range files {
 		d := ParseDoc(rf.Content)
-		out = append(out, outItem{ID: id, Path: rf.Path, Sha: rf.Sha, Git: rf.Git, Frontmatter: d.FM, Body: d.Body})
+		out = append(out, outItem{ID: id, Path: rf.Path, Sha: rf.Sha, Git: rf.Git, Frontmatter: d.FM, Body: d.Body, Content: rf.Content})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)
@@ -195,6 +218,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	run, err := s.gh.latestDeployRun(r.Context())
+	if err == nil && r.URL.Query().Get("commit") != "" {
+		run.IncludesCommit, err = s.gh.containsCommit(r.Context(), r.URL.Query().Get("commit"), run.HeadSHA)
+		if err == nil && r.URL.Query().Get("deployed") != "" {
+			run.Live, err = s.gh.containsCommit(r.Context(), r.URL.Query().Get("commit"), r.URL.Query().Get("deployed"))
+		}
+	}
 	if err != nil {
 		log.Printf("/api/status: latest deploy run failed: %v", err)
 		http.Error(w, "github error", http.StatusBadGateway)

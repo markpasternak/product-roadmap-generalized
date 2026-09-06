@@ -48,7 +48,7 @@ export function itemsFromApi(apiItems: ApiItem[], base: string): ItemVM[] {
     const body = item.body ?? '';
     const { tags, themes } = parseTags(fm.tags);
     const sections = ['Why it matters', 'What ships', 'What shipped']
-      .map((heading) => ({ heading, text: sectionBlock(body, heading) }))
+      .map((heading) => ({ heading, text: sectionBlock(body, heading), markdown: extractSection(body, heading) }))
       .filter((s) => s.text);
     const title = fm.title ?? '';
     const oneliner = sectionText(body, 'One-liner');

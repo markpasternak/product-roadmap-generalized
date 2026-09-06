@@ -27,7 +27,7 @@ const items = await buildBoardItems(base);
       </a>
     </nav>
     <div class="mt-6">
-      <RecentChanges client:load items={items} base={base} showSeeAll={false} />
+      <RecentChanges client:load items={items} base={base} showSeeAll={false} showEmpty={true} />
     </div>
   </main>
 </Base>

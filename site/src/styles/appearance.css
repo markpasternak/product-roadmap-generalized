@@ -1,0 +1,235 @@
+/* Shared demo appearance: teal identity, clear neutral surfaces and graphite dark mode. */
+:root:root {
+  color-scheme: light;
+  --roadmap-nav-height: 64px;
+  --roadmap-brand-orange: #12857c;
+  --roadmap-brand-coral: #66cbbc;
+  --roadmap-brand-peach: #e6f5f1;
+  --roadmap-brand-navy: #0a1531;
+  --roadmap-brand-slate: #354a73;
+  --roadmap-brand-violet: #2c2661;
+  --roadmap-brand-teal: #1b7f72;
+  --roadmap-page-bg: #fafafa;
+  --roadmap-ink: #202020;
+  --roadmap-ink-muted: #686868;
+  --roadmap-glass-bg: #f4f4f4;
+  --roadmap-glass-strong: #ffffff;
+  --roadmap-glass-border: #dedede;
+  --roadmap-warm-shadow: 0 12px 32px rgb(44 38 26 / 6%);
+  --roadmap-card-shadow: 0 2px 3px rgb(44 38 26 / 3%);
+  --roadmap-lane-neutral-start: #f4f4f4;
+  --roadmap-product-music-app: #565f78;
+  --roadmap-product-podcasts-audiobooks: #765884;
+  --roadmap-product-spotify-for-artists: #b74121;
+  --roadmap-product-ads-platform: #956046;
+  --roadmap-product-core-platform-data: #367363;
+  --roadmap-horizon-candidates: #887895;
+  --roadmap-horizon-now: #3e7b5a;
+  --roadmap-horizon-next: #96752b;
+  --roadmap-horizon-later: #79766e;
+  --roadmap-horizon-completed: #626d7c;
+  --color-background: var(--roadmap-page-bg);
+  --color-foreground: var(--roadmap-ink);
+  --color-card: #ffffff;
+  --color-popover: var(--color-card);
+  --color-input: var(--color-card);
+  --color-surface-primary-default: var(--color-card);
+  --color-surface-primary-hover: #f4f4f4;
+  --color-surface-primary-active: #e8e8e8;
+  --color-surface-subtle-default: #f4f4f4;
+  --color-surface-muted-default: #e8e8e8;
+  --color-border-subtle-default: var(--roadmap-glass-border);
+  --color-border-subtle-hover: #a6a6a6;
+  --color-border-muted-default: #c2c2c2;
+  --color-border-primary-default: #919191;
+  --roadmap-control-border: #888888;
+  --color-text-primary-default: var(--roadmap-ink);
+  --color-text-primary-hover: var(--roadmap-ink);
+  --color-text-primary-active: var(--roadmap-ink);
+  --color-text-subtle-default: var(--roadmap-ink-muted);
+  --color-icons-primary-default: var(--roadmap-ink);
+  --color-icons-primary-hover: var(--roadmap-ink);
+  --color-icons-primary-active: var(--roadmap-ink);
+  --color-icons-subtle-default: var(--roadmap-ink-muted);
+  --color-icons-subtle-hover: var(--roadmap-ink);
+  --color-icons-subtle-active: var(--roadmap-ink);
+  --color-accent-brand-default: #0d766e;
+  --color-accent-secondary-default: var(--color-surface-subtle-default);
+  --color-accent-secondary-hover: var(--color-surface-primary-active);
+  --color-text-link-default: #0d766e;
+  --color-text-link-hover: #075b55;
+  --color-text-link-active: var(--color-text-link-hover);
+  --color-icons-link-default: var(--color-text-link-default);
+  --color-icons-link-hover: var(--color-text-link-hover);
+  --color-icons-link-active: var(--color-text-link-hover);
+  --color-surface-transparent-orange-10: #12857c1a;
+  --color-surface-transparent-orange-25: #12857c26;
+  --roadmap-action-fill: #0d766e;
+  --roadmap-action-ink: #ffffff;
+  --color-data-blue-border-primary-default: #0b438e;
+  --color-data-violet-border-primary-default: #4d0099;
+  --color-data-green-border-primary-default: #177231;
+  --color-data-orange-border-primary-default: #ad2907;
+  --color-data-red-border-primary-default: #af0604;
+  --color-data-yellow-border-primary-default: #805800;
+}
+
+:root:root[data-theme='dark'] {
+  color-scheme: dark;
+  --roadmap-page-bg: #191919;
+  --roadmap-ink: #f3f3f3;
+  --roadmap-ink-muted: #adadad;
+  --roadmap-glass-bg: #242424;
+  --roadmap-glass-strong: #292929;
+  --roadmap-glass-border: #404040;
+  --roadmap-warm-shadow: 0 16px 40px rgb(0 0 0 / 14%);
+  --roadmap-card-shadow: 0 2px 4px rgb(0 0 0 / 8%);
+  --roadmap-lane-neutral-start: #222222;
+  --color-card: #242424;
+  --color-surface-primary-hover: #303030;
+  --color-surface-primary-active: #3b3b3b;
+  --color-surface-subtle-default: #2c2c2c;
+  --color-surface-muted-default: #383838;
+  --color-border-subtle-hover: #777777;
+  --color-border-muted-default: #525252;
+  --color-border-primary-default: #818181;
+  --roadmap-control-border: #777777;
+  --color-accent-brand-default: #66cbbc;
+  --color-text-link-default: #66cbbc;
+  --color-text-link-hover: #9de4d9;
+  --color-text-primary-inverted-default: #22231e;
+  --color-text-primary-inverted-hover: #22231e;
+  --color-text-primary-inverted-active: #22231e;
+  --color-text-primary-inverted-disabled: #76786c;
+  --color-text-subtle-inverted-default: #64665a;
+  --color-icons-primary-inverted-default: #22231e;
+  --color-icons-primary-inverted-hover: #22231e;
+  --color-icons-primary-inverted-active: #22231e;
+  --color-icons-primary-inverted-disabled: #76786c;
+  --roadmap-product-music-app: #adb6cc;
+  --roadmap-product-podcasts-audiobooks: #c3aecf;
+  --roadmap-product-spotify-for-artists: #ffab90;
+  --roadmap-product-ads-platform: #d8b28f;
+  --roadmap-product-core-platform-data: #a6c6b4;
+  --roadmap-horizon-candidates: #b8a7c4;
+  --roadmap-horizon-now: #a6c6a6;
+  --roadmap-horizon-next: #d6bc82;
+  --roadmap-horizon-later: #aba99f;
+  --roadmap-horizon-completed: #adb6cc;
+  --color-data-blue-border-primary-default: #adb6cc;
+  --color-data-violet-border-primary-default: #c3aecf;
+  --color-data-green-border-primary-default: #a6c6a6;
+  --color-data-orange-border-primary-default: #ffab90;
+  --color-data-red-border-primary-default: #e4aaa0;
+  --color-data-yellow-border-primary-default: #d6bc82;
+  --roadmap-action-fill: #66cbbc;
+  --roadmap-action-ink: #202020;
+}
+
+:root:root body { background: var(--roadmap-page-bg); color: var(--roadmap-ink); }
+.roadmap-ink, .roadmap-title { color: var(--roadmap-ink); }
+.roadmap-muted { color: var(--roadmap-ink-muted); }
+.roadmap-accent { color: var(--color-accent-brand-default); }
+.roadmap-title { text-wrap: balance; }
+.roadmap-display {
+  font-family: 'Source Serif Pro', Georgia, serif;
+  font-weight: 400;
+  letter-spacing: -.035em;
+  line-height: 1.06;
+}
+.roadmap-display em { color: var(--color-accent-brand-default); font-style: italic; }
+.roadmap-label { color: var(--color-accent-brand-default); font-size: .68rem; font-weight: 600; letter-spacing: .14em; line-height: 1.4; text-transform: uppercase; }
+
+:root:root .roadmap-masthead {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 1px solid var(--roadmap-glass-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  --roadmap-ink: var(--color-text-primary-default);
+  --roadmap-ink-muted: var(--color-text-subtle-default);
+}
+:root:root .roadmap-masthead::after { display: none; }
+:root:root .roadmap-field,
+:root:root .roadmap-drawer-field {
+  isolation: isolate;
+  border: 1px solid var(--roadmap-glass-border);
+  background: var(--color-card);
+  box-shadow: none;
+}
+:root:root .roadmap-field::before,
+:root:root .roadmap-field::after { display: none; }
+:root:root .roadmap-glass,
+:root:root .roadmap-panel,
+:root:root .roadmap-card {
+  border: 1px solid var(--roadmap-glass-border);
+  background: var(--color-card);
+  box-shadow: var(--roadmap-card-shadow);
+  backdrop-filter: none;
+}
+:root:root .roadmap-icon-tile {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--roadmap-glass-border);
+  background: var(--color-surface-subtle-default);
+  box-shadow: none;
+}
+:root:root .roadmap-selected-control,
+:root:root .roadmap-selected-filter {
+  border-color: var(--color-accent-brand-default);
+  background: color-mix(in srgb, var(--color-accent-brand-default) 7%, var(--color-card));
+  color: var(--roadmap-ink);
+  box-shadow: none;
+}
+:root:root .horizon-selected-control { border-color: var(--horizon-accent, var(--color-accent-brand-default)); }
+:root:root .roadmap-card-active,
+:root:root .roadmap-card-pending {
+  border-color: var(--color-accent-brand-default);
+  box-shadow: inset 3px 0 0 var(--color-accent-brand-default);
+}
+:root:root .roadmap-primary-action,
+:root:root .roadmap-count-badge {
+  background: var(--roadmap-action-fill);
+  color: var(--roadmap-action-ink);
+  box-shadow: none;
+}
+:root:root .roadmap-quiet-chip {
+  border: 1px solid var(--roadmap-glass-border);
+  background: transparent;
+}
+.roadmap-action { transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+.roadmap-action:active { transform: translateY(1px); }
+.theme-icon-dark { display: none; }
+
+.site-brand-tile {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  background: var(--roadmap-brand-orange);
+}
+.site-brand-tile img { width: 36px; height: 36px; }
+
+/* An outline remains visible when the component also uses a border for selection. */
+:root :is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent-brand-default);
+  outline-offset: 3px;
+}
+:root :is(button, input, select, summary) { scroll-margin-top: calc(var(--roadmap-nav-height) + 5rem); }
+:root :is(input:not([type='checkbox']):not([type='radio']), select, textarea) { border-color: var(--roadmap-control-border); }
+@media (max-width: 640px) {
+  /* Keep phone input focus from zooming the whole page. */
+  :root :is(input:not([type='checkbox']):not([type='radio']), select, textarea) { font-size: 16px; }
+}
+.skip-link { position: fixed; top: 8px; left: 16px; z-index: 60; padding: 12px 20px; background: var(--roadmap-ink); color: var(--roadmap-page-bg); border-radius: 8px; transform: translateY(-150%); }
+.skip-link:focus { transform: none; }
+::selection { background: color-mix(in srgb, var(--color-accent-brand-default) 25%, transparent); }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .roadmap-action { transition: none; }
+  .roadmap-action:active { transform: none; }
+}

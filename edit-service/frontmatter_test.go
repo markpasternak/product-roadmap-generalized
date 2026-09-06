@@ -40,7 +40,7 @@ func TestYamlScalarQuotesUnsafeValues(t *testing.T) {
 		in   string
 		want string
 	}{
-		{"colon-space", "Music App: the plan", `"Music App: the plan"`},
+		{"colon-space", "'Music App': the plan", `"'Music App': the plan"`},
 		{"leading dash", "-oops", `"-oops"`},
 		{"leading hash", "#tag", `"#tag"`},
 		{"leading bracket", "[oops]", `"[oops]"`},
@@ -84,10 +84,10 @@ func TestYamlScalarLeavesSafeValuesUnchanged(t *testing.T) {
 
 func TestRenderQuotesUnsafeFrontmatterValues(t *testing.T) {
 	d := ParseDoc(sample)
-	d.Set("title", "Music App: the plan")
+	d.Set("title", "'Music App': the plan")
 	d.Set("tags", "automation, ai")
 	out := d.Render()
-	if !containsLine(out, `title: "Music App: the plan"`) {
+	if !containsLine(out, `title: "'Music App': the plan"`) {
 		t.Fatalf("expected quoted title in render, got:\n%s", out)
 	}
 	if !containsLine(out, "tags: automation, ai") {
@@ -108,7 +108,7 @@ func TestRenderParseRoundTripsThroughEditService(t *testing.T) {
 	// with ParseDoc on every subsequent edit: without unquoting, a quoted
 	// value would gain an extra layer of escaping on every edit thereafter.
 	cases := []string{
-		"Music App: the plan",
+		"'Music App': the plan",
 		`Say: "hi"`,
 		"-oops",
 		"#tag",

@@ -37,6 +37,7 @@ async function authed(path: string, init: RequestInit = {}) {
     headers: { ...(init.headers || {}), ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
   });
 }
+export const authedRequest = authed;
 
 export async function me(): Promise<{ editor: boolean; login: string }> {
   try {
@@ -70,15 +71,18 @@ export type ApiItem = {
   };
   frontmatter?: Record<string, string>;
   body: string;
+  content?: string;
 };
 
-export async function fetchItems(): Promise<ApiItem[]> {
-  const r = await authed('/api/items');
+export async function fetchItems(at?: string): Promise<ApiItem[]> {
+  const r = await authed('/api/items' + (at ? `?at=${encodeURIComponent(at)}` : ''));
   if (!r.ok) throw new Error('items');
   return r.json();
 }
 export type SyncResult = {
   ok: boolean;
+  createdIds?: Record<string, string>;
+  state?: string;
   sha?: string;
   /** Set (with an empty `sha`) when the server determined the sent changeset produces no
    * actual diff against the repo — a true no-op. The caller should treat this as a clean
@@ -86,7 +90,7 @@ export type SyncResult = {
    * "Publishing…" for a build that will never happen. */
   noChanges?: boolean;
   errors?: string[];
-  /** Set when the request failed because the session is gone (401/403) — the token has
+  /** Set when the request failed because the session is gone (401) — the token has
    * already been cleared, and the caller should offer a way to sign in again rather than
    * treating this like an ordinary validation/network failure. */
   authError?: boolean;
@@ -107,15 +111,25 @@ export type SyncResult = {
  * that only touched path-filtered files can trigger NO run at all — the server reflects that
  * as a zero-value response (`headSha: ''`), not an error; Board.vue treats an empty `headSha`
  * as "no run yet," distinct from any real run's status/conclusion. */
-export type DeployStatus = { status: string; conclusion: string; headSha: string; htmlUrl: string };
+export type DeployStatus = {
+  status: string;
+  conclusion: string;
+  headSha: string;
+  htmlUrl: string;
+  includesCommit?: boolean;
+  live?: boolean;
+};
 
 /** Fetches the latest deploy run. Degrades to `null` on any failure (network error, non-2xx,
  * a session that's gone, or the endpoint simply not existing e.g. local dev without the
  * edit-service) — callers show no progression rather than an error for what is, from the
  * user's point of view, just an unavailable nice-to-have (R4/R5's "degrade-friendly" rule). */
-export async function deployStatus(): Promise<DeployStatus | null> {
+export async function deployStatus(commit?: string, deployed?: string | null): Promise<DeployStatus | null> {
   try {
-    const r = await authed('/api/status');
+    const params = new URLSearchParams();
+    if (commit) params.set('commit', commit);
+    if (deployed) params.set('deployed', deployed);
+    const r = await authed('/api/status' + (params.size ? `?${params}` : ''));
     if (!r.ok) return null;
     return await r.json();
   } catch {
@@ -124,19 +138,27 @@ export async function deployStatus(): Promise<DeployStatus | null> {
 }
 
 export async function sync(changeset: unknown): Promise<SyncResult> {
-  const r = await authed('/api/sync', {
+  const r = await authed('/api/publish', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(changeset),
   });
-  // An expired/revoked session comes back as a bare 401/403 (often a plain-text or empty
+  // An expired/revoked session comes back as a bare 401 (often a plain-text or empty
   // body, not JSON) — parsing it with `r.json()` would throw and surface as the generic
   // "network issue" catch in Board's doSync. Clear the now-useless token immediately so
   // the next authed() call doesn't keep sending it, and let the caller drive the re-auth
   // prompt (the draft itself lives in localStorage/the edit store, untouched).
-  if (r.status === 401 || r.status === 403) {
+  if (r.status === 401) {
     clearToken();
     return { ok: false, authError: true, errors: ['Your session expired'] };
   }
-  return r.json();
+  const result = await r.json();
+  return !r.ok && result.error
+    ? { ok: false, errors: [result.error], state: r.status === 403 ? 'invalid' : undefined }
+    : result;
+}
+
+export async function publicationStatus(id: string): Promise<SyncResult> {
+  const res = await authed(`/api/publications/${encodeURIComponent(id)}`);
+  return res.json();
 }

@@ -1,87 +1,117 @@
 <script setup lang="ts">
-import BrandMark from './BrandMark.vue';
-import { computed, onMounted, ref } from 'vue';
-import { PhSun, PhMoon, PhRoadHorizon, PhFiles, PhInfo, PhShareNetwork } from '@phosphor-icons/vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import Avatar from './Avatar.vue';
+import Select from './Select.vue';
 import { getCanvasdrop, type Me } from '../../lib/share/canvasdrop';
+import { me, loginUrl, readTokenFromHash } from '../../lib/edit/client';
+import { IS_PUBLIC } from '../../lib/audience';
 
-const props = defineProps<{ base: string; active?: 'roadmap' | 'shares' | 'docs' | 'help' }>();
+defineProps<{ base: string; active?: 'roadmap' | 'shares' | 'docs' | 'help' }>();
 const author = ref<Me | null>(null);
 const authorName = computed(() => author.value?.name || author.value?.email || 'Signed-in author');
+const accountOpen = ref(false);
+const accountWrap = ref<HTMLElement>();
+const editor = ref<{ editor: boolean; login: string } | null>(null);
+const checkingEditor = ref(false);
+const editorError = ref(false);
+const appearance = ref('light');
+const appearanceOptions = [{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }];
 
-function toggle() {
-  const current = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
-  const next = current === 'dark' ? 'light' : 'dark';
-  document.documentElement.dataset.theme = next;
-  try {
-    localStorage.setItem('rm-theme', next);
-  } catch {
-    /* ignore */
-  }
+function setAppearance(value: string) {
+  appearance.value = value;
+  document.documentElement.dataset.theme = value;
+  try { localStorage.setItem('rm-theme', value); } catch { /* Still apply for this page. */ }
 }
-
+function closeAccount(returnFocus = false) {
+  accountOpen.value = false;
+  if (returnFocus) accountWrap.value?.querySelector<HTMLButtonElement>('button')?.focus();
+}
+function toggleAccount() {
+  accountOpen.value = !accountOpen.value;
+  if (!accountOpen.value) return;
+  appearance.value = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+  if (!IS_PUBLIC) void checkEditingAccess();
+}
+async function checkEditingAccess() {
+  if (checkingEditor.value) return;
+  checkingEditor.value = true;
+  editorError.value = false;
+  try { editor.value = await me(); }
+  catch { editorError.value = true; }
+  finally { checkingEditor.value = false; }
+}
+function onPointer(event: PointerEvent) {
+  if (event.target instanceof Node && !accountWrap.value?.contains(event.target)) closeAccount();
+}
+function onFocusOut(event: FocusEvent) {
+  if (event.relatedTarget instanceof Node && !accountWrap.value?.contains(event.relatedTarget)) closeAccount();
+}
 onMounted(async () => {
+  // Account sign-in is available on support pages too; consume their OAuth callback
+  // through the same helper used by the board before rendering editing access.
+  if (!IS_PUBLIC) readTokenFromHash();
+  appearance.value = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+  document.addEventListener('pointerdown', onPointer);
+  if (IS_PUBLIC) return;
   const cd = getCanvasdrop();
   if (!cd) return;
-  try {
-    author.value = await cd.me();
-  } catch {
-    author.value = null;
-  }
+  try { author.value = await cd.me(); }
+  catch { author.value = null; }
 });
+onUnmounted(() => document.removeEventListener('pointerdown', onPointer));
 
-// Below sm the labels hide (icon-only) so all four nav items fit without overflowing;
-// the accessible name is kept via aria-label on each link.
-const link =
-  'roadmap-action relative inline-flex h-10 items-center gap-2 border-b-2 px-2.5 sm:px-3.5 text-single-base-medium transition-colors';
+const link = 'roadmap-action relative inline-flex h-10 items-center border-b-2 px-2.5 sm:px-3.5 text-single-base-medium transition-colors';
 const activeCls = 'border-[color:var(--color-accent-brand-default)] text-[color:var(--color-accent-brand-default)]';
 const idleCls = 'border-transparent text-text-primary-default hover:text-[color:var(--color-accent-brand-default)]';
+const navigation = [{ key: 'roadmap', label: 'Roadmap', path: '' }, { key: 'shares', label: 'Shares', path: 'shares' }, { key: 'help', label: 'Help', path: 'help' }];
 </script>
 
 <template>
-  <header class="site-navbar border-border-subtle-default/70 bg-card/82 sticky top-0 z-40 border-b backdrop-blur-xl">
-    <div class="mx-auto grid h-12 max-w-[1680px] grid-cols-[auto_1fr_auto] items-center px-4 sm:px-7">
-      <a
-        :href="base"
-        class="flex h-full items-center gap-2.5 border-r border-border-subtle-default/70 pr-5"
-        aria-label="Product Roadmap"
-      >
-        <BrandMark :size="24" class="shrink-0" />
-        <span class="font-display text-text-primary-default text-[0.95rem] leading-none tracking-tight max-sm:hidden">
-          Roadmap
-        </span>
+  <header class="site-navbar border-border-subtle-default/70 bg-card sticky top-0 z-40 border-b">
+    <div class="site-navigation-layout mx-auto grid min-h-16 max-w-[1600px] grid-cols-[auto_1fr_auto] items-center px-4 sm:px-6">
+      <a :href="base" class="flex h-full items-center border-r border-border-subtle-default/70 pr-5" aria-label="Product Roadmap">
+        <span class="site-brand-tile"><img :src="base + 'brand/roadmap-logo.svg'" alt="Product Roadmap" class="h-[26px] w-auto object-contain" width="36" height="36" /></span>
       </a>
       <nav class="flex h-full min-w-0 items-center px-1 sm:px-4" aria-label="Primary">
-        <a :href="base" aria-label="Roadmap" title="Roadmap" :class="[link, active === 'roadmap' ? activeCls : idleCls]"
-          ><PhRoadHorizon :size="18" class="shrink-0" /><span class="max-sm:hidden">Roadmap</span></a
-        >
-        <a :href="base + 'shares'" aria-label="Shares" title="Shares" :class="[link, active === 'shares' ? activeCls : idleCls]"
-          ><PhShareNetwork :size="18" class="shrink-0" /><span class="max-sm:hidden">Shares</span></a
-        >
-        <a :href="base + 'docs'" aria-label="Docs" title="Docs" :class="[link, active === 'docs' ? activeCls : idleCls]"
-          ><PhFiles :size="18" class="shrink-0" /><span class="max-sm:hidden">Docs</span></a
-        >
-        <a :href="base + 'help'" aria-label="Help" title="Help" :class="[link, active === 'help' ? activeCls : idleCls]"
-          ><PhInfo :size="18" class="shrink-0" /><span class="max-sm:hidden">Help</span></a
-        >
+        <a v-for="item in navigation" :key="item.key" :href="base + item.path"
+          :aria-current="active === item.key ? 'page' : undefined" :class="[link, active === item.key ? activeCls : idleCls]">{{ item.label }}</a>
       </nav>
-      <div class="flex items-center justify-end gap-2">
-        <div
-          v-if="author"
-          class="border-border-subtle-default/80 bg-card text-single-sm-medium text-text-primary-default flex h-9 max-w-[180px] items-center gap-2 rounded-lg border px-2"
-          :title="'Signed in as ' + authorName"
-        >
-          <Avatar :name="authorName" :size="24" />
-          <span class="hidden truncate lg:inline">{{ authorName }}</span>
-        </div>
-        <button
-          class="roadmap-action text-text-subtle-default hover:text-text-primary-default hover:bg-surface-primary-hover grid size-9 place-items-center rounded-lg border border-border-subtle-default/80 bg-card"
-          aria-label="Toggle theme"
-          @click="toggle"
-        >
-          <PhMoon class="theme-icon-light" :size="18" />
-          <PhSun class="theme-icon-dark" :size="18" />
+      <div ref="accountWrap" class="site-account" @keydown.esc.stop.prevent="closeAccount(true)" @focusout="onFocusOut">
+        <button type="button" class="account-trigger roadmap-action" :aria-label="IS_PUBLIC ? 'Appearance' : 'Account'" :aria-expanded="accountOpen" aria-controls="site-account-panel" @click="toggleAccount">
+          <Avatar v-if="author && !IS_PUBLIC" :name="authorName" :size="22" />
+          {{ IS_PUBLIC ? 'Appearance' : 'Account' }}<span class="disclosure-caret" aria-hidden="true"></span>
         </button>
+        <div v-if="accountOpen" id="site-account-panel" class="control-popover account-panel">
+          <div v-if="author && !IS_PUBLIC" class="account-section account-identity">
+            <strong>{{ authorName }}</strong>
+            <span v-if="author.email && author.email !== authorName">{{ author.email }}</span>
+            <span>Signed in for sharing</span>
+          </div>
+          <div v-if="!IS_PUBLIC" class="account-section">
+            <span class="account-label">Roadmap editing</span>
+            <p v-if="checkingEditor" role="status">Checking editing access…</p>
+            <template v-else-if="editorError">
+              <p role="alert">Couldn’t check editing access.</p>
+              <button type="button" class="account-sign-in roadmap-primary-action" @click="checkEditingAccess">Try again</button>
+            </template>
+            <template v-else-if="editor?.editor">
+              <strong>Editing enabled</strong>
+              <p>GitHub · {{ editor.login }}</p>
+            </template>
+            <template v-else-if="editor?.login">
+              <strong>View-only access</strong>
+              <p>GitHub · {{ editor.login }}</p>
+            </template>
+            <template v-else>
+              <a :href="loginUrl()" class="account-sign-in roadmap-primary-action">Sign in to edit</a>
+              <p>Uses your GitHub account.</p>
+            </template>
+          </div>
+          <div class="account-section">
+            <label for="site-appearance" class="account-label">Appearance</label>
+            <Select id="site-appearance" :model-value="appearance" :options="appearanceOptions" @update:model-value="setAppearance" />
+          </div>
+        </div>
       </div>
     </div>
   </header>

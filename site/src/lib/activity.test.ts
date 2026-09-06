@@ -65,11 +65,11 @@ describe('parseCommitMessage', () => {
   });
 
   it('falls back to the raw subject line for a manual (non-roadmap:) commit, without crashing', () => {
-    const parsed = parseCommitMessage('Fix typo in PLATFORM-004.md');
+    const parsed = parseCommitMessage('Fix typo in ARTISTS-004.md');
 
     expect(parsed.isManual).toBe(true);
     expect(parsed.login).toBeNull();
-    expect(parsed.subject).toBe('Fix typo in PLATFORM-004.md');
+    expect(parsed.subject).toBe('Fix typo in ARTISTS-004.md');
     expect(parsed.updated).toBe(0);
     expect(parsed.changedIds).toEqual([]);
   });

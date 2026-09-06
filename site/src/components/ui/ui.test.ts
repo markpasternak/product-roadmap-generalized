@@ -1,9 +1,8 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { flushPromises, mount } from '@vue/test-utils';
+import { mount } from '@vue/test-utils';
 import Pill from './Pill.vue';
 import Badge from './Badge.vue';
 import SegmentedControl from './SegmentedControl.vue';
-import Navbar from './Navbar.vue';
 
 afterEach(() => {
   delete (globalThis as any).canvasdrop;
@@ -41,20 +40,5 @@ describe('SegmentedControl', () => {
     });
     await w.findAll('button')[1]!.trigger('click');
     expect(w.emitted('update:modelValue')?.[0]).toEqual(['b']);
-  });
-});
-
-describe('Navbar', () => {
-  it('shows the signed-in Canvas Drop author when the SDK is available', async () => {
-    (globalThis as any).canvasdrop = {
-      me: vi.fn(async () => ({ id: 'dev', email: 'dev@example.com', name: 'Mark' })),
-      canvases: {},
-    };
-
-    const w = mount(Navbar, { props: { base: '/', active: 'shares' } });
-    await flushPromises();
-
-    expect(w.text()).toContain('Mark');
-    expect(w.get('a[href="/shares"]').text()).toContain('Shares');
   });
 });

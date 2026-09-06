@@ -12,8 +12,10 @@ type ItemEdit struct {
 	ID          string            `json:"id"`
 	Frontmatter map[string]string `json:"frontmatter"`
 	Body        string            `json:"body"`
+	BodySet     bool              `json:"bodySet,omitempty"`
 }
 type ItemNew struct {
+	ID          string            `json:"id,omitempty"`
 	Product     string            `json:"product"`
 	Title       string            `json:"title"`
 	Frontmatter map[string]string `json:"frontmatter"`
@@ -33,7 +35,9 @@ type Changeset struct {
 	// RequestID is a client-generated id used to dedup a retried sync
 	// (R3/KTD3); empty disables dedup for that request (and it won't be
 	// cached either).
-	RequestID string `json:"requestId,omitempty"`
+	RequestID    string            `json:"requestId,omitempty"`
+	BaseContents map[string]string `json:"baseContents,omitempty"`
+	Assets       AssetChanges      `json:"assets,omitempty"`
 }
 type RepoFile struct {
 	Path    string          `json:"path"`
@@ -99,6 +103,7 @@ func checkConflicts(cs Changeset, current map[string]RepoFile) []string {
 // exception (U8/R9): it's skipped and named in skippedReorders rather than
 // rejecting the whole sync.
 func buildFiles(cs Changeset, current map[string]RepoFile) (write []RepoFile, del []string, changedIDs []string, deletedIDs []string, conflicts []string, skippedReorders []string, errs []string) {
+	cs = mergeIndependentEdits(cs, current)
 	if conflicts = checkConflicts(cs, current); len(conflicts) != 0 {
 		return nil, nil, nil, nil, conflicts, nil, nil
 	}
@@ -128,7 +133,7 @@ func buildFiles(cs Changeset, current map[string]RepoFile) (write []RepoFile, de
 			}
 			d.Set(k, v)
 		}
-		if u.Body != "" {
+		if u.BodySet || u.Body != "" {
 			d.Body = u.Body
 		}
 		touched[u.ID] = true
@@ -190,7 +195,7 @@ func buildFiles(cs Changeset, current map[string]RepoFile) (write []RepoFile, de
 			pos := 1
 			for _, id := range ids {
 				d, ok := docs[id]
-				if !ok || d.FM["product"] != product {
+				if !ok || d.FM["product"] != product || d.FM["horizon"] != lane {
 					log.Printf("buildFiles: skipping reorder id %s (unknown or moved out of %s/%s)", id, product, lane)
 					skippedReorders = append(skippedReorders, id)
 					continue

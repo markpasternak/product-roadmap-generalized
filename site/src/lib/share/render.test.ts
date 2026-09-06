@@ -1,4 +1,7 @@
+import { ROADMAP_FAVICON } from '../brand';
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { renderShareHtml, escapeHtml } from './render';
 import type { ProjectedItem } from './project';
 
@@ -23,7 +26,22 @@ describe('renderShareHtml', () => {
 
   it('can use hosted roadmap brand assets for presentation parity', () => {
     const withAssets = renderShareHtml({ ...ctx, assetBase: 'https://roadmap.example' }, [item]);
-    expect(withAssets).toContain('url("https://roadmap.example/brand/accent-wash.svg")');
+    expect(withAssets).toContain('src="https://roadmap.example/brand/roadmap-logo.svg"');
+  });
+
+  it('uses bundled fonts and artwork without a dependency on the team roadmap', () => {
+    expect(html).toContain('url("assets/SourceSerifPro-Regular.ttf")');
+    expect(html).toContain('url("assets/Inter-Regular.woff2")');
+    expect(html).toContain('url("assets/Inter-Medium.woff2")');
+    expect(html).toContain('url("assets/Inter-SemiBold.woff2")');
+    expect(html).toContain('src="assets/roadmap-logo.svg" alt="Product Roadmap"');
+  });
+
+  it('embeds the app’s current appearance and board styles in the standalone document', () => {
+    for (const name of ['appearance', 'roadmap-review']) {
+      const source = readFileSync(resolve('src/styles', `${name}.css`), 'utf8');
+      expect(html.includes(source), `${name} CSS must be embedded without a separate stylesheet request`).toBe(true);
+    }
   });
 
   it('carries OG/twitter preview meta pointing at the bundled OG card', () => {
@@ -40,6 +58,14 @@ describe('renderShareHtml', () => {
     expect(html).not.toMatch(/og:image" content="https?:/);
   });
 
+  it('uses the generic three-horizon product favicon', () => {
+    expect(html).toContain(`<link rel="icon" href="${ROADMAP_FAVICON}">`);
+    const svg = decodeURIComponent(ROADMAP_FAVICON.split(',')[1]);
+    expect(svg).toContain('width="239"');
+    expect(svg).toContain('width="172"');
+    expect(svg).toContain('width="105"');
+  });
+
   it('uses the intro as the OG/twitter description when provided', () => {
     const withIntro = renderShareHtml({ ...ctx, intro: 'Framing text' }, [item]);
     expect(withIntro).toContain('<meta property="og:description" content="Framing text">');
@@ -49,9 +75,49 @@ describe('renderShareHtml', () => {
   it('renders projected copy and the lane', () => {
     expect(html).toContain('A safe line');
     expect(html).toContain('Now');
-    expect(html).toContain('Actively building');
+    expect(html).toContain('Current priorities');
     expect(html).toContain('product roadmap');
     expect(html).toContain('Podcasts &amp; Audiobooks — partner view');
+  });
+
+  it('renders the Ads Platform product mark in shared views', () => {
+    const infraItem = { ...item, id: 'ADS-1', product: 'Ads Platform' };
+    const infraHtml = renderShareHtml({ ...ctx, product: 'Ads Platform' }, [infraItem]);
+    expect(infraHtml).toContain('var(--roadmap-product-ads-platform)');
+    expect(infraHtml).toContain('title="Ads Platform">AP</span>');
+  });
+
+  it('does not add an unselected empty Completed lane to a baked roadmap', () => {
+    expect(html).not.toContain('data-lane="Completed"');
+    expect(html).not.toContain('Nothing shipped yet. Completed work lands here.');
+  });
+
+  it('preserves selected empty horizon lanes from the roadmap view', () => {
+    const selectedLanes = renderShareHtml({ ...ctx, horizons: ['Now', 'Next', 'Later'] }, [item]);
+
+    expect(selectedLanes).toContain('data-lane="Now"');
+    expect(selectedLanes).toContain('data-lane="Next"');
+    expect(selectedLanes).toContain('data-lane="Later"');
+    expect(selectedLanes).not.toContain('data-lane="Completed"');
+    expect(selectedLanes).toContain('data-horizon-filter="Next"');
+    expect(selectedLanes).not.toContain('data-horizon-filter="Completed"');
+    expect(selectedLanes).toContain('1 item across 3 lanes');
+  });
+
+  it('renders public horizon filters and lanes in canonical roadmap order', () => {
+    const horizons = ['Candidates', 'Now', 'Next', 'Later', 'Completed'] as const;
+    const items = horizons.map((horizon, index) => ({
+      ...item,
+      id: `TALK-${index + 1}`,
+      horizon,
+    }));
+    const allHorizons = renderShareHtml({ ...ctx, horizons }, items);
+
+    expect([...allHorizons.matchAll(/data-horizon-filter="([^"]+)"/g)].map((match) => match[1])).toEqual([
+      'All',
+      ...horizons,
+    ]);
+    expect([...allHorizons.matchAll(/data-lane="([^"]+)"/g)].map((match) => match[1])).toEqual([...horizons]);
   });
 
   it('renders presentation-style card actions and public detail copy', () => {

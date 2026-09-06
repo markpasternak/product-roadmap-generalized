@@ -23,7 +23,7 @@ const ITEM: ItemEditorItem = {
   impact: 'High',
   effort: 'Medium',
   visibility: 'Internal',
-  tags: ['infra', 'migration'],
+  tags: ['ads-platform', 'migration'],
   created: '2026-07-01',
   updated: '2026-07-02',
   createdAt: '2026-07-01T09:00:00.000Z',
@@ -78,7 +78,7 @@ describe('ItemEditor', () => {
     expect(w.find('[data-test="history-metadata"]').text()).toContain('Jul 1, 2026,');
     expect(w.find('[data-test="history-metadata"]').text()).toContain('Jul 2, 2026,');
     const tagChips = w.findAll('[data-test="tags-field"] [data-test="tag-chip"]').map((c) => c.text());
-    expect(tagChips).toEqual(['infra', 'migration']);
+    expect(tagChips).toEqual(['ads-platform', 'migration']);
 
     // The narrative body is handed to the embedded SectionEditor, which pins the 3
     // canonical sections at the top regardless of which ones the real body populated.
@@ -121,15 +121,15 @@ describe('ItemEditor', () => {
     await input.trigger('keydown', { key: 'Enter' });
 
     const emitted = w.emitted('field');
-    expect(emitted!.at(-1)![0]).toEqual({ key: 'tags', value: 'infra, migration, urgent' });
+    expect(emitted!.at(-1)![0]).toEqual({ key: 'tags', value: 'ads-platform, migration, urgent' });
   });
 
   it('passes allTags through to TagInput as autocomplete suggestions', async () => {
-    const w = mountEditor({ allTags: ['infra', 'migration', 'growth'] });
+    const w = mountEditor({ allTags: ['ads-platform', 'migration', 'growth'] });
     const input = w.find('[data-test="tags-field"] [data-test="taginput-input"]');
     await input.trigger('focus');
 
-    // 'infra' and 'migration' are already on the item, so only 'growth' is offered.
+    // 'ads-platform' and 'migration' are already on the item, so only 'growth' is offered.
     const options = w.findAll('[data-test="taginput-option"]').map((o) => o.text());
     expect(options).toEqual(['growth']);
   });
@@ -179,6 +179,9 @@ describe('ItemEditor', () => {
   it('clicking Delete emits delete', async () => {
     const w = mountEditor();
     await w.find('[data-test="delete-button"]').trigger('click');
+    expect(w.emitted('delete')).toBeUndefined();
+    document.querySelector<HTMLButtonElement>('[data-test=confirm-action]')!.click();
+    await nextTick();
     expect(w.emitted('delete')).toBeTruthy();
   });
 
@@ -221,6 +224,9 @@ describe('ItemEditor', () => {
   it('clicking Discard changes emits discard', async () => {
     const w = mountEditor();
     await w.find('[data-test="discard-button"]').trigger('click');
+    expect(w.emitted('discard')).toBeUndefined();
+    document.querySelector<HTMLButtonElement>('[data-test=confirm-action]')!.click();
+    await nextTick();
     expect(w.emitted('discard')).toBeTruthy();
   });
 
@@ -240,7 +246,7 @@ describe('ItemEditor', () => {
   // whole editor — only a plain Escape (no dropdown open) should close the editor.
   it('pressing Escape while the tags suggestions dropdown is open closes the dropdown, not the editor', async () => {
     const w = mount(ItemEditor, {
-      props: { item: ITEM, body: BODY, allTags: ['infra', 'migration', 'growth'] },
+      props: { item: ITEM, body: BODY, allTags: ['ads-platform', 'migration', 'growth'] },
       attachTo: document.body,
     });
     wrappers.push(w);
@@ -312,7 +318,7 @@ describe('ItemEditor', () => {
       visibility: 'Internal',
       order: 1,
       updated: '2026-07-01',
-      tags: ['infra', 'migration'],
+      tags: ['ads-platform', 'migration'],
       themes: [],
       oneliner: '',
       outcome: '',
@@ -366,7 +372,7 @@ describe('ItemEditor', () => {
 
     it('treats tags as changed only when the set differs, ignoring order/case/spacing', () => {
       const w = mountEditor({
-        item: { ...ITEM, tags: ['Migration', 'infra'] }, // same set, different order/case
+        item: { ...ITEM, tags: ['Migration', 'ads-platform'] }, // same set, different order/case
         published: PUBLISHED,
       });
       expect(w.find('[data-test="changed-dot-tags"]').exists()).toBe(false);
@@ -374,7 +380,7 @@ describe('ItemEditor', () => {
 
     it('marks tags changed when the set actually differs', async () => {
       const w = mountEditor({
-        item: { ...ITEM, tags: ['infra', 'migration', 'urgent'] },
+        item: { ...ITEM, tags: ['ads-platform', 'migration', 'urgent'] },
         published: PUBLISHED,
       });
       expect(w.find('[data-test="changed-dot-tags"]').exists()).toBe(true);

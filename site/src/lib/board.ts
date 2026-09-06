@@ -82,7 +82,7 @@ export async function buildBoardItems(base: string): Promise<ItemVM[]> {
     // The card/drawer is the fixed layer: headline + Target outcome + Why it matters +
     // What ships. Everything else in the body renders on the full item page only.
     const sections = ['Why it matters', 'What ships', 'What shipped']
-      .map((heading) => ({ heading, text: sectionBlock(heading) }))
+      .map((heading) => ({ heading, text: sectionBlock(heading), markdown: extractSection(body, heading) }))
       .filter((s) => s.text);
     const repoPath = e.filePath ? e.filePath.slice(e.filePath.indexOf('content/items/')) : null;
     const editUrl = !IS_PUBLIC && repoPath ? `${REPO_EDIT_BASE}/${repoPath}` : null;

@@ -10,6 +10,7 @@ type Config struct {
 	AppID, ClientID, ClientSecret, InstallationID, PrivateKeyFile string
 	Repo, AllowedOrigin, APIOrigin, SessionSecret, ListenAddr     string
 	RepoCacheDir                                                  string
+	StateDir                                                      string
 }
 
 func LoadConfig(getenv func(string) string) (Config, error) {
@@ -20,6 +21,13 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		AllowedOrigin: getenv("ALLOWED_ORIGIN"), APIOrigin: getenv("API_ORIGIN"),
 		SessionSecret: getenv("SESSION_SECRET"), ListenAddr: getenv("LISTEN_ADDR"),
 		RepoCacheDir: getenv("REPO_CACHE_DIR"),
+		StateDir:     getenv("STATE_DIRECTORY"),
+	}
+	if dir := getenv("ROADMAP_STATE_DIR"); dir != "" {
+		c.StateDir = dir
+	}
+	if c.StateDir == "" {
+		c.StateDir = filepath.Join(os.TempDir(), "roadmap-editor", "state")
 	}
 	if c.RepoCacheDir == "" {
 		c.RepoCacheDir = filepath.Join(os.TempDir(), "roadmap-editor", "repo")

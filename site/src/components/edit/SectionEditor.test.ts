@@ -214,12 +214,14 @@ describe('SectionEditor', () => {
     const optionLabels = select.findAll('option').map((o) => o.text());
     expect(optionLabels).toEqual([
       '+ Add section',
+      'Bottom line',
       "Who it's for",
       'Target outcome',
       'Acceptance criteria',
       'Open questions',
       'Current behavior',
       'In the codebase',
+      'Resources',
       'Links',
       'What shipped',
       'Custom section…',

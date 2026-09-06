@@ -4,6 +4,7 @@ import { LEVELS, STAGES } from './schema';
 import type { ItemHistory } from './itemHistory';
 
 export interface ItemLinkVM {
+  image?: boolean;
   label: string;
   kind: string;
   href: string;
@@ -28,7 +29,7 @@ export interface ItemVM extends ItemHistory {
   oneliner: string;
   outcome: string;
   /** Body sections for the drawer (plain text, line breaks preserved), placeholders excluded. */
-  sections: { heading: string; text: string }[];
+  sections: { heading: string; text: string; markdown?: string }[];
   /** GitHub edit link for the source markdown (null on public builds). */
   editUrl: string | null;
   links: ItemLinkVM[];
@@ -107,6 +108,7 @@ export function matchesHygiene(it: ItemVM, key: HygieneKey, staleCutoff: string)
 
 export interface FilterState {
   q: string;
+  owner?: string | null;
   product: string | null;
   stage: string[];
   impact: string[];
@@ -120,6 +122,7 @@ export interface FilterState {
 
 export type ActiveFilterChipKind =
   | 'q'
+  | 'owner'
   | 'product'
   | 'stage'
   | 'impact'
@@ -138,6 +141,7 @@ export interface ActiveFilterChip {
 
 export const emptyFilters = (): FilterState => ({
   q: '',
+  owner: null,
   product: null,
   stage: [],
   impact: [],
@@ -384,6 +388,7 @@ export function staleCutoff(days = 90, now = Date.now()): string {
 }
 
 export function matchesStructuredFilters(it: ItemVM, f: FilterState, cutoff = staleCutoff()): boolean {
+  if (f.owner && it.owner !== f.owner) return false;
   if (f.product && it.product !== f.product) return false;
   if (f.stage.length && !f.stage.includes(it.stage)) return false;
   if (f.impact.length && (!it.impact || !f.impact.includes(it.impact))) return false;
@@ -506,6 +511,7 @@ export function groupItems(
 
 export function activeFilterCount(f: FilterState): number {
   return (
+    (f.owner ? 1 : 0) +
     (f.q ? 1 : 0) +
     (f.product ? 1 : 0) +
     f.stage.length +
@@ -520,6 +526,7 @@ export function activeFilterCount(f: FilterState): number {
 
 export function activeFilterChips(f: FilterState): ActiveFilterChip[] {
   const chips: ActiveFilterChip[] = [];
+  if (f.owner) chips.push({ key: `owner:${f.owner}`, kind: 'owner', value: f.owner, label: `Owner: ${f.owner}` });
   const q = f.q.trim();
   if (q) chips.push({ key: `q:${q}`, kind: 'q', value: q, label: `“${q}”` });
   if (f.product) chips.push({ key: `product:${f.product}`, kind: 'product', value: f.product, label: `Product: ${f.product}` });

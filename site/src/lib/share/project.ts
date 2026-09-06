@@ -4,6 +4,7 @@
 import type { ItemVM } from '../filters';
 
 export interface ProjectedItem {
+  resources?: import('./resources').SharedResource[];
   id: string;
   title: string;
   oneliner: string;
@@ -27,6 +28,6 @@ export function projectForShare(item: ItemVM): ProjectedItem {
     stage: item.stage,
     tags: [...item.tags],
     themes: [...item.themes],
-    sections: item.sections.map((s) => ({ ...s })),
+    sections: item.sections.map((s) => ({ heading: s.heading, text: s.text })),
   };
 }

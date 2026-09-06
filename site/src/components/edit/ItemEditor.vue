@@ -8,10 +8,13 @@
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import Select from '../ui/Select.vue';
 import SectionEditor from './SectionEditor.vue';
+import ResourceEditor from './ResourceEditor.vue';
+import { resourceTransferCount } from '../../lib/edit/resourceClient';
 import TagInput from './TagInput.vue';
+import ConfirmAction from '../ui/ConfirmAction.vue';
 import OwnerInput from './OwnerInput.vue';
-import { PhTrash, PhArrowCounterClockwise, PhX, PhTrendUp, PhSparkle } from '@phosphor-icons/vue';
-import { trapFocus } from '../../lib/focusTrap';
+import { PhArrowCounterClockwise, PhX, PhTrendUp, PhSparkle } from '@phosphor-icons/vue';
+import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
 import { PRODUCTS, HORIZONS, STAGES, LEVELS, VISIBILITIES } from '../../lib/schema';
 import { toneText, horizonDot, productColor } from '../../lib/display';
 import type { ItemVM } from '../../lib/filters';
@@ -181,17 +184,19 @@ const bodyModel = computed<string>({
   set: (val: string) => emit('update:body', val),
 });
 
-function onDelete() {
-  emit('delete');
-}
-function onDiscard() {
-  emit('discard');
+const confirmation = ref<'delete' | 'discard' | null>(null);
+function onDelete() { confirmation.value = 'delete'; }
+function onDiscard() { confirmation.value = 'discard'; }
+function confirmAction() {
+  if (confirmation.value === 'delete') emit('delete');
+  else if (confirmation.value === 'discard') emit('discard');
+  confirmation.value = null;
 }
 function onClose() {
   // Same guard as `onKey`'s Escape handling: while the Rewrite panel is open, Close
   // belongs to IT — clicking the editor's own Close button underneath it must not also
   // close the whole item editor.
-  if (rewriteOpen.value) return;
+  if (rewriteOpen.value || resourceTransferCount.value) return;
   emit('close');
 }
 
@@ -200,15 +205,18 @@ const titleInput = ref<HTMLInputElement>();
 let releaseFocus: (() => void) | null = null;
 
 function onKey(e: KeyboardEvent) {
+  if (!isTopFocusTrap(panel.value)) return;
   // While the Rewrite panel is open, Escape belongs to IT (closing just the panel) — its
   // own document-level listener is registered after this one, so without this guard
   // pressing Escape would also close the whole item editor underneath it.
-  if (e.key === 'Escape' && !rewriteOpen.value) emit('close');
+  if (e.key === 'Escape') {
+    const menu = panel.value?.querySelector<HTMLDetailsElement>('[data-test=item-actions][open]');
+    if (menu) { menu.open = false; e.stopPropagation(); } else onClose();
+  }
 }
 
 onMounted(() => {
   document.addEventListener('keydown', onKey);
-  document.body.style.overflow = 'hidden';
   if (panel.value) releaseFocus = trapFocus(panel.value);
   // trapFocus above moves focus to the first focusable element in the panel (the
   // Close button, which precedes the metadata column in DOM order). Move it to the
@@ -218,7 +226,6 @@ onMounted(() => {
 });
 onUnmounted(() => {
   document.removeEventListener('keydown', onKey);
-  document.body.style.overflow = '';
   releaseFocus?.();
   releaseFocus = null;
 });
@@ -284,11 +291,20 @@ const historyRows = computed(() => [
         <PhSparkle :size="15" />
         <span class="hidden sm:inline">Rewrite with AI</span>
       </button>
+      <details class="relative shrink-0" data-test="item-actions">
+        <summary class="roadmap-action cursor-pointer rounded-lg px-3 py-2 text-sm">Item actions</summary>
+        <div class="roadmap-panel absolute right-0 top-full z-20 mt-2 grid min-w-48 gap-1 rounded-lg border border-border-subtle-default p-2 shadow-lg">
+          <button v-if="!isNew" type="button" class="rounded-md px-3 py-2 text-left text-sm" :style="{ color: toneText.red }" :disabled="!!resourceTransferCount" data-test="delete-button" @click="onDelete">Delete item…</button>
+          <button type="button" class="rounded-md px-3 py-2 text-left text-sm" :disabled="!!resourceTransferCount" data-test="discard-button" @click="onDiscard">Discard item changes…</button>
+        </div>
+      </details>
       <button
         type="button"
         class="roadmap-action text-icons-primary-default hover:text-[color:var(--color-accent-brand-default)] grid size-10 shrink-0 place-items-center rounded-lg"
         aria-label="Close"
         data-test="close-button"
+        :disabled="!!resourceTransferCount"
+        :title="resourceTransferCount ? 'Finish or cancel file uploads before closing' : 'Close editor'"
         @click="onClose"
       >
         <PhX :size="21" />
@@ -549,32 +565,13 @@ const historyRows = computed(() => [
         </div>
 
         <div class="min-h-[420px] min-w-0 overflow-x-auto lg:min-h-0">
-          <SectionEditor v-model="bodyModel" class="h-full" />
+          <ResourceEditor v-model:body="bodyModel" :visibility="visibilityModel"><SectionEditor v-model="bodyModel" /></ResourceEditor>
         </div>
       </div>
     </div>
 
-    <div class="shrink-0 flex items-center justify-between gap-3 border-t border-border-subtle-default/60 px-4 py-3 sm:px-6">
-      <button
-        v-if="!isNew"
-        type="button"
-        class="roadmap-action text-single-sm-medium inline-flex h-10 items-center gap-1.5 rounded-lg border px-3"
-        :style="{ borderColor: toneText.red, color: toneText.red }"
-        data-test="delete-button"
-        @click="onDelete"
-      >
-        <PhTrash :size="16" /> Delete
-      </button>
-      <span v-else />
-      <button
-        type="button"
-        class="roadmap-action text-single-sm-medium border-border-subtle-default bg-card/80 inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-text-primary-default"
-        data-test="discard-button"
-        @click="onDiscard"
-      >
-        <PhArrowCounterClockwise :size="16" /> Discard changes
-      </button>
-    </div>
+
+    <slot name="save-status" />
 
     <!-- Teleported to <body>: keeps RewriteWithAi's DOM entirely OUTSIDE this panel's
          subtree, so its own focus trap and Escape handling are fully independent of
@@ -592,4 +589,7 @@ const historyRows = computed(() => [
       />
     </Teleport>
   </div>
+  <ConfirmAction v-if="confirmation" :title="confirmation === 'delete' ? 'Delete this item?' : 'Discard changes to this item?'"
+    :message="confirmation === 'delete' ? `“${item.title}” will be marked for deletion. It stays published until you publish the changes.` : `This removes the unpublished changes to “${item.title || 'Untitled item'}” from this browser. This can’t be undone.`"
+    :confirm-label="confirmation === 'delete' ? 'Mark for deletion' : 'Discard changes'" @cancel="confirmation = null" @confirm="confirmAction" />
 </template>

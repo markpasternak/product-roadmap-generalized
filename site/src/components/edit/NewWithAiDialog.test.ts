@@ -24,6 +24,24 @@ afterEach(() => {
 });
 
 describe('NewWithAiDialog', () => {
+  it('does not let a stopped request clear a new generation or emit a stale draft', async () => {
+    let resolveFirst!: (draft: unknown) => void;
+    draftItemMock.mockImplementationOnce(() => new Promise((resolve) => resolveFirst = resolve));
+    draftItemMock.mockImplementationOnce(() => new Promise(() => {}));
+    const w = mountDialog();
+    await w.get('[data-test="ai-prompt"]').setValue('First request');
+    await w.get('[data-test="ai-generate"]').trigger('click');
+    await w.get('[data-test="ai-stop"]').trigger('click');
+    await w.get('[data-test="ai-prompt"]').setValue('New request');
+    await w.get('[data-test="ai-generate"]').trigger('click');
+    resolveFirst({ title: 'Stale draft', body: '' });
+    await nextTick();
+    await nextTick();
+    expect(w.emitted('drafted')).toBeUndefined();
+    expect(w.get('[data-test="ai-generate"]').attributes('disabled')).toBeDefined();
+    expect(draftItemMock).toHaveBeenCalledTimes(2);
+  });
+
   it('Generate is disabled and no second call is made while a generation is in flight', async () => {
     draftItemMock.mockImplementation(() => new Promise(() => {})); // never resolves in this test
 

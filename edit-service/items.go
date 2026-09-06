@@ -7,20 +7,8 @@ import (
 	"strings"
 )
 
-var ProductFolder = map[string]string{
-	"Music App":             "music-app",
-	"Podcasts & Audiobooks": "podcasts-audiobooks",
-	"Spotify for Artists":   "spotify-for-artists",
-	"Ads Platform":          "ads-platform",
-	"Core Platform & Data":  "core-platform-data",
-}
-var ProductPrefix = map[string]string{
-	"Music App":             "MUSIC",
-	"Podcasts & Audiobooks": "TALK",
-	"Spotify for Artists":   "ARTISTS",
-	"Ads Platform":          "ADS",
-	"Core Platform & Data":  "PLATFORM",
-}
+var ProductFolder = map[string]string{"Spotify for Artists": "spotify-for-artists", "Ads Platform": "ads-platform", "Core Platform & Data": "core-platform-data", "Music App": "music-app", "Podcasts & Audiobooks": "podcasts-audiobooks"}
+var ProductPrefix = map[string]string{"Spotify for Artists": "ARTISTS", "Ads Platform": "ADS", "Core Platform & Data": "PLATFORM", "Music App": "MUSIC", "Podcasts & Audiobooks": "TALK"}
 var Horizons = set("Candidates", "Now", "Next", "Later", "Completed")
 var Stages = set("Discovery", "Validation", "Shaping", "Committed", "Building", "Pilot", "Shipped", "Parked")
 var Levels = set("Low", "Medium", "High")
@@ -34,7 +22,7 @@ func set(xs ...string) map[string]bool {
 	return m
 }
 
-var idRe = regexp.MustCompile(`^(MUSIC|TALK|ARTISTS|ADS|PLATFORM)-\d{3}$`)
+var idRe = regexp.MustCompile(`^(ARTISTS|ADS|PLATFORM|MUSIC|TALK)-\d{3}$`)
 var slugStrip = regexp.MustCompile(`[^a-z0-9]+`)
 
 func Slugify(title string) string {

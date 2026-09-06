@@ -8,6 +8,8 @@ export default defineConfig({
   define: { __BUILD_COMMIT__: JSON.stringify('vitest-build-commit') },
   test: {
     environment: 'happy-dom',
+    // Snapshot HTML embeds raw CSS; keep those imports real in renderer tests.
+    css: { include: [/\.css\?raw$/] },
     globals: true,
     include: ['src/**/*.test.ts'],
   },

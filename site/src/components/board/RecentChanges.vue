@@ -18,10 +18,12 @@ const props = withDefaults(
     limit?: number;
     /** Whether to show the "View all →" link (hidden on the /changes page itself). */
     showSeeAll?: boolean;
+    showEmpty?: boolean;
   }>(),
-  { base: '/', showSeeAll: true },
+  { base: '/', showSeeAll: true, showEmpty: false },
 );
 
+const loading = ref(true);
 const entries = ref<ParsedActivity[]>([]);
 
 const byId = computed(() => new Map(props.items.map((i) => [i.id, { title: i.title }])));
@@ -57,11 +59,18 @@ onMounted(async () => {
   // so hydration matches; this adjusts right after mount, under the panel's
   // page-reveal fade). Peek-only, and guarded for the no-localStorage case.
   if (isPeek.value && typeof localStorage !== 'undefined') {
-    collapsed.value = localStorage.getItem(COLLAPSE_KEY) === '1';
+    try { collapsed.value = localStorage.getItem(COLLAPSE_KEY) === '1'; } catch { /* Keep the session default. */ }
   }
-  const activity = await fetchActivity();
-  if (isMounted) entries.value = activity;
+  await loadActivity();
 });
+async function loadActivity() {
+  loading.value = true;
+  try {
+    const activity = await fetchActivity();
+    if (isMounted) entries.value = activity;
+  } catch { /* The full page offers a retry; the board peek stays quiet. */ }
+  finally { if (isMounted) loading.value = false; }
+}
 
 /** "who" label for a row — the human editor from `(via <login>)`, or a
  * generic label for a manual (non-Sync) commit. */
@@ -153,5 +162,16 @@ function what(e: ParsedActivity): string {
         </span>
       </li>
     </ul>
+  </section>
+  <section v-else-if="showEmpty" class="roadmap-panel rounded-2xl p-6" aria-label="Commit activity">
+    <p v-if="loading" role="status" class="text-text-subtle-default">Loading commit activity…</p>
+    <template v-else>
+      <h2 class="font-display text-xl text-text-primary-default">No commit activity to show</h2>
+      <p class="mt-2 max-w-prose text-sm leading-relaxed text-text-subtle-default">Commit history needs editing access. Check your connection and editing access in Account, or browse the latest item updates.</p>
+      <div class="mt-4 flex flex-wrap gap-4 text-sm">
+        <a :href="base + 'changelog'" class="inline-flex min-h-11 items-center text-text-link-default underline underline-offset-4">View item updates</a>
+        <button type="button" class="min-h-11 underline underline-offset-4" @click="loadActivity">Try again</button>
+      </div>
+    </template>
   </section>
 </template>

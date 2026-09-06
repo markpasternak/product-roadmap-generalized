@@ -1,14 +1,15 @@
 // Pure projection: overlays a pending changeset onto published board items so the board
 // can render the local working copy (unsynced edits/creates/deletes/reorders) without ever
 // mutating the published content. No DOM, fully unit-tested.
+import { sectionText, parseSections, parseLinks, inlineMdToText } from '../items';
 import type { ItemVM } from '../filters';
 import { EMPTY_ITEM_HISTORY } from '../itemHistory';
 
 export type ProjectedItem = ItemVM & { pending?: 'edited' | 'new' | 'deleted' };
 
 export type BoardChangeset = {
-  updated: { id: string; frontmatter: Record<string, string>; body: string }[];
-  created: { id: string; product: string; title: string; frontmatter: Record<string, string> }[];
+  updated: { id: string; frontmatter: Record<string, string>; body: string; bodySet?: boolean }[];
+  created: { id: string; product: string; title: string; frontmatter: Record<string, string>; body?: string }[];
   deletedIds: string[];
   reorder: Record<string, Record<string, string[]>>;
 };
@@ -37,6 +38,18 @@ function applyUpdate(base: ItemVM, frontmatter: Record<string, string>): ItemVM 
     if (Number.isFinite(n)) next.order = n;
   }
   return next;
+}
+
+function applyBody(item: ItemVM, body: string): ItemVM {
+  return {
+    ...item,
+    oneliner: sectionText(body, 'One-liner'),
+    outcome: sectionText(body, 'Target outcome'),
+    sections: parseSections(body)
+      .filter((s) => ['Why it matters', 'What ships', 'What shipped'].includes(s.heading))
+      .map((s) => ({ heading: s.heading, text: inlineMdToText(s.raw), markdown: s.raw })),
+    links: parseLinks(body, import.meta.env.BASE_URL).map((l) => ({ ...l, title: null })),
+  };
 }
 
 function newItemDefaults(entry: BoardChangeset['created'][number]): ProjectedItem {
@@ -73,7 +86,10 @@ export function projectBoard(items: ItemVM[], cs: BoardChangeset): ProjectedItem
   const out: ProjectedItem[] = items.map((it) => {
     if (deleted.has(it.id)) return { ...it, pending: 'deleted' };
     const upd = updatedById.get(it.id);
-    if (upd) return { ...applyUpdate(it, upd.frontmatter), pending: 'edited' };
+    if (upd) {
+      const next = applyUpdate(it, upd.frontmatter);
+      return { ...(upd.bodySet || upd.body ? applyBody(next, upd.body) : next), pending: 'edited' };
+    }
     return it;
   });
 
@@ -88,7 +104,10 @@ export function projectBoard(items: ItemVM[], cs: BoardChangeset): ProjectedItem
     ? out.map((it) => (orderById.has(it.id) ? { ...it, order: orderById.get(it.id)! } : it))
     : out;
 
-  const createdItems = cs.created.map((entry) => newItemDefaults(entry));
+  const createdItems = cs.created.map((entry) => ({
+    ...applyBody(newItemDefaults(entry), entry.body ?? ''),
+    pending: 'new' as const,
+  }));
 
   return [...reordered, ...createdItems];
 }

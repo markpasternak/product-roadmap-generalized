@@ -12,10 +12,11 @@
 // accidental server-side call must degrade gracefully instead of throwing
 // "DOMPurify.sanitize is not a function" — its factory export is a bare function
 // until it's bound to a `window`, which doesn't exist during prerender.
-import { marked } from 'marked';
+import { renderRichMarkdown } from '../richMarkdown';
+import { resourcePreviewURLs } from './resourceClient';
 import createDOMPurify from 'dompurify';
 
-type Purifier = { sanitize: (html: string) => string };
+type Purifier = { sanitize: (html: string, config?: Record<string, unknown>) => string };
 
 // Lazily bound to `window` on first use rather than at module-eval time, so loading
 // this module never touches `window` in an environment that doesn't have one.
@@ -33,5 +34,7 @@ export function renderMarkdown(md: string): string {
   // Escape the source so nothing can execute (defense-in-depth; this path shouldn't
   // reach a reader since the editor only mounts after client-side hydration).
   if (!purify) return md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return purify.sanitize(marked.parse(md, { gfm: true, breaks: true }) as string);
+  return purify.sanitize(renderRichMarkdown(md, import.meta.env.BASE_URL, resourcePreviewURLs.value, true), {
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|blob):|[#/]|\.\.?\/|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
+  });
 }

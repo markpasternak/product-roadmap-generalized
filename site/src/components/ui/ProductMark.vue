@@ -11,14 +11,15 @@ const short = computed(() => productShort[props.product as keyof typeof productS
 
 <template>
   <span
-    class="inline-grid shrink-0 place-items-center font-semibold text-white"
+    class="product-mark inline-grid shrink-0 place-items-center font-semibold"
     :style="{
-      background: `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 74%, var(--roadmap-brand-ink)))`,
+      background: `color-mix(in srgb, ${color} 10%, var(--color-card))`,
+      color,
+      border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`,
       width: size + 'px',
       height: size + 'px',
       fontSize: Math.round(size * (short.length > 1 ? 0.32 : 0.42)) + 'px',
       borderRadius: Math.max(8, Math.round(size * 0.18)) + 'px',
-      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.22), 0 10px 22px rgba(10, 21, 49, 0.18)',
     }"
     :title="product"
     >{{ short }}</span

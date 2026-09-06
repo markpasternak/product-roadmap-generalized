@@ -8,7 +8,7 @@ describe('edit store', () => {
     const s = createEditStore();
     s.setField('TALK-001', 'stage', 'Shipped');
     expect(s.dirtyCount.value).toBe(1);
-    expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: { stage: 'Shipped' }, body: '' }]);
+    expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: { stage: 'Shipped' }, body: '', bodySet: false }]);
   });
   it('reorder + delete + add compose', () => {
     const s = createEditStore();
@@ -43,7 +43,7 @@ describe('edit store', () => {
     s.revertItem('TALK-001');
     expect(s.isDirty('TALK-001')).toBe(false);
     expect(s.dirtyCount.value).toBe(1);
-    expect(s.changeset().updated).toEqual([{ id: 'TALK-002', frontmatter: { owner: 'Mark' }, body: '' }]);
+    expect(s.changeset().updated).toEqual([{ id: 'TALK-002', frontmatter: { owner: 'Mark' }, body: '', bodySet: false }]);
   });
   it('deleteItem on a real id supersedes a pending field/body edit — no stray update alongside the delete', () => {
     const s = createEditStore();
@@ -65,7 +65,7 @@ describe('edit store', () => {
       s.revertField('TALK-001', 'stage');
       expect(s.fieldValue('TALK-001', 'stage')).toBeUndefined();
       expect(s.fieldValue('TALK-001', 'owner')).toBe('Mark');
-      expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: { owner: 'Mark' }, body: '' }]);
+      expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: { owner: 'Mark' }, body: '', bodySet: false }]);
     });
 
     it('drops the fields[id] entry entirely once its last field is reverted, clearing isDirty', () => {
@@ -213,8 +213,8 @@ describe('edit store', () => {
     it('a product edited via setField after addItem overrides the created product in the changeset', () => {
       const s = createEditStore();
       const id = s.addItem('Music App', 'X');
-      s.setField(id, 'product', 'Core Platform & Data');
-      expect(s.changeset().created[0].product).toBe('Core Platform & Data');
+      s.setField(id, 'product', 'Spotify for Artists');
+      expect(s.changeset().created[0].product).toBe('Spotify for Artists');
     });
 
     it('seeds a high default order so a new item sorts to the end of its lane', () => {
@@ -265,11 +265,11 @@ describe('edit store', () => {
       expect(s.dirtyCount.value).toBe(0);
     });
 
-    it('drops a created item whose (product, title) now exists in the base, case-insensitively', () => {
+    it('keeps a same-title draft until a publication receipt maps its identity', () => {
       const s = createEditStore();
       s.addItem('Music App', 'My New Thing');
       s.reconcile([{ id: 'MUSIC-010', product: 'Music App', title: 'my new thing' }]);
-      expect(s.changeset().created).toEqual([]);
+      expect(s.changeset().created).toHaveLength(1);
     });
 
     it('keeps a created item whose title does not match any base item', () => {
@@ -290,7 +290,7 @@ describe('edit store', () => {
       const s = createEditStore();
       s.setField('TALK-001', 'horizon', 'Next');
       s.reconcile([{ id: 'TALK-001', horizon: 'Now' }]);
-      expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: { horizon: 'Next' }, body: '' }]);
+      expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: { horizon: 'Next' }, body: '', bodySet: false }]);
     });
 
     it('does not revert an item with a pending body edit even if its fields match base', () => {
@@ -298,18 +298,18 @@ describe('edit store', () => {
       s.setField('TALK-001', 'horizon', 'Next');
       s.setBody('TALK-001', 'new body');
       s.reconcile([{ id: 'TALK-001', horizon: 'Next' }]);
-      expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: { horizon: 'Next' }, body: 'new body' }]);
+      expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: { horizon: 'Next' }, body: 'new body', bodySet: true }]);
     });
 
-    it('drops an orphaned field/body edit whose item is gone from the base — no 422-poisoning phantom update', () => {
+    it('preserves an upstream-deleted item for explicit recovery', () => {
       const s = createEditStore();
       s.setField('TALK-001', 'stage', 'Shipped');
       s.setBody('TALK-001', 'new body');
       // TALK-001 was deleted upstream: it no longer appears in the reconcile base at all.
       s.reconcile([{ id: 'TALK-002' }]);
-      expect(s.changeset().updated).toEqual([]);
-      expect(s.isDirty('TALK-001')).toBe(false);
-      expect(s.dirtyCount.value).toBe(0);
+      expect(s.changeset().updated[0]?.id).toBe('TALK-001');
+      expect(s.isDirty('TALK-001')).toBe(true);
+      expect(s.dirtyCount.value).toBe(1);
     });
 
     it('drops a delete whose id is gone from the base', () => {
@@ -353,7 +353,7 @@ describe('edit store', () => {
         const s = createEditStore();
         s.setBody('TALK-001', 'still-local body');
         s.reconcile([{ id: 'TALK-001' }], { 'TALK-001': 'published body' });
-        expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: {}, body: 'still-local body' }]);
+        expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: {}, body: 'still-local body', bodySet: true }]);
       });
 
       it('keeps a body edit whose fields still differ from base even though the body matches', () => {
@@ -362,7 +362,7 @@ describe('edit store', () => {
         s.setBody('TALK-001', 'published body');
         s.reconcile([{ id: 'TALK-001', horizon: 'Now' }], { 'TALK-001': 'published body' });
         expect(s.changeset().updated).toEqual([
-          { id: 'TALK-001', frontmatter: { horizon: 'Next' }, body: 'published body' },
+          { id: 'TALK-001', frontmatter: { horizon: 'Next' }, body: 'published body', bodySet: true },
         ]);
       });
 
@@ -370,7 +370,7 @@ describe('edit store', () => {
         const s = createEditStore();
         s.setBody('TALK-001', 'published body');
         s.reconcile([{ id: 'TALK-001' }]);
-        expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: {}, body: 'published body' }]);
+        expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: {}, body: 'published body', bodySet: true }]);
       });
 
       it('accepts rawBodies as a Map, not just a plain object', () => {
@@ -382,12 +382,12 @@ describe('edit store', () => {
     });
 
     describe('safer create-dup matching', () => {
-      it('prunes only one created entry per matching base item when two creates share a title', () => {
+      it('preserves both independent creates even when a published item has the same title', () => {
         const s = createEditStore();
         s.addItem('Music App', 'Duplicate Title');
         s.addItem('Music App', 'Duplicate Title');
         s.reconcile([{ id: 'MUSIC-010', product: 'Music App', title: 'Duplicate Title' }]);
-        expect(s.changeset().created).toHaveLength(1);
+        expect(s.changeset().created).toHaveLength(2);
       });
     });
 
@@ -402,9 +402,9 @@ describe('edit store', () => {
       it('keeps a product edit when the base still has the old product', () => {
         const s = createEditStore();
         s.setField('TALK-001', 'product', 'Music App');
-        s.reconcile([{ id: 'TALK-001', product: 'Core Platform & Data' }]);
+        s.reconcile([{ id: 'TALK-001', product: 'Spotify for Artists' }]);
         expect(s.changeset().updated).toEqual([
-          { id: 'TALK-001', frontmatter: { product: 'Music App' }, body: '' },
+          { id: 'TALK-001', frontmatter: { product: 'Music App' }, body: '', bodySet: false },
         ]);
       });
     });
@@ -465,7 +465,7 @@ describe('edit store', () => {
         s.reorder('Music App', 'Now', ['A', 'B']);
         s.reconcile([
           { id: 'A', product: 'Music App', horizon: 'Now' },
-          { id: 'B', product: 'Core Platform & Data', horizon: 'Now' },
+          { id: 'B', product: 'Spotify for Artists', horizon: 'Now' },
         ]);
         expect(s.changeset().reorder).toEqual({ 'Music App': { Now: ['A'] } });
       });
@@ -474,15 +474,15 @@ describe('edit store', () => {
         const s = createEditStore();
         s.reorder('Music App', 'Now', ['A', 'GONE']);
         s.reorder('Music App', 'Later', ['C']);
-        s.reorder('Core Platform & Data', 'Now', ['D']);
+        s.reorder('Spotify for Artists', 'Now', ['D']);
         s.reconcile([
           { id: 'A', product: 'Music App', horizon: 'Now' },
           { id: 'C', product: 'Music App', horizon: 'Later' },
-          { id: 'D', product: 'Core Platform & Data', horizon: 'Now' },
+          { id: 'D', product: 'Spotify for Artists', horizon: 'Now' },
         ]);
         expect(s.changeset().reorder).toEqual({
           'Music App': { Now: ['A'], Later: ['C'] },
-          'Core Platform & Data': { Now: ['D'] },
+          'Spotify for Artists': { Now: ['D'] },
         });
       });
 
@@ -506,7 +506,7 @@ describe('U2: base-version sha threaded through changeset (R1/R2)', () => {
     const cs = s.changeset({ 'TALK-001': 'sha-abc' });
     expect(cs.baseShas).toEqual({ 'TALK-001': 'sha-abc' });
     // The per-item `updated` entry itself stays clean (no embedded baseSha).
-    expect(cs.updated).toEqual([{ id: 'TALK-001', frontmatter: { stage: 'Shipped' }, body: '' }]);
+    expect(cs.updated).toEqual([{ id: 'TALK-001', frontmatter: { stage: 'Shipped' }, body: '', bodySet: false }]);
   });
 
   it('accepts the base-version map as a Map, not just a plain object', () => {
@@ -526,7 +526,7 @@ describe('U2: base-version sha threaded through changeset (R1/R2)', () => {
     s.setField('TALK-001', 'stage', 'Shipped');
     const cs = s.changeset();
     expect(cs.baseShas).toBeUndefined(); // undefined ⇒ dropped by JSON.stringify (server sees no baseShas, omitempty)
-    expect(cs.updated).toEqual([{ id: 'TALK-001', frontmatter: { stage: 'Shipped' }, body: '' }]);
+    expect(cs.updated).toEqual([{ id: 'TALK-001', frontmatter: { stage: 'Shipped' }, body: '', bodySet: false }]);
   });
 
   it('never puts a created item in baseShas, even when the map carries an entry for its temp id (creates are exempt)', () => {
@@ -665,7 +665,7 @@ describe('U4: committed sha persists for deploy-status resume (R5/KTD4)', () => 
 });
 
 describe('cross-tab draft sync', () => {
-  it('reloads the draft (and reflects it in changeset/dirtyCount) when another tab writes a new draft', () => {
+  it('preserves this tab when another tab writes a competing draft', () => {
     const s = createEditStore();
     s.setField('TALK-001', 'stage', 'Shipped');
     expect(s.dirtyCount.value).toBe(1);
@@ -684,7 +684,7 @@ describe('cross-tab draft sync', () => {
     window.dispatchEvent(new StorageEvent('storage', { key: KEY, newValue: JSON.stringify(otherDraft) }));
 
     expect(s.dirtyCount.value).toBe(1);
-    expect(s.changeset().updated).toEqual([{ id: 'TALK-002', frontmatter: { owner: 'Mark' }, body: '' }]);
+    expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: { stage: 'Shipped' }, body: '', bodySet: false }]);
   });
 
   it('ignores a storage event for an unrelated key', () => {
@@ -696,7 +696,7 @@ describe('cross-tab draft sync', () => {
     );
 
     expect(s.dirtyCount.value).toBe(1);
-    expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: { stage: 'Shipped' }, body: '' }]);
+    expect(s.changeset().updated).toEqual([{ id: 'TALK-001', frontmatter: { stage: 'Shipped' }, body: '', bodySet: false }]);
     expect(s.crossTabChanged.value).toBe(false);
   });
 });

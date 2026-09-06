@@ -317,9 +317,9 @@ func TestBuildFiles_ValidationRunsEvenWhenUnchanged(t *testing.T) {
 
 func TestCommitMessage_NamesChangedAndDeletedIDs(t *testing.T) {
 	msg := commitMessage(1, 0, 1, 4, "markpasternak",
-		[]string{"TALK-013", "PLATFORM-001", "PLATFORM-002", "PLATFORM-003", "PLATFORM-004"}, []string{"STU-007"})
+		[]string{"TALK-013", "ARTISTS-001", "ARTISTS-002", "ARTISTS-003", "ARTISTS-004"}, []string{"STU-007"})
 	want := "roadmap: 1 updated, 0 created, 1 deleted, 4 reordered (via markpasternak)\n\n" +
-		"Changed: TALK-013, PLATFORM-001, PLATFORM-002, PLATFORM-003, PLATFORM-004\n" +
+		"Changed: TALK-013, ARTISTS-001, ARTISTS-002, ARTISTS-003, ARTISTS-004\n" +
 		"Deleted: STU-007\n" +
 		"Co-authored-by: markpasternak <markpasternak@users.noreply.github.com>"
 	if msg != want {

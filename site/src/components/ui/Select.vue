@@ -18,7 +18,7 @@ defineProps<{
       :name="name ?? id"
       :aria-label="ariaLabel"
       autocomplete="off"
-      class="text-single-sm-medium text-text-primary-default border-border-subtle-default bg-card/80 w-full cursor-pointer appearance-none rounded-lg border py-2 pr-8 pl-3 outline-none transition-colors focus:border-[color:var(--color-accent-brand-default)] focus:bg-card"
+      class="text-single-sm-medium text-text-primary-default border-border-subtle-default bg-card/80 min-h-10 w-full cursor-pointer appearance-none rounded-lg border py-2 pr-8 pl-3 outline-none transition-colors focus:border-[color:var(--color-accent-brand-default)] focus:bg-card"
     >
       <option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option>
     </select>

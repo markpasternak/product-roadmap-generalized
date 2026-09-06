@@ -2,6 +2,8 @@
 import { reactive, ref, computed, watch, nextTick, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import Sortable from 'sortablejs';
 import FiltersSidebar from './FiltersSidebar.vue';
+import SavedViews from './SavedViews.vue';
+import ConfirmAction from '../ui/ConfirmAction.vue';
 import RoadmapCard from './RoadmapCard.vue';
 import DetailDrawer from './DetailDrawer.vue';
 import ActiveFilterChips from './ActiveFilterChips.vue';
@@ -13,27 +15,46 @@ import ShareDialog from '../share/ShareDialog.vue';
 import RecentChanges from './RecentChanges.vue';
 import { cn } from '../../lib/utils';
 import { productSlug } from '../../lib/slugs';
-import { trapFocus } from '../../lib/focusTrap';
+import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
+import { shareResourceChoices, prepareShareResources, type ShareResourceChoice } from '../../lib/share/resources';
 import { projectForShare } from '../../lib/share/project';
 import { renderShareHtml, buildShareBundle, type ShareContext, type ShareTheme } from '../../lib/share/render';
-import { getCanvasdrop, updateAuthoredCanvas, type AccessRung, type AuthoredCanvas, type Me, type ShareStatus } from '../../lib/share/canvasdrop';
-import { SHARE_SOURCE_APP, SHARE_SOURCE_KIND, SHARE_TAG } from '../../lib/share/roadmapShares';
+import { fetchShareAssets, SHARE_ASSET_PATHS } from '../../lib/share/assets';
+import {
+  getCanvasdrop,
+  requirePersistedAccess,
+  updateAuthoredCanvas,
+  type AccessMode,
+  type AccessRung,
+  type AuthoredCanvas,
+  type Me,
+  type PublicationStatus,
+  type ShareAudience,
+  type ShareStatus,
+} from '../../lib/share/canvasdrop';
+import { SHARE_SOURCE_APP, SHARE_SOURCE_KIND, SHARE_TAG, isVisibleRoadmapShare } from '../../lib/share/roadmapShares';
 import { formatDateTime } from '../../lib/dates';
-import { readTokenFromHash, me, loginUrl, fetchItems, sync, deployStatus, type DeployStatus } from '../../lib/edit/client';
+import {
+  readTokenFromHash,
+  me,
+  loginUrl,
+  fetchItems,
+  sync,
+  deployStatus,
+  publicationStatus,
+  type DeployStatus,
+} from '../../lib/edit/client';
 import { itemsFromApi } from '../../lib/edit/liveItems';
 import { useEditStore } from '../../lib/edit/store';
 import { validateChangeset, type FieldError } from '../../lib/edit/validate';
-import {
-  STATUS_COPY,
-  PROGRESSION_STEPS,
-  conflictMessage,
-  validationBlockedMessage,
-  progressionStepFor,
-  type LifecycleState,
-} from '../../lib/edit/statusCopy';
 import { projectBoard } from '../../lib/edit/project';
-import { watchForNewVersion } from '../../lib/edit/version';
-import SyncBar from '../edit/SyncBar.vue';
+import { fetchDeployedCommit, watchForNewVersion } from '../../lib/edit/version';
+import { resourceTransferCount } from '../../lib/edit/resourceClient';
+import PublicationConflicts from '../edit/PublicationConflicts.vue';
+import type { ApiItem } from '../../lib/edit/client';
+import DraftConflicts from '../edit/DraftConflicts.vue';
+import SaveStatus from '../edit/SaveStatus.vue';
+import { useDraftSync } from '../../composables/useDraftSync';
 import PresenceIndicator from './PresenceIndicator.vue';
 import { useBackend } from '../../composables/useBackend';
 import { usePresence } from '../../composables/usePresence';
@@ -45,20 +66,8 @@ const ItemEditor = defineAsyncComponent(() => import('../edit/ItemEditor.vue'));
 // Lazy for the same reason as ShareDialog/ItemEditor: this pulls in the AI client and is
 // only ever needed once an editor with AI available opens it.
 const NewWithAiDialog = defineAsyncComponent(() => import('../edit/NewWithAiDialog.vue'));
-import {
-  PhSlidersHorizontal,
-  PhArrowsOut,
-  PhArrowsIn,
-  PhX,
-  PhPresentation,
-  PhCheck,
-  PhShareNetwork,
-  PhPencilSimple,
-  PhPencilSimpleLine,
-  PhPlus,
-  PhSparkle,
-} from '@phosphor-icons/vue';
-import { HORIZONS, PRODUCTS, VISIBILITIES } from '../../lib/schema';
+import { PhX, PhCheck, PhPlus, PhSparkle } from '@phosphor-icons/vue';
+import { HORIZONS, PRODUCTS } from '../../lib/schema';
 import {
   horizonDot,
   horizonDescription,
@@ -66,7 +75,6 @@ import {
   horizonTone,
   laneEmptyCopy,
   productColor,
-  productListSentence,
   toneText,
   type Tone,
 } from '../../lib/display';
@@ -113,7 +121,9 @@ function toggleHorizon(h: string) {
 const activeChips = computed(() => activeFilterChips(filters));
 const sort = ref<SortKey>('manual');
 // Desktop filter sidebar visibility is a sticky preference (like the theme).
-const sidebarOpen = ref(true);
+const sidebarOpen = ref(false);
+const desktopFilters = ref(false);
+const viewOptionsOpen = ref(false);
 watch(sidebarOpen, (v) => {
   try {
     localStorage.setItem('rm-sidebar', v ? '1' : '0');
@@ -129,6 +139,7 @@ const shortcutsOpen = ref(false);
 const present = ref(false);
 const selected = ref<ItemVM | null>(null);
 const isFull = ref(false);
+const fullscreenAvailable = ref(false);
 // The board ships cloaked (SSR renders the default, unfiltered view because a static
 // build can't know the URL query). We resolve the real view from the URL in onMounted,
 // then flip `ready` to reveal it — so the flash of unfiltered content is never seen.
@@ -143,7 +154,16 @@ const sharesLoading = ref(false);
 const sharesError = ref<string | null>(null);
 const authoredShares = ref<AuthoredCanvas[]>([]);
 const shareAuthor = ref<Me | null>(null);
-const shareResult = ref<{ id?: string; url: string; expiresAt: number | null; status?: ShareStatus; action?: 'created' | 'updated' } | null>(null);
+const shareResult = ref<{
+  id?: string;
+  url: string;
+  expiresAt: number | null;
+  access?: ShareAudience;
+  accessMode?: AccessMode;
+  publicationStatus?: Exclude<PublicationStatus, 'deleted'>;
+  status?: ShareStatus;
+  action?: 'created' | 'updated';
+} | null>(null);
 
 // Gated in-app editing (GitHub sign-in via the edit-service). `canEdit` reflects
 // whether the signed-in user is an authorized editor; `editMode` toggles the
@@ -183,6 +203,8 @@ function signIn() {
 }
 
 const editStore = useEditStore();
+const draftSync = useDraftSync(editStore);
+
 const syncPending = ref(false);
 const syncResult = ref<{ sha: string } | null>(null);
 const syncError = ref<string | null>(null);
@@ -224,7 +246,7 @@ watch(
 // `stage === 'failed'` (the failing run to link to).
 type DeployStage = 'building' | 'live' | 'failed' | 'superseded' | 'no_build';
 // Set once a sync lands, while the rebuild it triggered is still in flight. The working
-// copy (and the SyncBar) stay visible through this window — nothing the user added or
+// copy (and the save bar) stay visible through this window — nothing the user added or
 // changed should vanish before the new deploy is actually live. Reconcile (mount-time and
 // the base-version refetch) drops the draft ops the rebuilt content already reflects once
 // that deploy lands; `stage` (above) tracks the deploy itself, driven by startDeployPoll.
@@ -240,7 +262,7 @@ const syncedJson = ref<string | null>(null);
 // Fix #10: a dismissible corner toast fired once a Sync actually lands, complementing the
 // "Publishing…" banner (which covers the in-flight window) with a traceable link to the
 // commit that just went out. Independent of `syncResult`/`publishing` above — those persist
-// until the next Sync (or a rebuild lands) and drive the banner/SyncBar copy, whereas this
+// until the next Sync (or a rebuild lands) and drive the banner/save bar copy, whereas this
 // has its own short-lived show/auto-dismiss lifecycle.
 const toastVisible = ref(false);
 const toastSha = ref('');
@@ -288,7 +310,7 @@ let deployPollStartedAt = 0;
 // place" — the latter is a superseding run per KTD4, not a stale unrelated one.
 let deployPollSawOwnRun = false;
 // Identity epoch for the currently-active poll chain. `syncPending` is cleared in doSync's
-// `finally` before the FIRST poll's initial /api/status fetch resolves, so SyncBar re-enables
+// `finally` before the FIRST poll's initial /api/status fetch resolves, so save bar re-enables
 // Sync and a fast second Sync can call startDeployPoll again while that first fetch is still
 // in flight. Comparing against the shared `deployPollSha` isn't enough to catch this — by the
 // time the first chain's in-flight callback checks it, `deployPollSha` has already been
@@ -312,17 +334,17 @@ function stopDeployPoll() {
 function applyDeployRun(run: DeployStatus) {
   if (!publishing.value) return;
   if (run.status === 'completed') {
-    if (run.conclusion === 'success') {
+    if (run.conclusion === 'success' && run.live) {
       publishing.value = { ...publishing.value, stage: 'live' };
       // Nothing left to resume on a later reload — the build is confirmed live.
       editStore.clearCommit();
-    } else if (run.conclusion === 'failure') {
+    } else if (run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'action_required') {
       publishing.value = { ...publishing.value, stage: 'failed', htmlUrl: run.htmlUrl };
     } else {
       // cancelled / skipped / timed_out — deploy.yml's `cancel-in-progress: true` cancels a
       // superseded run rather than failing it; a newer run carrying our (or a later) commit
       // is expected to appear next, so this isn't a failure — keep polling for it.
-      publishing.value = { ...publishing.value, stage: 'superseded' };
+      publishing.value = { ...publishing.value, stage: run.conclusion === 'success' ? 'building' : 'superseded' };
     }
   } else {
     // queued / in_progress
@@ -335,7 +357,8 @@ async function pollDeployOnce(epoch: number) {
   // since this attempt was scheduled; bail rather than run alongside/instead of the current one.
   if (epoch !== deployPollEpoch) return;
   if (!publishing.value || publishing.value.sha !== deployPollSha) return;
-  const run = await deployStatus();
+  const deployed = await fetchDeployedCommit();
+  const run = await deployStatus(deployPollSha, deployed);
   if (epoch !== deployPollEpoch) return;
   if (!publishing.value || publishing.value.sha !== deployPollSha) return;
   if (!run) {
@@ -343,19 +366,15 @@ async function pollDeployOnce(epoch: number) {
     // existing (e.g. local dev without the edit-service). Degrade silently: no error, just
     // stop polling and leave the plain "Publishing…" copy rather than showing a progression
     // the backend can't actually give us right now.
+    publishing.value = { ...publishing.value, stage: 'no_build' };
     stopDeployPoll();
     return;
   }
   const hasRun = !!run.headSha;
-  if (hasRun && run.headSha === deployPollSha) {
+  if (run.live) {
+    applyDeployRun({ ...run, status: 'completed', conclusion: 'success' });
+  } else if (hasRun && (run.headSha === deployPollSha || run.includesCommit)) {
     deployPollSawOwnRun = true;
-    applyDeployRun(run);
-  } else if (hasRun && deployPollSawOwnRun) {
-    // The latest-run endpoint only ever reports ONE run — a different head showing up after
-    // we'd already seen our own can only be a run that superseded ours. `main` is
-    // fast-forward-only, so that later commit's tree already contains ours: a `success` there
-    // means we're live too — decided by identity/ancestry (KTD4), never by comparing shas
-    // lexicographically (git shas aren't ordered).
     applyDeployRun(run);
   }
   // else: a run exists but isn't ours and we've never seen ours yet (e.g. an unrelated
@@ -375,6 +394,7 @@ async function pollDeployOnce(epoch: number) {
   }
   deployPollAttempt += 1;
   if (deployPollAttempt >= DEPLOY_MAX_POLL_ATTEMPTS) {
+    publishing.value = { ...publishing.value, stage: 'no_build' };
     stopDeployPoll();
     return;
   }
@@ -437,231 +457,166 @@ function formatValidationErrors(errors: FieldError[], cs: ReturnType<typeof edit
   return extra > 0 ? `${shown.join('; ')}; +${extra} more.` : `${shown.join('; ')}.`;
 }
 
-async function doSync() {
-  // A fresh sync attempt starts from a clean interrupt state — a stale `sessionExpired` left
-  // over from an EARLIER auth failure outranks `validationBlocked` in bannerState precedence
-  // (see the `authExpired` check above `validationBlocked`), so without this reset a new
-  // attempt that hits the validation-blocked early-return below would still show the old
-  // "sign in again" banner instead of the fresh validation error the user actually needs to
-  // see right now.
-  sessionExpired.value = false;
-  // R1 (fail-closed, KTD1/KTD2): every update/delete Sync sends must carry a baseSha so the
-  // edit-service can detect a same-item conflict — so until the base-version map (fetched
-  // alongside rawBodies on edit-mode entry, just above) has actually loaded, there's no
-  // baseSha to send at all. Refuse to Sync rather than send an update/delete the server would
-  // (correctly) reject as a conflict anyway; this only fires in the brief window right after
-  // entering edit mode, or if that fetch failed outright.
-  if (!baseVersionLoaded.value) {
-    publishing.value = null;
-    syncResult.value = null;
-    interruptKind.value = null;
-    syncError.value = 'Still loading your workspace — try again in a moment.';
-    return;
-  }
-  // U5 (R6/KTD5): validate every field the sync-time server gate (`ValidateFrontmatter` in
-  // edit-service/items.go) enforces — id/product/horizon/stage/title/owner/impact/effort/
-  // visibility — plus the client-only tag-format and YAML-safety checks (see validate.ts),
-  // before the request ever goes out. This is the general pass that replaced the old
-  // title-only / owner-only ad-hoc pre-checks (fix #3/#10): it still catches an untitled new
-  // item and a cleared owner (both are just one rule each in the general set now), plus every
-  // other field a bad edit could poison the whole commit with. Sending anyway would 422 the
-  // whole Sync — every other, valid change bundled in the same commit gets rejected with it —
-  // so block here instead, with guidance the user can act on directly (which item, which
-  // field, what's wrong).
-  const preflightChangeset = editStore.changeset();
-  const validationErrors = validateChangeset(preflightChangeset);
-  if (validationErrors.length) {
-    // A validation bounce should be the thing the user sees next — not a stale "Synced ✓"
-    // or "Publishing…" left over from an earlier, successful Sync. U12 (R13/R15): tagged as
-    // the named `validationBlocked` interrupt so it wins the primary status over a plain
-    // `unsynced` (the edits are still dirty) instead of the two competing for the same spot.
-    publishing.value = null;
-    syncResult.value = null;
-    interruptKind.value = 'validationBlocked';
-    syncError.value = validationBlockedMessage(formatValidationErrors(validationErrors, preflightChangeset));
-    return;
-  }
-  syncPending.value = true;
-  publishing.value = null;
-  // syncResult is reset too: SyncBar prioritizes it over `error` just like `publishing`,
-  // so a stale "Synced ✓" from a prior success would otherwise mask a new failure here.
-  syncResult.value = null;
+async function acceptPublication(res: Awaited<ReturnType<typeof sync>>, sent: any) {
+  // Read the exact committed tree before advancing any item's editing base.
+  const api = await fetchItems(res.sha || undefined);
+  if (sent.created?.some((item: any) => !res.createdIds?.[item.id]))
+    throw new Error('Publication receipt is missing created item IDs');
+  const skippedNames = (res.skippedReorders ?? []).map((id) => byId.value.get(id)?.title ?? id);
+  editStore.acknowledge(sent, res.createdIds ?? {});
+  for (const item of api)
+    if (item.sha && item.content)
+      editStore.captureBase(
+        item.id,
+        item.sha,
+        item.content,
+        sent.updated?.some((e: any) => e.id === item.id) || Object.values(res.createdIds ?? {}).includes(item.id),
+      );
+  liveItems.value = itemsFromApi(api, props.base ?? '/');
+  rawBodies.value = new Map(api.map((i) => [i.id, i.body]));
+  baseShaMap.value = new Map(api.filter((i) => i.sha).map((i) => [i.id, i.sha!]));
+  if (editingId.value && res.createdIds?.[editingId.value]) editingId.value = res.createdIds[editingId.value]!;
+  syncedJson.value = JSON.stringify(sent);
   syncError.value = null;
   interruptKind.value = null;
-  // A fresh attempt starts with no skipped-reorder notice — repopulated below only if this
-  // sync itself reports one; a failed/retried sync shouldn't keep showing a stale notice from
-  // an earlier, different sync.
-  skippedReorderNames.value = [];
+  sessionExpired.value = false;
+  skippedReorderNames.value = skippedNames;
+  if (res.sha && !res.noChanges) {
+    syncResult.value = { sha: res.sha };
+    publishing.value = { sha: res.sha };
+    editStore.recordCommit(res.sha, JSON.stringify(sent));
+    startDeployPoll(res.sha);
+    showSyncToast(res.sha);
+  }
+}
+async function doSync() {
+  if (syncPending.value || draftSync.conflict.value || resourceTransferCount.value) return;
+  if (!baseVersionLoaded.value) {
+    syncError.value = 'Still loading your workspace. Try again in a moment.';
+    return;
+  }
+  sessionExpired.value = false;
+  const existing = editStore.snapshot().requestPayload;
+  const candidate = existing ?? editStore.changeset(baseShaMap.value);
+  const errors = validateChangeset(candidate);
+  if (errors.length) {
+    interruptKind.value = 'validationBlocked';
+    syncError.value = `Review these fields: ${formatValidationErrors(errors, candidate)}`;
+    return;
+  }
+  const sent = editStore.preparePublication(baseShaMap.value);
+  syncPending.value = true;
+  syncError.value = null;
+  interruptKind.value = null;
   try {
-    // The plain (no-baseSha/no-requestId) snapshot still drives `unsynced` (compared against
-    // `syncedJson` below) — unaffected by the extra fields spliced into the actual request.
-    const sent = JSON.stringify(editStore.changeset());
-    // U3 (R3/KTD3): mint-or-reuse the crypto-random requestId and persist it BEFORE sending,
-    // so a lost-response retry of this exact changeset reuses it (server-side dedup) instead
-    // of risking a duplicate commit; U2 (R1/KTD1): thread each changed/deleted item's captured
-    // base blob sha alongside it.
-    const requestId = editStore.ensureRequestId();
-    const payload = { ...editStore.changeset(baseShaMap.value), requestId };
-    const res = await sync(payload);
-    if (res.ok) {
-      sessionExpired.value = false;
-      const sha = res.sha ?? '';
-      // A NoChanges response means the server determined the sent changeset produces no real
-      // diff against the repo — a true no-op. There's no commit to poll a deploy for, so treat
-      // it as a clean resolve: don't set `publishing` (bannerState falls through to clean/
-      // unsynced instead of getting stuck on "Publishing…" for a build that never happens),
-      // don't show the sync toast, and don't recordCommit/startDeployPoll. The request still
-      // landed, though, so the pending requestId is freed just like the normal success path.
-      if (res.noChanges || !sha) {
-        syncedJson.value = sent;
-        editStore.clearRequestId();
-      } else {
-        syncResult.value = { sha };
-        publishing.value = { sha };
-        syncedJson.value = sent;
-        // The request definitely landed — free the id so the NEXT Sync (of whatever's edited
-        // after this) mints a fresh one rather than reusing this one.
-        editStore.clearRequestId();
-        showSyncToast(sha);
-        // U8 (R9): a successful sync can still report reorders it had to skip (a stale reorder
-        // id is tolerated, not rejected — KTD2's deliberate exception) — surface a visible,
-        // non-blocking notice rather than letting them silently vanish. Resolve to titles via
-        // `byId` (the published board) where possible, falling back to the raw id.
-        if (res.skippedReorders && res.skippedReorders.length) {
-          skippedReorderNames.value = res.skippedReorders.map((id) => byId.value.get(id)?.title ?? id);
-        }
-        // U4 (R4/R5/KTD4): persist the committed sha (+ the snapshot it was sent for, so a
-        // reload can reconstruct `unsynced` correctly — see store.ts's recordCommit) and start
-        // following the deploy through building → live / failed.
-        editStore.recordCommit(sha, sent);
-        startDeployPoll(sha);
-      }
-      // The edit-service reflects a landed commit in /api/items immediately (it reads git),
-      // but this tab's `liveItems`/`baseShaMap` were captured at edit-mode entry — stale the
-      // moment this Sync lands. Refresh now, for BOTH branches above (a real commit and a
-      // true no-op alike — harmless either way), so the very next action (another edit,
-      // another Sync, exiting edit mode) sees the git-fresh base instead of self-conflicting
-      // against the commit it just made, or re-sending an op that already landed.
-      await refreshLiveItems();
-    } else if (res.authError) {
-      // The token is already cleared (client.ts's sync()); nothing was committed, so the
-      // draft is exactly as safe to retry as any other rejected Sync — the only thing
-      // missing is a valid session, which "Sign in again" (the banner) restores without
-      // touching the draft at all.
+    const res = await sync(sent);
+    if (res.ok) await acceptPublication(res, sent);
+    else if (res.authError) {
+      editStore.releasePublication();
       sessionExpired.value = true;
-      syncError.value = STATUS_COPY.authExpired.message;
-    } else if (res.conflict && res.conflict.length) {
-      // U2 (R1/R2): a per-item base-version conflict — additive to the whole-branch
-      // fast-forward check below, not a replacement (KTD2). Nothing committed, draft intact;
-      // same "reload, then re-sync" recovery shape as the fast-forward path, naming the
-      // item(s) so the user knows what to expect to see change. On that reload the
-      // base-version map above is re-captured fresh, so the re-sync actually converges
-      // instead of re-sending the same stale baseSha and conflicting forever (R2). U12
-      // (R13/R15): tagged as the named `conflict` interrupt — outranks a plain `unsynced`.
-      const titles = res.conflict.map((id) => `"${byId.value.get(id)?.title ?? id}"`);
+      syncError.value = 'Sign in again to publish. Your draft is kept.';
+    } else if (res.conflict?.length) {
+      editStore.releasePublication();
+      conflictIds.value = res.conflict;
+      conflictsOpen.value = true;
       interruptKind.value = 'conflict';
-      syncError.value = conflictMessage(capList(titles));
+      syncError.value = 'Some of these items changed since you started. Review both versions before publishing.';
     } else {
-      const errors = res.errors || ['Sync failed'];
-      // The edit-service's commit-ref update 422s with a "not a fast-forward"/"update ref"
-      // style message when another editor published first — that's not a validation problem
-      // with THIS change, it's a stale base, so the fix is "reload, then re-sync" rather than
-      // "go fix the data". Same named `conflict` interrupt as the per-item case above — just
-      // with no item to name (the whole-branch race, additive per KTD2).
-      if (errors.some((e) => /update ref|fast.?forward|not a fast/i.test(e))) {
-        interruptKind.value = 'conflict';
-        syncError.value = conflictMessage('');
-      } else {
-        // A clean, non-OK response means the request landed and the server rejected it —
-        // safe to fix and retry (nothing was committed). Not one of R13's named interrupts —
-        // stays folded into the plain `unsynced` status, detail visible in the SyncBar.
-        syncError.value = `Couldn't publish — ${errors.join('; ')}`;
-      }
+      if (res.state === 'invalid') editStore.releasePublication();
+      syncError.value = res.errors?.join(' · ') || 'Could not publish. Your draft is kept; retrying is safe.';
     }
   } catch {
-    // A caught exception (network/transport failure) is ambiguous: the commit may have
-    // actually landed server-side before the response was lost, so a blind retry could
-    // duplicate any created items. Advise a reload first — the mount-time `editStore.
-    // reconcile()` (see onMounted) drops any draft ops the freshly-loaded base already
-    // reflects, so a reload is always safe before syncing again.
-    syncError.value =
-      "Couldn't confirm the sync completed (network issue). Reload to check whether it landed before syncing again — otherwise you may create duplicates.";
+    try {
+      const recovered = await publicationStatus(sent.requestId);
+      if (recovered.ok) await acceptPublication(recovered, sent);
+      else
+        syncError.value =
+          'Could not confirm publication. Your draft is kept. Retry safely to check and finish this publication.';
+    } catch {
+      syncError.value = 'Connection interrupted. Your draft is kept. Retrying this publication is safe.';
+    }
   } finally {
     syncPending.value = false;
   }
 }
-function onDiscardAll() {
-  // A destructive, all-or-nothing action — confirm with the live count so the prompt says
-  // exactly what's about to disappear (SyncBar's own per-click confirm was redundant with
-  // this and has been removed; this is now the only gate).
-  if (window.confirm(`Discard all ${editStore.dirtyCount.value} unsynced change(s)? This can't be undone.`)) {
-    editStore.clear();
+const draftConflictOpen = ref(false);
+watch(draftSync.conflict, (value) => {
+  if (value) draftConflictOpen.value = true;
+});
+const conflictIds = ref<string[]>([]);
+const conflictsOpen = ref(false);
+const conflictDrafts = computed(() =>
+  Object.fromEntries(
+    conflictIds.value.map((id) => [
+      id,
+      {
+        title: byId.value.get(id)?.title ?? id,
+        body: editStore.bodyValue(id) ?? rawBodies.value.get(id) ?? '',
+        fields: editStore.snapshot().fields[id] ?? {},
+      },
+    ]),
+  ),
+);
+async function resolveItemConflict(id: string, keepMine: boolean, api: ApiItem[]) {
+  const item = api.find((i) => i.id === id);
+  if (!keepMine) editStore.revertItem(id);
+  else if (!item) {
+    const old = byId.value.get(id);
+    const draft = conflictDrafts.value[id];
+    if (old && draft) {
+      const fm = Object.fromEntries(
+        ['product', 'title', 'horizon', 'stage', 'owner', 'impact', 'effort', 'visibility', 'order'].map((k) => [
+          k,
+          String((old as any)[k] ?? ''),
+        ]),
+      );
+      const combined = { ...fm, ...draft.fields };
+      const newID = editStore.addItem(combined.product, combined.title, combined);
+      editStore.setBody(newID, draft.body);
+      editStore.revertItem(id);
+      if (editingId.value === id) editingId.value = newID;
+    }
   }
+  if (item?.sha && item.content) editStore.captureBase(id, item.sha, item.content, true);
+  liveItems.value = itemsFromApi(api, props.base ?? '/');
+  rawBodies.value = new Map(api.map((i) => [i.id, i.body]));
+  baseShaMap.value = new Map(api.filter((i) => i.sha).map((i) => [i.id, i.sha!]));
+  conflictIds.value = conflictIds.value.filter((value) => value !== id);
+  if (!conflictIds.value.length) {
+    conflictsOpen.value = false;
+    interruptKind.value = null;
+    syncError.value = null;
+  }
+}
+const discardConfirmation = ref<'all' | null>(null);
+function onDiscardAll() {
+  discardConfirmation.value = 'all';
+}
+function confirmDiscard() {
+  discardConfirmation.value = null;
+  if (syncPending.value || editStore.snapshot().requestPayload) {
+    syncError.value = 'Resolve the pending publication before discarding its draft.';
+    return;
+  }
+  editStore.clear();
 }
 
-// U11 (R12): exiting edit mode ("Done") with unsynced changes is a conscious Publish /
-// Keep / Discard decision, not a silent drop. `exitPromptOpen` gates a small modal (see the
-// template) offering exactly those three choices; nothing is discarded without the explicit
-// Discard choice below, and dismissing the modal (Escape / backdrop click) just closes it —
-// still editing, nothing decided.
-const exitPromptOpen = ref(false);
-// `toggleEditMode` is the ONE place both the "Done"/"Edit" button and the `e` keyboard
-// shortcut go through (replacing the old direct `editMode.value = !editMode.value`), so
-// neither can bypass the prompt below.
+// Leaving editing keeps the automatically saved working copy.
 function toggleEditMode() {
-  if (!editMode.value) {
-    editMode.value = true;
+  if (!canEdit.value) return;
+  if (resourceTransferCount.value) {
+    syncError.value = 'Finish or cancel file uploads before leaving the editor.';
     return;
   }
-  // Gated on `unsynced` (genuinely dirty SINCE THE LAST SUCCESSFUL SYNC), not the raw
-  // `dirtyCount` — dirtyCount can stay >0 for a moment after a publish that fully landed
-  // (until reconcile drops the now-redundant ops), which would otherwise show a false
-  // "1 unpublished change" prompt on Done right after a clean Sync. `refreshLiveItems`
-  // (see doSync) reconciles dirtyCount down to 0 too in that case, but `unsynced` is the
-  // right semantic to gate on regardless of that timing.
-  if (unsynced.value) {
-    exitPromptOpen.value = true;
-    return;
-  }
-  // Nothing unsynced — exit directly, no prompt (today's behavior for a clean board).
-  editMode.value = false;
-}
-function closeExitPrompt() {
-  exitPromptOpen.value = false;
-}
-// Publish now: run the exact same doSync() Sync uses, then only exit edit mode if it
-// actually resolved everything (a validation block, conflict, or failure leaves genuinely-
-// unsynced work behind — `unsynced` already captures that — so stay in edit mode with the
-// error visible rather than exiting on top of an unpublished draft).
-async function onExitPublish() {
-  exitPromptOpen.value = false;
-  await doSync();
-  if (!unsynced.value) editMode.value = false;
-}
-// Keep for later: exit to view mode, draft untouched — today's behavior, just reached
-// through a conscious choice now instead of implicitly.
-function onExitKeep() {
-  exitPromptOpen.value = false;
-  editMode.value = false;
-}
-// Discard: the only path that can drop the draft here, and only after an explicit confirm
-// (mirrors onDiscardAll's own confirm) naming the live count.
-function onExitDiscard() {
-  if (!window.confirm(`Discard all ${editStore.dirtyCount.value} unsynced change(s)? This can't be undone.`)) return;
-  exitPromptOpen.value = false;
-  editStore.clear();
-  editMode.value = false;
+  editMode.value = !editMode.value;
+  if (!editMode.value) void draftSync.flush();
 }
 // True once there are genuinely-unsynced changes: dirty, and either nothing has ever been
 // synced or the draft has moved on from the exact snapshot last sent to a successful Sync.
-// Drives both the edit banner's copy (Board template) and whether SyncBar renders at all —
+// Drives both the edit banner's copy (Board template) and whether save bar renders at all —
 // once a Sync lands and nothing has changed since, this goes false and the bottom bar (and
 // its Discard/Sync actions) disappears; editing again during publishing flips it back true.
-const unsynced = computed(
-  () =>
-    editStore.dirtyCount.value > 0 &&
-    (!publishing.value || JSON.stringify(editStore.changeset()) !== syncedJson.value),
-);
+const unsynced = computed(() => editStore.dirtyCount.value > 0);
 // U9: called from the "newer version is live" banner (and the plain in-page Reload button).
 // The mount-time reconcile (see onMounted) now drops any draft ops the freshly-loaded base
 // already reflects, so a plain reload is always safe and uniform across both paths.
@@ -676,110 +631,15 @@ function reloadToLatest() {
 // captures "genuinely dirty since the last successful Sync" (see its own computed above), so
 // this reuses that exact definition rather than a second one that could drift from it.
 function onBeforeUnload(e: BeforeUnloadEvent) {
-  if (!syncPending.value && !unsynced.value) return;
+  if (
+    !resourceTransferCount.value &&
+    !(editStore.persistFailed.value && unsynced.value && draftSync.state.value !== 'saved')
+  )
+    return;
   e.preventDefault();
   // Legacy browsers require a non-empty returnValue to actually show the confirmation.
   e.returnValue = '';
 }
-
-// U12 (R13/KTD7): the ONE primary status the edit banner (and, via `syncError`/`publishing`,
-// SyncBar) shows at a time — every lifecycle state from U2-U11 funnels into this single
-// precedence-ordered computed instead of being surfaced by independent, possibly-competing
-// banners. Precedence, highest first: a fresher published build (orthogonal to this tab's own
-// sync attempt — nothing here is trustworthy until it's reloaded) > conflict / session-expired
-// (nothing can be published until one is resolved) > validation-blocked (this attempt was
-// caught before it could even send) > the publishing/building/live/build-failed/superseded/
-// no-build deploy progression (R4/R5/KTD4 — "publishing" itself covers "it IS published, just
-// not built yet," no "unpublished" wording) > genuinely-unsynced edits > a clean board with
-// nothing to say. `BannerState` is `statusCopy.ts`'s `LifecycleState` — the copy for every
-// value below lives in exactly one place (`STATUS_COPY`), not duplicated here or in SyncBar.
-type BannerState = LifecycleState;
-const bannerState = computed<BannerState>(() => {
-  if (newVersion.value) return 'reload';
-  if (interruptKind.value === 'conflict') return 'conflict';
-  if (sessionExpired.value) return 'authExpired';
-  if (interruptKind.value === 'validationBlocked') return 'validationBlocked';
-  if (publishing.value && !unsynced.value) {
-    switch (publishing.value.stage) {
-      case 'building':
-        return 'building';
-      case 'live':
-        return 'live';
-      case 'failed':
-        return 'buildFailed';
-      case 'superseded':
-        return 'superseded';
-      case 'no_build':
-        return 'noBuild';
-      default:
-        return 'publishing';
-    }
-  }
-  if (unsynced.value) return 'unsynced';
-  return 'clean';
-});
-// R14: the small draft → published → building → live progression's current step — `null`
-// for every interrupt state (reload/conflict/authExpired/validationBlocked), where the linear
-// story doesn't apply. Passed to SyncBar, which renders it near the primary status.
-const progressionStep = computed(() => progressionStepFor(bannerState.value));
-// Index into PROGRESSION_STEPS — computed once here rather than repeating `.indexOf` per dot
-// in the template, and sidesteps null-narrowing an optional value across template bindings.
-const progressionIndex = computed(() => (progressionStep.value ? PROGRESSION_STEPS.indexOf(progressionStep.value) : -1));
-// R14 (polish): only surface the progress track for the actual publish → build → live journey.
-// A plain "Draft" (clean/unsynced edit mode) isn't a point of progress, so the bar stays hidden
-// there rather than showing an empty 0%-filled track on every edit.
-const showProgression = computed(() => progressionStep.value != null && progressionStep.value !== 'Draft');
-// Fill fraction across the journey — Published ⅓ → Building ⅔ → Live full.
-const progressionPct = computed(() => `${(progressionIndex.value / (PROGRESSION_STEPS.length - 1)) * 100}%`);
-// Animate the fill (a soft sheen) only while it's still moving toward live.
-const progressionActive = computed(() => progressionStep.value !== 'Live');
-// Treatments: reload, authExpired, buildFailed, conflict, and validationBlocked are solid,
-// attention-grabbing fills — every one of them needs the user to actually do something before
-// anything else can proceed; every other "editing is live" state (publishing / building /
-// live / superseded / noBuild / unsynced) shares a calm accent-tint, just worded differently;
-// clean is muted — editing is on, but there's nothing to say about it.
-// `top` sticks the banner directly below the site header (Navbar is `sticky top-0`, 48px
-// tall — see components/ui/Navbar.vue) so the two stack without overlapping. Full-screen
-// mode (isFull) removes the Navbar from the fullscreen surface entirely (requestFullscreen
-// is called on the board root, a Navbar sibling), so the banner sticks to the very top there.
-const bannerStyle = computed(() => {
-  const top = isFull.value ? '0px' : '48px';
-  if (bannerState.value === 'reload') {
-    return {
-      top,
-      background: 'var(--color-accent-brand-default)',
-      color: 'var(--color-text-primary-inverted-default)',
-      borderBottom: '1px solid var(--color-accent-brand-default)',
-    };
-  }
-  if (
-    bannerState.value === 'authExpired' ||
-    bannerState.value === 'buildFailed' ||
-    bannerState.value === 'conflict' ||
-    bannerState.value === 'validationBlocked'
-  ) {
-    return {
-      top,
-      background: 'var(--color-feedback-error-surface-primary-default)',
-      color: 'var(--color-text-primary-inverted-default)',
-      borderBottom: '1px solid var(--color-feedback-error-surface-primary-default)',
-    };
-  }
-  if (bannerState.value === 'clean') {
-    return {
-      top,
-      background: 'color-mix(in srgb, var(--color-accent-brand-default) 8%, transparent)',
-      color: 'var(--color-text-primary-default)',
-      borderBottom: '1px solid color-mix(in srgb, var(--color-accent-brand-default) 25%, transparent)',
-    };
-  }
-  return {
-    top,
-    background: 'color-mix(in srgb, var(--color-accent-brand-default) 12%, transparent)',
-    color: 'var(--color-accent-brand-default)',
-    borderBottom: '1px solid color-mix(in srgb, var(--color-accent-brand-default) 35%, transparent)',
-  };
-});
 
 // The board only ever sees parsed sections for an item's body (never the raw markdown),
 // so the drawer's body editor needs the real source once — fetched from the edit-service
@@ -814,7 +674,11 @@ async function loadRawBodies() {
     // The mount-time reconcile (see onMounted) ran without body knowledge, so a body edit
     // that had already landed in the published base was left showing as locally dirty —
     // now that the real source is in hand, reconcile again to drop it.
-    if (canEdit.value) editStore.reconcile(liveItems.value, rawBodies.value);
+    if (canEdit.value) {
+      for (const item of items as any[])
+        if (item.sha && item.content) editStore.captureBase(item.id, item.sha, item.content);
+      if (!editStore.snapshot().requestPayload) editStore.reconcile(liveItems.value, rawBodies.value);
+    }
   } catch {
     // Degrade gracefully for the body-editor fallback (DetailDrawer falls back to its
     // parsed-sections reconstruction) — but baseVersionLoaded deliberately stays false here:
@@ -836,28 +700,6 @@ watch(editMode, (on) => {
 });
 
 // Refreshes the board's base state (liveItems + baseShaMap) from the edit-service's
-// git-fresh `/api/items` — called right after a successful Sync (see doSync below) so the
-// very next action (another edit, another Sync, exiting edit mode) operates on what was
-// actually just committed rather than the SSR seed. `reconcile` then drops any draft ops the
-// refreshed base already reflects — including a just-landed CREATE, matched by product+title
-// the same way the mount-time reconcile matches one after a reload (store.ts's reconcile) —
-// so a subsequent Sync never re-sends an op that already landed (the duplicate-item bug this
-// whole refresh exists to close). Best-effort: any failure (network, parsing) leaves
-// liveItems/baseShaMap exactly as they were — the board keeps working off the slightly-stale
-// base it already had, and the existing ~1-min-reload path still recovers it eventually.
-async function refreshLiveItems() {
-  try {
-    const api = await fetchItems();
-    liveItems.value = itemsFromApi(api, props.base ?? '/');
-    baseShaMap.value = new Map(api.filter((i) => i.sha).map((i) => [i.id, i.sha as string]));
-    const rawBodies: Record<string, string> = {};
-    for (const it of api) rawBodies[it.id] = it.body;
-    editStore.reconcile(liveItems.value, rawBodies);
-  } catch {
-    // Degrade silently — see doc comment above.
-  }
-}
-
 // The working copy: published items with the local changeset's edits/creates/deletes/
 // reorders overlaid, purely for on-screen rendering (never mutates liveItems). Only
 // used while a signed-in editor actually has edit mode on — everyone else sees the
@@ -869,7 +711,9 @@ const itemsForBoard = computed(() => (canEdit.value && editMode.value ? projecte
 // from `projected` so it reflects the same working copy the board renders (including a
 // just-created item, which only exists there).
 const editingId = ref<string | null>(null);
-const editingItem = computed(() => (editingId.value ? (projected.value.find((i) => i.id === editingId.value) ?? null) : null));
+const editingItem = computed(() =>
+  editingId.value ? (projected.value.find((i) => i.id === editingId.value) ?? null) : null,
+);
 const editingBody = computed(() =>
   editingId.value ? (editStore.bodyValue(editingId.value) ?? rawBodies.value.get(editingId.value) ?? '') : '',
 );
@@ -1251,7 +1095,7 @@ function onCardDuplicate(id: string) {
 const byId = computed(() => new Map(liveItems.value.map((i) => [i.id, i])));
 
 // Fix #8: a concise, name-resolved summary of exactly what Sync is about to publish —
-// SyncBar's Review affordance renders this so the user can see what they're committing
+// The save bar's Review affordance renders this so the user can see what they're committing
 // before clicking Sync, instead of taking the changeset (all ids/temp-ids) on faith.
 // Names resolve through `byId` (the published board) since the changeset itself only
 // ever carries ids.
@@ -1260,6 +1104,7 @@ type ChangeSummary = {
   created: { title: string; product: string }[];
   deleted: { id: string; title: string }[];
   reorderLanes: number;
+  resources: number;
 };
 const changeSummary = computed<ChangeSummary>(() => {
   const cs = editStore.changeset();
@@ -1267,6 +1112,7 @@ const changeSummary = computed<ChangeSummary>(() => {
     edited: cs.updated.map((u) => ({ id: u.id, title: byId.value.get(u.id)?.title ?? u.id })),
     created: cs.created.map((c) => ({ title: c.title, product: c.product })),
     deleted: cs.deletedIds.map((id) => ({ id, title: byId.value.get(id)?.title ?? id })),
+    resources: cs.assets.attach.length + cs.assets.update.length,
     reorderLanes: Object.values(cs.reorder).reduce((n, lanes) => n + Object.keys(lanes).length, 0),
   };
 });
@@ -1279,25 +1125,24 @@ const allTags = computed(() => Array.from(new Set(liveItems.value.flatMap((i) =>
 // in use across the whole board, minus the 'Unassigned' placeholder (see matchesHygiene's
 // no-owner check in filters.ts) — that's a default, not a real owner worth suggesting.
 const allOwners = computed(() =>
-  Array.from(new Set(liveItems.value.map((i) => i.owner).filter((o): o is string => !!o && o.trim() !== '' && o !== 'Unassigned'))).sort(),
+  Array.from(
+    new Set(
+      liveItems.value.map((i) => i.owner).filter((o): o is string => !!o && o.trim() !== '' && o !== 'Unassigned'),
+    ),
+  ).sort(),
 );
 
 const sortOptions = [
-  { value: 'manual', label: 'Sort: Priority' },
-  { value: 'impact', label: 'Sort: Impact (High to Low)' },
-  { value: 'effort', label: 'Sort: Effort (Low to High)' },
-  { value: 'updated', label: 'Sort: Recently updated' },
-  { value: 'title', label: 'Sort: Title (A to Z)' },
+  { value: 'manual', label: 'Priority' },
+  { value: 'impact', label: 'Highest impact' },
+  { value: 'effort', label: 'Lowest effort' },
+  { value: 'updated', label: 'Recently updated' },
+  { value: 'title', label: 'Title (A–Z)' },
 ];
-const visibilityOptions = [{ value: '', label: 'All visibility' }, ...VISIBILITIES.map((v) => ({ value: v, label: v }))];
 const groupOptions = [
-  { value: 'horizon', label: 'Group: Horizon' },
-  { value: 'product', label: 'Group: Product' },
+  { value: 'horizon', label: 'Horizon' },
+  { value: 'product', label: 'Product' },
 ];
-const visibilityModel = computed({
-  get: () => filters.visibility ?? '',
-  set: (v: string) => (filters.visibility = v || null),
-});
 // Clickable stat tiles double as the multi-select horizon chips. In presentation mode
 // they describe what the viewer actually sees, so they count the filtered set.
 const stats = computed(() => {
@@ -1317,24 +1162,29 @@ const stats = computed(() => {
   }));
 });
 
-// Lane containers stay mostly neutral; state color is carried by the lane accent.
-const laneWash = (key: string): string =>
-  key === 'Now' || key === 'Next'
-    ? 'linear-gradient(180deg, var(--roadmap-lane-neutral-start), var(--color-surface-primary-default))'
-    : 'linear-gradient(180deg, var(--color-surface-primary-default), var(--color-surface-subtle-default))';
-
 const searchContext = computed(() => createSearchContext(itemsForBoard.value, filters.q));
 const shown = computed(() => sortItems(filterItems(itemsForBoard.value, filters, searchContext.value), sort.value));
 
 const availableAssets = computed(() => assetOptionsForFilters(itemsForBoard.value, filters, searchContext.value));
+const availableOwners = computed(() =>
+  IS_PUBLIC ? [] : [...new Set(itemsForBoard.value.map((item) => item.owner).filter(Boolean))],
+);
 const availableStages = computed(() =>
   stageOptionsForItems(filterItems(itemsForBoard.value, { ...filters, stage: [] }, searchContext.value), filters.stage),
 );
 const availableImpact = computed(() =>
-  levelOptionsForItems(filterItems(itemsForBoard.value, { ...filters, impact: [] }, searchContext.value), 'impact', filters.impact),
+  levelOptionsForItems(
+    filterItems(itemsForBoard.value, { ...filters, impact: [] }, searchContext.value),
+    'impact',
+    filters.impact,
+  ),
 );
 const availableEffort = computed(() =>
-  levelOptionsForItems(filterItems(itemsForBoard.value, { ...filters, effort: [] }, searchContext.value), 'effort', filters.effort),
+  levelOptionsForItems(
+    filterItems(itemsForBoard.value, { ...filters, effort: [] }, searchContext.value),
+    'effort',
+    filters.effort,
+  ),
 );
 const availableTags = computed(() => tagOptionsForFilters(itemsForBoard.value, filters, searchContext.value));
 const focused = computed(() => shown.value.filter((i) => horizons.value.includes(i.horizon)));
@@ -1371,6 +1221,9 @@ const lanes = computed(() => {
 
 function removeFilterChip(chip: ActiveFilterChip) {
   switch (chip.kind) {
+    case 'owner':
+      filters.owner = null;
+      break;
     case 'q':
       filters.q = '';
       break;
@@ -1436,7 +1289,9 @@ function setupLaneObserver() {
     (entries) => {
       const visible = entries
         .filter((entry) => entry.isIntersecting)
-        .sort((a, b) => b.intersectionRatio - a.intersectionRatio || a.boundingClientRect.top - b.boundingClientRect.top);
+        .sort(
+          (a, b) => b.intersectionRatio - a.intersectionRatio || a.boundingClientRect.top - b.boundingClientRect.top,
+        );
       const key = visible[0]?.target.getAttribute('data-lane-key');
       if (key) activeLaneKey.value = key;
     },
@@ -1478,12 +1333,8 @@ function closeDrawer() {
 // Drawer prev/next walks the visual order (lane by lane, top to bottom) of
 // whatever is currently filtered — the URL follows via the ?item= sync below.
 const navList = computed(() => lanes.value.flatMap((l) => l.items));
-const navIndex = computed(() =>
-  selected.value ? navList.value.findIndex((i) => i.id === selected.value!.id) : -1,
-);
-const navPos = computed(() =>
-  navIndex.value >= 0 ? { index: navIndex.value, total: navList.value.length } : null,
-);
+const navIndex = computed(() => (selected.value ? navList.value.findIndex((i) => i.id === selected.value!.id) : -1));
+const navPos = computed(() => (navIndex.value >= 0 ? { index: navIndex.value, total: navList.value.length } : null));
 function navBy(delta: number) {
   const list = navList.value;
   if (!list.length) return;
@@ -1515,11 +1366,12 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return el.isContentEditable === true;
 }
 function onGlobalKey(e: KeyboardEvent) {
+  if (discardConfirmation.value) return;
   if (isTypingTarget(e.target)) return;
   // The full-screen item editor and the share dialog own their own keyboard handling
   // (Esc close, etc. — see ItemEditor/ShareDialog) — board-level shortcuts stay out of
   // their way while either is open.
-  const overlayOpen = !!editingItem.value || shareOpen.value || exitPromptOpen.value;
+  const overlayOpen = !!editingItem.value || shareOpen.value;
 
   // "?" toggles the cheat-sheet; while it's open, Escape closes it (closing the editor
   // on Escape is already handled in ItemEditor — not duplicated here).
@@ -1563,6 +1415,16 @@ function onGlobalKey(e: KeyboardEvent) {
   searchWrap.value?.querySelector('input')?.focus();
 }
 // Below lg the filters live in a slide-over sheet; on desktop they toggle inline.
+let filterViewport: MediaQueryList | undefined;
+function syncFilterViewport() {
+  desktopFilters.value = filterViewport?.matches ?? false;
+}
+onMounted(() => {
+  filterViewport = window.matchMedia('(min-width: 1024px)');
+  syncFilterViewport();
+  filterViewport.addEventListener('change', syncFilterViewport);
+});
+onUnmounted(() => filterViewport?.removeEventListener('change', syncFilterViewport));
 function toggleFilters() {
   if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
     sidebarOpen.value = !sidebarOpen.value;
@@ -1571,6 +1433,7 @@ function toggleFilters() {
   }
 }
 function onSheetKey(e: KeyboardEvent) {
+  if (!isTopFocusTrap(sheetPanel.value)) return;
   if (e.key === 'Escape') sheetOpen.value = false;
 }
 const sheetPanel = ref<HTMLElement>();
@@ -1579,34 +1442,12 @@ watch(sheetOpen, async (open) => {
   if (typeof document === 'undefined') return;
   if (open) {
     document.addEventListener('keydown', onSheetKey);
-    document.body.style.overflow = 'hidden';
     await nextTick();
     if (sheetPanel.value) releaseSheetFocus = trapFocus(sheetPanel.value);
   } else {
     document.removeEventListener('keydown', onSheetKey);
-    document.body.style.overflow = '';
     releaseSheetFocus?.();
     releaseSheetFocus = null;
-  }
-});
-// U11: same focus-trap/Escape wiring as the mobile filter sheet just above — Escape (or a
-// backdrop click, see the template) just closes the modal (still editing, nothing decided),
-// it doesn't stand in for any of the three explicit choices.
-function onExitPromptKey(e: KeyboardEvent) {
-  if (e.key === 'Escape') closeExitPrompt();
-}
-const exitPromptPanel = ref<HTMLElement>();
-let releaseExitPromptFocus: (() => void) | null = null;
-watch(exitPromptOpen, async (open) => {
-  if (typeof document === 'undefined') return;
-  if (open) {
-    document.addEventListener('keydown', onExitPromptKey);
-    await nextTick();
-    if (exitPromptPanel.value) releaseExitPromptFocus = trapFocus(exitPromptPanel.value);
-  } else {
-    document.removeEventListener('keydown', onExitPromptKey);
-    releaseExitPromptFocus?.();
-    releaseExitPromptFocus = null;
   }
 });
 function clear() {
@@ -1617,50 +1458,95 @@ function setPresent(on: boolean) {
   present.value = on;
   if (typeof document === 'undefined') return;
   if (on) document.documentElement.dataset.present = '1';
-  else delete document.documentElement.dataset.present;
+  else {
+    delete document.documentElement.dataset.present;
+    nextTick(() => moreWrap.value?.querySelector<HTMLButtonElement>('button')?.focus());
+  }
 }
+const moreOpen = ref(false);
+const moreWrap = ref<HTMLElement>();
 const shareCopied = ref(false);
+const moreError = ref('');
 let shareTimer: ReturnType<typeof setTimeout> | undefined;
-// Opens the client-facing view in its own window (and puts the link on the clipboard).
-function shareView() {
+function closeMore(returnFocus = false) {
+  moreOpen.value = false;
+  if (returnFocus) moreWrap.value?.querySelector<HTMLButtonElement>('button')?.focus();
+}
+function onMorePointer(event: PointerEvent) {
+  if (event.target instanceof Node && !moreWrap.value?.contains(event.target)) closeMore();
+}
+function onMoreFocusOut(event: FocusEvent) {
+  if (event.relatedTarget instanceof Node && !moreWrap.value?.contains(event.relatedTarget)) closeMore();
+}
+function startPresentation() {
+  closeMore();
+  selected.value = null;
+  setPresent(true);
+  nextTick(() => root.value?.querySelector<HTMLButtonElement>('[data-test="exit-presentation"]')?.focus());
+}
+async function copyPresentationLink() {
+  shareCopied.value = false;
+  moreError.value = '';
   const p = new URLSearchParams(location.search);
   p.set('present', '1');
   p.delete('item');
   const url = `${location.origin}${location.pathname}?${p.toString()}`;
-  navigator.clipboard?.writeText(url);
-  window.open(url, '_blank', 'noopener');
-  shareCopied.value = true;
-  clearTimeout(shareTimer);
-  shareTimer = setTimeout(() => (shareCopied.value = false), 1500);
+  try {
+    await navigator.clipboard.writeText(url);
+    shareCopied.value = true;
+    clearTimeout(shareTimer);
+    shareTimer = setTimeout(() => (shareCopied.value = false), 3000);
+  } catch {
+    moreError.value = 'Couldn’t copy the link. Check your browser’s clipboard permission and try again.';
+  }
 }
+onMounted(() => {
+  document.addEventListener('pointerdown', onMorePointer);
+  fullscreenAvailable.value = typeof root.value?.requestFullscreen === 'function';
+});
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onMorePointer);
+  clearTimeout(shareTimer);
+});
 
 // Projected snapshot of exactly what is on screen now — post-filter, post-sort, and
 // post horizon-focus (the Now/Next/Later tabs), so the share mirrors the board view.
+const shareResources = computed(() => shareResourceChoices(focused.value));
 const shareItems = computed(() => focused.value.map(projectForShare));
 const shareContext = computed<ShareContext>(() => ({
-  title: filters.product ? `${filters.product} roadmap` : 'Product roadmap',
+  title: filters.product ? `${filters.product} roadmap` : 'product roadmap',
   product: filters.product,
+  horizons: [...horizons.value],
   generatedAt: formatDateTime(Date.now()),
 }));
-const sortedAuthoredShares = computed(() => [...authoredShares.value].sort((a, b) => b.updatedAt - a.updatedAt));
+const sortedAuthoredShares = computed(() =>
+  authoredShares.value.filter(isVisibleRoadmapShare).sort((a, b) => b.updatedAt - a.updatedAt),
+);
+let authoredSharesLoadSequence = 0;
 
 async function loadAuthoredShares() {
   const cd = getCanvasdrop();
   if (!cd) return;
   sharesLoading.value = true;
   sharesError.value = null;
+  const sequence = ++authoredSharesLoadSequence;
   try {
-    shareAuthor.value ??= await cd.me();
-    authoredShares.value = await cd.canvases.list({
-      sourceApp: SHARE_SOURCE_APP,
-      sourceKind: SHARE_SOURCE_KIND,
-      tags: [SHARE_TAG],
-    });
+    const [nextAuthor, nextShares] = await Promise.all([
+      shareAuthor.value ? Promise.resolve(shareAuthor.value) : cd.me(),
+      cd.canvases.list({
+        sourceApp: SHARE_SOURCE_APP,
+        sourceKind: SHARE_SOURCE_KIND,
+      }),
+    ]);
+    if (sequence !== authoredSharesLoadSequence) return;
+    shareAuthor.value = nextAuthor;
+    authoredShares.value = nextShares;
   } catch (err) {
-    sharesError.value = (err as { hint?: string; message?: string }).hint
-      ?? (err as Error).message ?? 'Could not load shares.';
+    if (sequence !== authoredSharesLoadSequence) return;
+    sharesError.value =
+      (err as { hint?: string; message?: string }).hint ?? (err as Error).message ?? 'Could not load shares.';
   } finally {
-    sharesLoading.value = false;
+    if (sequence === authoredSharesLoadSequence) sharesLoading.value = false;
   }
 }
 
@@ -1686,24 +1572,44 @@ async function fetchOgImageBytes(): Promise<Uint8Array | undefined> {
 }
 
 async function onShareSubmit(p: {
-  targetShareId: string | null; canvasTitle: string; canvasDescription: string; roadmapTitle: string; roadmapIntro: string;
-  access: AccessRung;
-  password: string; expiresAt: number; tags: string[]; theme: ShareTheme; items: ReturnType<typeof projectForShare>[];
+  targetShareId: string | null;
+  canvasTitle: string;
+  canvasDescription: string;
+  roadmapTitle: string;
+  roadmapIntro: string;
+  access: AccessRung | null;
+  password?: string | null;
+  expectsPassword: boolean;
+  expectedUpdatedAt?: number;
+  tags: string[];
+  preservedMetadata: Record<string, unknown>;
+  theme: ShareTheme;
+  items: ReturnType<typeof projectForShare>[];
+  resources?: ShareResourceChoice[];
 }) {
   const cd = getCanvasdrop();
-  if (!cd) { shareError.value = 'Sharing is unavailable on this canvas.'; return; }
+  if (!cd) {
+    shareError.value = 'Sharing is unavailable on this canvas.';
+    return;
+  }
   sharePending.value = true;
   shareError.value = null;
   try {
-    const html = renderShareHtml({
-      ...shareContext.value,
-      title: p.roadmapTitle,
-      intro: p.roadmapIntro,
-      theme: p.theme,
-      assetBase: window.location.origin,
-    }, p.items);
-    const bundle = buildShareBundle(html, await fetchOgImageBytes());
+    const prepared = await prepareShareResources(p.items, p.resources ?? [], props.base ?? '/');
+    const html = renderShareHtml(
+      {
+        ...shareContext.value,
+        title: p.roadmapTitle,
+        intro: p.roadmapIntro,
+        theme: p.theme,
+        assets: SHARE_ASSET_PATHS,
+      },
+      prepared.items,
+    );
+    const [ogImage, assets] = await Promise.all([fetchOgImageBytes(), fetchShareAssets(props.base ?? '/')]);
+    const bundle = buildShareBundle(html, ogImage, { ...assets, ...prepared.files });
     const metadata = {
+      ...p.preservedMetadata,
       sourceApp: SHARE_SOURCE_APP,
       sourceKind: SHARE_SOURCE_KIND,
       theme: p.theme,
@@ -1711,36 +1617,60 @@ async function onShareSubmit(p: {
       roadmapTitle: p.roadmapTitle,
       roadmapIntro: p.roadmapIntro,
       itemCount: p.items.length,
-      laneCount: new Set(p.items.map((item) => item.horizon)).size,
+      laneCount: shareContext.value.horizons?.length ?? new Set(p.items.map((item) => item.horizon)).size,
       product: shareContext.value.product,
+      horizons: shareContext.value.horizons,
       generatedAt: Date.now(),
     };
     const baseOptions = {
       title: p.canvasTitle,
-      access: p.access,
-      password: p.access === 'password' ? p.password : undefined,
-      expiresAt: p.expiresAt,
       tags: p.tags,
       metadata,
       bundle,
     };
-    const res = p.targetShareId
-      ? await updateAuthoredCanvas(cd, p.targetShareId, {
+    let res: AuthoredCanvas;
+    if (p.targetShareId) {
+      const updateAccess =
+        p.access === 'public_link' && typeof p.password === 'string' ? ('password' as const) : p.access;
+      const updateOptions = {
         ...baseOptions,
-        password: p.access === 'password' ? p.password : null,
-      })
-      : await cd.canvases.publish(baseOptions);
+        ...(updateAccess === null ? {} : { access: updateAccess }),
+        ...(p.password === undefined ? {} : { password: p.password }),
+        ...(p.expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt: p.expectedUpdatedAt }),
+      };
+      const updated = await updateAuthoredCanvas(cd, p.targetShareId, updateOptions);
+      res = p.access === null ? updated : requirePersistedAccess(updated, p.access, p.expectsPassword);
+    } else {
+      if (p.access === null) throw new Error('Choose an audience before publishing a new share.');
+      const publishAccess =
+        p.access === 'public_link' && typeof p.password === 'string' ? ('password' as const) : p.access;
+      res = requirePersistedAccess(
+        await cd.canvases.publish({
+          ...baseOptions,
+          access: publishAccess,
+          password: typeof p.password === 'string' && p.password ? p.password : undefined,
+        }),
+        p.access,
+        p.expectsPassword,
+      );
+    }
     shareResult.value = {
       id: res.id,
       url: res.url,
       expiresAt: res.expiresAt,
+      access: res.access,
+      accessMode: res.accessMode,
+      publicationStatus: res.publicationStatus,
       status: res.status,
       action: p.targetShareId ? 'updated' : 'created',
     };
     await loadAuthoredShares();
   } catch (err) {
-    shareError.value = (err as { hint?: string; message?: string }).hint
-      ?? (err as Error).message ?? 'Publish failed.';
+    const failure = err as { code?: string; hint?: string; message?: string; current?: AuthoredCanvas | null };
+    if (failure.code === 'SHARE_CONFLICT' || failure.code === 'UPDATE_PARTIAL') {
+      await loadAuthoredShares();
+    }
+    shareError.value = failure.hint ?? failure.message ?? 'Publish failed.';
   } finally {
     sharePending.value = false;
   }
@@ -1748,15 +1678,18 @@ async function onShareSubmit(p: {
 
 async function onShareRevoke(id: string) {
   const cd = getCanvasdrop();
-  if (!cd) { shareError.value = 'Sharing is unavailable on this canvas.'; return; }
+  if (!cd) {
+    shareError.value = 'Sharing is unavailable on this canvas.';
+    return;
+  }
   sharePending.value = true;
   shareError.value = null;
   try {
     await cd.canvases.revoke(id);
     await loadAuthoredShares();
   } catch (err) {
-    shareError.value = (err as { hint?: string; message?: string }).hint
-      ?? (err as Error).message ?? 'Could not revoke share.';
+    shareError.value =
+      (err as { hint?: string; message?: string }).hint ?? (err as Error).message ?? 'Could not revoke share.';
   } finally {
     sharePending.value = false;
   }
@@ -1766,18 +1699,23 @@ async function onShareRevoke(id: string) {
 const presentHeadPrefix = computed(() => (filters.product ? `The ${filters.product}` : 'Our product'));
 const presentSub = computed(() =>
   filters.product
-    ? `What's Now, Next and Later for ${filters.product}. Committed to what's in Now, flexible on what's further out.`
-    : `What's Now, Next and Later across ${productListSentence()}. Committed to what's in Now, flexible on what's further out.`,
+    ? `Current priorities and future plans for ${filters.product}. Stage shows progress; horizons are not delivery dates.`
+    : 'Current priorities and future plans across our products. Stage shows progress; horizons are not delivery dates.',
 );
 const heroLead = computed(() =>
   filters.product
     ? `What's Now, Next and Later for ${filters.product}.`
-    : 'One view of what every product team is building, what comes after it, and what we have deliberately not scoped yet.',
+    : 'Current priorities, next steps, and ideas across our products.',
 );
-function toggleFull() {
-  if (typeof document === 'undefined') return;
-  if (!document.fullscreenElement) root.value?.requestFullscreen?.();
-  else document.exitFullscreen?.();
+async function toggleFull() {
+  moreError.value = '';
+  try {
+    if (!document.fullscreenElement) await root.value?.requestFullscreen();
+    else await document.exitFullscreen();
+    closeMore(true);
+  } catch {
+    moreError.value = 'Couldn’t change full screen. Try your browser’s full-screen control.';
+  }
 }
 function onFsChange() {
   isFull.value = typeof document !== 'undefined' && !!document.fullscreenElement;
@@ -1790,7 +1728,7 @@ onMounted(async () => {
   // which would strip the #roadmap_edit_token fragment before we ever read it.
   readTokenFromHash();
   try {
-    if (localStorage.getItem('rm-sidebar') === '0') sidebarOpen.value = false;
+    sidebarOpen.value = localStorage.getItem('rm-sidebar') === '1';
   } catch {
     /* ignore */
   }
@@ -1811,6 +1749,7 @@ onMounted(async () => {
   }
   const p = new URLSearchParams(search);
   filters.q = p.get('q') ?? '';
+  filters.owner = IS_PUBLIC ? null : p.get('owner');
   // Product lives in the URL path (/music-app/), seeded server-side; ?product= is a
   // legacy fallback so old links still resolve (the watch rewrites them to a path).
   filters.product = props.initialProduct ?? p.get('product');
@@ -1823,8 +1762,11 @@ onMounted(async () => {
   if (p.get('group') === 'product') filters.group = 'product';
   const hy = p.get('hygiene');
   if (hy === 'no-owner' || hy === 'now-early' || hy === 'stale-later') filters.hygiene = hy;
-  const hs = p.getAll('horizon').filter((v): v is (typeof HORIZONS)[number] => (HORIZONS as readonly string[]).includes(v));
+  const hs = p
+    .getAll('horizon')
+    .filter((v): v is (typeof HORIZONS)[number] => (HORIZONS as readonly string[]).includes(v));
   if (hs.length) horizons.value = hs;
+  else if (p.get('horizon') === 'none') horizons.value = [];
   const s = p.get('sort');
   if (s) sort.value = s as SortKey;
   if (p.get('present') === '1') setPresent(true);
@@ -1858,6 +1800,10 @@ onMounted(async () => {
   readTokenFromHash();
   const meRes = await me();
   canEdit.value = meRes.editor;
+  if (canEdit.value) {
+    editStore.activate(meRes.login);
+    await draftSync.start(meRes.login);
+  }
   // Reconcile the draft against the freshly-loaded (published) base BEFORE the auto-resume
   // check below reads dirtyCount — drops any ops that already landed (a published create,
   // an edit whose value now matches, a delete that's gone), so a stale "new"/"edited" card
@@ -1877,18 +1823,10 @@ onMounted(async () => {
     // the poll never got to clear before that tab closed — must NOT resurrect a permanent
     // "Publishing…" here (the exact "shows publishing even though everything is live" bug).
     // Past the window the deploy is certainly done: drop it and show the normal clean state.
-    const fresh = committedAt != null && Date.now() - committedAt < DEPLOY_RESUME_MAX_AGE_MS;
-    if (pendingSha && editStore.dirtyCount.value === 0) {
-      // The freshly loaded static base already reflects the synced draft (reconcile above
-      // dropped every pending op). Nothing remains to wait on, so do not resurrect a
-      // "Publishing..." banner from localStorage after a successful reload.
-      editStore.clearCommit();
-    } else if (pendingSha && fresh) {
+    if (pendingSha) {
       publishing.value = { sha: pendingSha };
       syncedJson.value = editStore.committedSnapshot.value;
       startDeployPoll(pendingSha);
-    } else if (pendingSha) {
-      editStore.clearCommit();
     }
   }
   // U10 (R11): the plain mount-time reconcile just above has no raw body to compare a pending
@@ -1913,16 +1851,27 @@ onMounted(async () => {
     else selected.value = byId.value.get(restoreItem)!;
   }
   editorLogin.value = meRes.login;
+  if (canEdit.value && editStore.snapshot().requestPayload) {
+    const pending = editStore.snapshot().requestPayload;
+    try {
+      const result = await publicationStatus(pending.requestId);
+      if (result.ok) await acceptPublication(result, pending);
+    } catch {
+      /* retry remains available */
+    }
+  }
   // U9: only real editors (who might have a draft worth preserving) need to know a
   // fresher build has landed.
-  if (canEdit.value) stopVersionWatch = watchForNewVersion(() => { newVersion.value = true; });
+  if (canEdit.value)
+    stopVersionWatch = watchForNewVersion(() => {
+      newVersion.value = true;
+    });
 });
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', onFsChange);
   document.removeEventListener('keydown', onSheetKey);
   document.removeEventListener('keydown', onGlobalKey);
   window.removeEventListener('beforeunload', onBeforeUnload);
-  document.body.style.overflow = '';
   stopVersionWatch?.();
   laneObserver?.disconnect();
   clearTimeout(toastTimer);
@@ -1932,6 +1881,7 @@ onUnmounted(() => {
 function syncState() {
   const p = new URLSearchParams();
   if (filters.q) p.set('q', filters.q);
+  if (filters.owner && !IS_PUBLIC) p.set('owner', filters.owner);
   filters.stage.forEach((v) => p.append('stage', v));
   filters.impact.forEach((v) => p.append('impact', v));
   filters.effort.forEach((v) => p.append('effort', v));
@@ -1945,6 +1895,7 @@ function syncState() {
   const isDefaultHorizons =
     horizons.value.length === DEFAULT_HORIZONS.length && DEFAULT_HORIZONS.every((h) => horizons.value.includes(h));
   if (!isDefaultHorizons) horizons.value.forEach((h) => p.append('horizon', h));
+  if (!horizons.value.length) p.set('horizon', 'none');
   if (sort.value !== 'manual') p.set('sort', sort.value);
   if (present.value) p.set('present', '1');
   if (selected.value) p.set('item', selected.value.id);
@@ -1969,10 +1920,7 @@ function syncState() {
 
 watch([filters, horizons, sort, selected, present], syncState, { deep: true });
 
-const iconBtn =
-  'roadmap-action grid size-10 place-items-center rounded-lg border border-border-subtle-default bg-card text-text-subtle-default hover:text-text-primary-default transition-colors';
-// Shared "neutral, bordered, icon+label" treatment for the toolbar's secondary action
-// buttons (Sign in, New with AI) — same look, one definition.
+// Shared secondary action treatment.
 const editActionBtn =
   'roadmap-action border-border-subtle-default bg-card text-single-sm-medium text-text-primary-default hover:bg-surface-primary-hover inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border px-3 font-medium transition-colors';
 </script>
@@ -1985,159 +1933,16 @@ const editActionBtn =
     :data-editing="canEdit && editMode ? 'true' : undefined"
     :class="isFull ? 'bg-background overflow-y-auto p-6' : ''"
   >
-    <!-- R1/R9: edit mode must be unmistakable — a state-aware brand-accent banner that
-         sticks below the site header (see .edit-banner below: `position: sticky`, not
-         `fixed` — it shares the page's normal scroll flow and reserves its own height
-         automatically, so it can never overlap the Navbar the way a viewport-fixed banner
-         at the same top offset would) plus a matching inset ring on the board container
-         (see .board-root[data-editing]). Hidden while a full-screen overlay (ItemEditor,
-         ShareDialog) is up — those already out-z-index it, but hiding it too keeps a
-         covered, non-interactive banner out of the accessibility tree. A newer deployed
-         build takes priority over everything else, surfacing the sticky Reload prompt
-         right here. flex-wrap + min-w-0 text let long copy wrap on narrow screens instead
-         of overflowing or crowding the Reload button. -->
     <div
-      v-if="canEdit && editMode && !editingItem && !shareOpen"
-      class="edit-banner flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-single-sm-medium sm:px-6"
-      :class="[
-        bannerState === 'reload' ||
-        bannerState === 'authExpired' ||
-        bannerState === 'buildFailed' ||
-        bannerState === 'conflict' ||
-        bannerState === 'validationBlocked'
-          ? 'font-semibold'
-          : 'font-medium',
-        isFull ? '-mx-6 -mt-6' : '',
-      ]"
-      :style="bannerStyle"
-      :data-banner-state="bannerState"
-      data-test="editing-banner"
+      v-if="newVersion && !editingItem && !shareOpen"
+      class="flex flex-wrap items-center justify-between gap-3 mb-4 rounded-xl border border-border-subtle-default p-3 text-sm"
+      data-test="new-version-notice"
     >
-      <span
-        class="edit-mode-badge shrink-0 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[0.68rem] font-bold uppercase tracking-[0.12em]"
-        :class="
-          bannerState === 'reload' ||
-          bannerState === 'authExpired' ||
-          bannerState === 'buildFailed' ||
-          bannerState === 'conflict' ||
-          bannerState === 'validationBlocked'
-            ? 'bg-[color:var(--color-text-primary-inverted-default)]/20'
-            : 'bg-[color:var(--color-accent-brand-default)] text-[color:var(--color-text-primary-inverted-default)]'
-        "
-      >
-        <PhPencilSimpleLine :size="13" weight="bold" /> Edit mode
-      </span>
-      <!-- U12 (R13): exactly one of these branches ever renders — `bannerState` above is
-           the single precedence-ordered source of truth, so a conflict/session-expiry/
-           validation block can never be showing at the same time as "unsynced" or a stale
-           deploy-progress line underneath it. Static copy comes from `STATUS_COPY`
-           (statusCopy.ts) rather than being hand-typed per branch, so the top banner and
-           SyncBar (below) can never drift apart on wording. -->
-      <template v-if="bannerState === 'reload'">
-        <span class="min-w-0">{{ STATUS_COPY.reload.message }}</span>
-        <button
-          type="button"
-          class="ml-auto shrink-0 rounded-lg bg-[color:var(--color-text-primary-inverted-default)]/15 px-3 py-1.5 hover:bg-[color:var(--color-text-primary-inverted-default)]/25"
-          data-test="reload-latest"
-          @click="reloadToLatest"
-        >
-          {{ STATUS_COPY.reload.action }}
-        </button>
-      </template>
-      <!-- R2/R13/R16: the "someone else changed this" interrupt — outranks a plain unsynced
-           status (see bannerState's precedence) and always carries its one recovery action
-           inline, never a dead end. Covers both the per-item base-version conflict (names
-           the item(s)) and the whole-branch fast-forward race (generic, no item to name) —
-           `syncError` already carries whichever wording `conflictMessage()` produced. -->
-      <template v-else-if="bannerState === 'conflict'">
-        <span data-test="banner-conflict" class="min-w-0">{{ syncError }}</span>
-        <button
-          type="button"
-          class="ml-auto shrink-0 rounded-lg bg-[color:var(--color-text-primary-inverted-default)]/15 px-3 py-1.5 hover:bg-[color:var(--color-text-primary-inverted-default)]/25"
-          data-test="conflict-reload"
-          @click="reloadToLatest"
-        >
-          {{ STATUS_COPY.conflict.action }}
-        </button>
-      </template>
-      <template v-else-if="bannerState === 'authExpired'">
-        <span data-test="banner-auth-expired" class="min-w-0">{{ STATUS_COPY.authExpired.message }}</span>
-        <button
-          type="button"
-          class="ml-auto shrink-0 rounded-lg bg-[color:var(--color-text-primary-inverted-default)]/15 px-3 py-1.5 hover:bg-[color:var(--color-text-primary-inverted-default)]/25"
-          data-test="sign-in-again"
-          @click="signIn"
-        >
-          {{ STATUS_COPY.authExpired.action }}
-        </button>
-      </template>
-      <!-- R6/R13/R15/R16: validation errors stay grouped/scannable (U5's per-item, per-field
-           grouping, formatted by formatValidationErrors) rather than a wall of text — shown
-           as the primary status instead of hiding behind a generic "unsynced" while SyncBar
-           quietly disagreed underneath it. -->
-      <template v-else-if="bannerState === 'validationBlocked'">
-        <span data-test="banner-validation-blocked" class="min-w-0">{{ syncError }}</span>
-      </template>
-      <template v-else-if="bannerState === 'publishing'">
-        <span data-test="banner-publishing" class="min-w-0">{{ STATUS_COPY.publishing.message }}</span>
-      </template>
-      <template v-else-if="bannerState === 'building'">
-        <span data-test="banner-building" class="min-w-0">{{ STATUS_COPY.building.message }}</span>
-      </template>
-      <template v-else-if="bannerState === 'live'">
-        <span data-test="banner-live" class="min-w-0">{{ STATUS_COPY.live.message }}</span>
-      </template>
-      <template v-else-if="bannerState === 'buildFailed'">
-        <span data-test="banner-build-failed" class="min-w-0">{{ STATUS_COPY.buildFailed.message }}</span>
-        <a
-          v-if="publishing?.htmlUrl"
-          :href="publishing.htmlUrl"
-          target="_blank"
-          rel="noopener"
-          class="ml-auto shrink-0 rounded-lg bg-[color:var(--color-text-primary-inverted-default)]/15 px-3 py-1.5 hover:bg-[color:var(--color-text-primary-inverted-default)]/25"
-          data-test="build-failed-view-run"
-        >
-          {{ STATUS_COPY.buildFailed.action }}
-        </a>
-      </template>
-      <template v-else-if="bannerState === 'superseded'">
-        <span data-test="banner-superseded" class="min-w-0">{{ STATUS_COPY.superseded.message }}</span>
-      </template>
-      <template v-else-if="bannerState === 'noBuild'">
-        <span data-test="banner-no-build" class="min-w-0">{{ STATUS_COPY.noBuild.message }}</span>
-      </template>
-      <!-- R16: "saved, not published" has to be unmistakable here — STATUS_COPY.unsynced's
-           message says exactly that; the live count is appended so the banner still answers
-           "how much," same as before. -->
-      <template v-else-if="bannerState === 'unsynced'">
-        <span data-test="banner-unsynced" class="min-w-0"
-          >{{ STATUS_COPY.unsynced.message }} · {{ editStore.dirtyCount.value }} unpublished</span
-        >
-      </template>
-      <template v-else>
-        <span data-test="banner-clean" class="min-w-0">{{ STATUS_COPY.clean.message }}</span>
-      </template>
-      <!-- R14: the legible draft → published → building → live progression, tied to the same
-           deploy status U4 tracks — "publishing"/"building" read like tracking a package, not
-           a void. `basis-full` wraps it onto its own line under the message on narrow screens
-           rather than crowding it. Hidden for every interrupt (`progressionStep` is null) —
-           conflict/session-expired/validation-blocked/reload aren't points on this line, and
-           showing dots next to one would imply progress that isn't happening. -->
-      <div
-        v-if="showProgression"
-        class="lifecycle-progression flex basis-full items-center gap-2"
-        data-test="lifecycle-progression"
-        :data-progression-step="progressionStep"
-      >
-        <span class="progression-track">
-          <span class="progression-fill" :style="{ width: progressionPct }" :data-active="progressionActive" />
-        </span>
-        <span class="progression-label">{{ progressionStep }}</span>
-      </div>
+      <span>A newer version of the roadmap is available. Your draft is kept.</span
+      ><button type="button" data-test="reload-latest" @click="reloadToLatest">Reload roadmap</button>
     </div>
-
     <!-- Fix #5: today, leaving edit mode with a pending draft gives zero on-screen
-         indication anything is unpublished — the banner above and SyncBar both only render
+         indication anything is unpublished — the banner above and save bar both only render
          while `editMode` is on. This pill is the view-mode counterpart: quiet (muted surface,
          subtle brand-accent border/dot — nowhere near as loud as the edit banner) but always
          reachable, and it's the one and only way back into edit mode from a plain view. The
@@ -2153,8 +1958,8 @@ const editActionBtn =
     >
       <span class="size-1.5 shrink-0 rounded-full" style="background: var(--color-accent-brand-default)" />
       <span
-        >{{ editStore.dirtyCount.value }} unpublished change{{ editStore.dirtyCount.value > 1 ? 's' : '' }} —
-        Resume editing</span
+        >{{ editStore.dirtyCount.value }} unpublished change{{ editStore.dirtyCount.value > 1 ? 's' : '' }} — Resume
+        editing</span
       >
     </button>
 
@@ -2201,8 +2006,11 @@ const editActionBtn =
       </div>
     </div>
 
-    <section class="roadmap-masthead reveal mb-4 rounded-[20px] px-4 py-3 sm:px-6 sm:py-3.5 lg:px-7 lg:py-4">
-      <div class="grid items-center gap-x-6 gap-y-3 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.54fr)]">
+    <section
+      class="roadmap-masthead reveal mb-4 rounded-[20px] px-4 py-3 sm:px-6 sm:py-3.5 lg:px-7 lg:py-4"
+      aria-label="Roadmap overview"
+    >
+      <div class="hero-grid grid items-center gap-x-6 gap-y-3">
         <div class="max-w-4xl">
           <p class="roadmap-label flex flex-wrap items-center gap-2">
             <span>Product roadmap</span>
@@ -2213,18 +2021,34 @@ const editActionBtn =
               <span class="size-1.5 rounded-full bg-[color:var(--color-accent-brand-default)]" aria-hidden="true" />
               Presentation mode
             </span>
+            <button
+              v-if="present"
+              type="button"
+              data-test="exit-presentation"
+              class="roadmap-action inline-flex items-center gap-1.5 rounded-full border border-border-subtle-default bg-card px-2.5 py-1 text-single-sm-medium normal-case tracking-normal text-text-primary-default shadow-sm hover:border-[color:var(--color-accent-brand-default)]"
+              aria-label="Exit presentation"
+              title="Exit presentation"
+              @click="setPresent(false)"
+            >
+              <PhX :size="13" weight="bold" />
+              Exit presentation
+            </button>
           </p>
           <h1 class="roadmap-display roadmap-title mt-1.5 text-[1.8rem] sm:text-[2.15rem] lg:text-[2.45rem]">
             <template v-if="filters.product">{{ filters.product }} <em>roadmap</em></template>
             <template v-else>What we’re <em>building</em></template>
           </h1>
-          <p class="roadmap-muted mt-1.5 max-w-2xl text-sm leading-relaxed max-sm:hidden">
+          <p class="roadmap-muted hero-intro mt-1.5 max-w-2xl text-sm leading-relaxed">
             {{ present ? presentSub : heroLead }}
           </p>
         </div>
 
-        <div class="roadmap-glass rounded-xl p-1.5 max-sm:overflow-x-auto" role="group" aria-label="Horizons">
-          <div class="grid grid-cols-2 gap-1.5 max-sm:flex max-sm:w-max sm:grid-cols-3 lg:grid-cols-5">
+        <div
+          class="horizon-stats-container roadmap-glass rounded-xl p-1.5 max-sm:overflow-x-auto"
+          role="group"
+          aria-label="Horizons"
+        >
+          <div class="horizon-stats-grid grid grid-cols-2 gap-1.5 max-sm:flex max-sm:w-max">
             <button
               v-for="s in stats"
               :key="s.key"
@@ -2243,14 +2067,22 @@ const editActionBtn =
               :style="{ '--horizon-accent': s.dot }"
               @click="toggleHorizon(s.key)"
             >
-              <span class="text-single-sm-medium text-text-primary-default flex items-center gap-2">
+              <span
+                class="horizon-stat-label text-single-sm-medium text-text-primary-default flex min-w-0 items-center gap-2"
+              >
                 <span v-if="s.dot" class="h-3.5 w-1 shrink-0 rounded-full" :style="{ background: s.dot }" />
                 {{ s.label }}
+                <PhCheck v-if="s.active" class="horizon-selected-mark" :size="12" aria-hidden="true" />
               </span>
-              <span class="font-display roadmap-title mt-0.5 block text-[1.3rem] leading-none tabular-nums max-sm:mt-0 sm:text-[1.45rem]">
+              <span
+                class="font-display roadmap-title mt-0.5 block text-[1.3rem] leading-none tabular-nums max-sm:mt-0 sm:text-[1.45rem]"
+              >
                 {{ s.value }}
               </span>
-              <span class="text-single-sm-medium mt-0.5 block max-sm:hidden" :style="{ color: toneText[s.tone] }">
+              <span
+                class="horizon-stat-sub text-single-sm-medium mt-0.5 block max-sm:hidden"
+                :style="{ color: toneText[s.tone] }"
+              >
                 {{ s.sub }}
               </span>
             </button>
@@ -2259,6 +2091,32 @@ const editActionBtn =
       </div>
     </section>
 
+    <div v-if="!present" class="product-navigation" role="group" aria-label="Filter by product">
+      <button type="button" :aria-pressed="!filters.product" @click="filters.product = null">All products</button>
+      <button
+        v-for="product in PRODUCTS"
+        :key="product"
+        type="button"
+        :aria-pressed="filters.product === product"
+        @click="filters.product = product"
+      >
+        {{ product }}
+      </button>
+      <span class="product-navigation-count" role="status" aria-live="polite">{{ focused.length }} items in view</span>
+    </div>
+    <div v-if="!present" class="product-mobile">
+      <Select
+        :model-value="filters.product ?? ''"
+        @update:model-value="filters.product = $event || null"
+        :options="[
+          { value: '', label: 'All products' },
+          ...PRODUCTS.map((product) => ({ value: product, label: product })),
+        ]"
+        aria-label="Filter by product"
+      />
+      <span>{{ focused.length }} items</span>
+    </div>
+
     <!-- R2: a compact "recent changes" peek — hidden entirely (no empty box) when the
          feed is empty or the endpoint/token is unavailable (see RecentChanges.vue), and
          out of the way in presentation mode like the rest of the board chrome. -->
@@ -2266,293 +2124,333 @@ const editActionBtn =
 
     <!-- Body -->
     <div class="roadmap-glass board-body rounded-[24px] p-3.5 sm:p-4">
-    <div class="flex gap-5">
-      <FiltersSidebar
-        v-if="sidebarOpen && !present"
-        class="hidden lg:block"
-        :filters="filters"
-        :assets="availableAssets"
-        :stages="availableStages"
-        :impact-options="availableImpact"
-        :effort-options="availableEffort"
-        :tag-options="availableTags"
-        @clear="clear"
-      />
+      <div class="flex gap-5">
+        <FiltersSidebar
+          v-if="sidebarOpen && !present"
+          class="hidden lg:block"
+          :filters="filters"
+          :owners="availableOwners"
+          :assets="availableAssets"
+          :stages="availableStages"
+          :impact-options="availableImpact"
+          :effort-options="availableEffort"
+          :tag-options="availableTags"
+          @clear="clear"
+        />
 
-      <div class="min-w-0 flex-1">
-        <!-- Toolbar. Two stable zones, deliberately kept apart so toggling edit mode never
-             reflows the other: the view-controls row below (filters/search/selects/presence/
-             the Edit affordance) never changes shape when edit mode flips — the create
-             actions (New item, New with AI) live in their own `edit-action-bar` row that only
-             ever appears/disappears BELOW this one (see that block further down). -->
-        <div v-if="!present" class="mb-3 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            :class="[iconBtn, 'relative']"
-            aria-label="Filters"
-            title="Filters"
-            @click="toggleFilters"
-          >
-            <PhSlidersHorizontal :size="17" />
-            <span
-              v-if="activeFilterCount(filters)"
-              class="roadmap-count-badge absolute -top-1.5 -right-1.5 grid size-4.5 place-items-center rounded-md text-[10px] font-semibold tabular-nums"
-            >
-              {{ activeFilterCount(filters) }}
-            </span>
-          </button>
-            <div ref="searchWrap" class="min-w-[220px] flex-1 max-sm:order-3 max-sm:basis-full"><SearchInput v-model="filters.q" name="q" placeholder="Search roadmap items..." :debounce="150" /></div>
-          <div v-if="!IS_PUBLIC" class="max-sm:order-4 max-sm:flex-1 sm:w-40"><Select v-model="visibilityModel" :options="visibilityOptions" name="visibility" aria-label="Visibility" /></div>
-          <div class="max-sm:order-5 max-sm:flex-1 sm:w-52"><Select v-model="sort" :options="sortOptions" name="sort" aria-label="Sort" /></div>
-          <div class="max-sm:order-6 max-sm:flex-1 sm:w-44"><Select v-model="filters.group" :options="groupOptions" name="group" aria-label="Group by" /></div>
-          <!-- R11: live presence — "N viewing" + avatars, visible to ALL viewers (not
-               canEdit-gated), gated only by realtimeAvailable (R14). See PresenceIndicator.vue. -->
-          <PresenceIndicator :viewers="viewers" :realtime-available="realtimeAvailable" />
-
-          <!-- Session-actions cluster: presentation/share/fullscreen tuck away below `sm` (they
-               can always be reached — nothing here is destructive/unique), but the Edit
-               affordance is deliberately the one control that's ALWAYS rendered, in this same
-               spot, at every width and in every state (signed-out, viewing, editing) — only its
-               label/icon/color change, so entering/leaving edit mode never shifts anything to
-               its left. `ml-auto` pins the whole cluster to the row's trailing edge. -->
-          <div class="ml-auto flex shrink-0 items-center gap-2">
+        <div class="min-w-0 flex-1">
+          <SavedViews
+            v-if="ready && !present && !IS_PUBLIC"
+            :filters="filters"
+            :horizons="horizons"
+            :sort="sort"
+            @apply="
+              (view) => {
+                Object.assign(filters, view.filters);
+                horizons = [...view.horizons];
+                sort = view.sort;
+                selected = null;
+              }
+            "
+          />
+          <div v-if="!present" class="board-toolbar mb-3 flex flex-wrap items-center">
+            <div ref="searchWrap" class="board-search">
+              <SearchInput v-model="filters.q" name="q" placeholder="Search roadmap items..." :debounce="150" />
+            </div>
             <button
-              type="button"
-              :class="[iconBtn, 'max-sm:hidden']"
-              :aria-label="shareCopied ? 'Presentation link copied' : 'Copy presentation link'"
-              :title="shareCopied ? 'Presentation link copied' : 'Copy presentation link'"
-              @click="shareView"
-            >
-              <PhCheck v-if="shareCopied" :size="17" />
-              <PhPresentation v-else :size="17" />
-            </button>
-            <button
-              v-if="canShare"
-              type="button"
-              :class="[iconBtn, 'chrome-reveal max-sm:hidden']"
-              aria-label="Publish a share link…"
-              title="Publish a share link…"
-              @click="openShare"
-            >
-              <PhShareNetwork :size="17" />
-            </button>
-            <button type="button" :class="[iconBtn, 'max-sm:hidden']" :aria-label="isFull ? 'Exit full screen' : 'Full screen'" :title="isFull ? 'Exit full screen' : 'Full screen'" @click="toggleFull">
-              <PhArrowsIn v-if="isFull" :size="17" />
-              <PhArrowsOut v-else :size="17" />
-            </button>
-
-            <button
-              v-if="!canEdit"
               type="button"
               :class="editActionBtn"
-              aria-label="Sign in to edit"
-              title="Sign in to edit"
-              data-test="sign-in-to-edit"
-              @click="signIn"
+              aria-label="Filters"
+              :aria-expanded="desktopFilters ? sidebarOpen : sheetOpen"
+              @click="toggleFilters"
             >
-              <PhPencilSimple :size="17" />
-              <span class="max-sm:hidden">Sign in</span>
+              Filters
+              <span v-if="activeFilterCount(filters)" class="board-filter-count">{{ activeFilterCount(filters) }}</span>
             </button>
             <button
-              v-else
               type="button"
-              :class="[
-                'roadmap-action chrome-reveal inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-single-sm-medium font-medium transition-colors',
-                editMode
-                  ? 'bg-[color:var(--color-accent-brand-default)] text-[color:var(--color-text-primary-inverted-default)] hover:opacity-90'
-                  : 'roadmap-primary-action',
-              ]"
-              :aria-label="editMode ? `Done editing — signed in as ${editorLogin}` : `Edit the roadmap — signed in as ${editorLogin}`"
-              :title="editMode ? 'Done editing (e)' : 'Edit (e)'"
-              data-test="edit-toggle"
-              @click="toggleEditMode"
+              :class="editActionBtn"
+              :aria-expanded="viewOptionsOpen"
+              aria-controls="board-view-options"
+              @click="viewOptionsOpen = !viewOptionsOpen"
             >
-              <PhCheck v-if="editMode" :size="17" />
-              <PhPencilSimpleLine v-else :size="17" />
-              <span class="max-sm:hidden">{{ editMode ? 'Done' : 'Edit' }}</span>
+              Layout
             </button>
+            <div
+              ref="moreWrap"
+              class="board-more"
+              @keydown.esc.stop.prevent="closeMore(true)"
+              @focusout="onMoreFocusOut"
+            >
+              <button
+                type="button"
+                :class="editActionBtn"
+                :aria-expanded="moreOpen"
+                aria-controls="board-more-actions"
+                @click="moreOpen = !moreOpen"
+              >
+                More<span class="disclosure-caret" aria-hidden="true"></span>
+              </button>
+              <div v-if="moreOpen" id="board-more-actions" class="control-popover board-more-panel">
+                <button type="button" aria-label="Start presentation" @click="startPresentation">
+                  Start presentation
+                </button>
+                <button
+                  type="button"
+                  :aria-label="shareCopied ? 'Presentation link copied' : 'Copy presentation link'"
+                  @click="copyPresentationLink"
+                >
+                  {{ shareCopied ? 'Link copied' : 'Copy presentation link' }}
+                </button>
+                <p v-if="shareCopied" role="status">Presentation link copied to clipboard.</p>
+                <p v-if="moreError" role="alert">{{ moreError }}</p>
+                <button v-if="fullscreenAvailable" type="button" @click="toggleFull">
+                  {{ isFull ? 'Exit full screen' : 'Full screen' }}
+                </button>
+              </div>
+            </div>
+            <PresenceIndicator :viewers="viewers" :realtime-available="realtimeAvailable" />
+            <div v-if="canShare || canEdit" class="board-primary-actions ml-auto flex shrink-0 items-center gap-2">
+              <button
+                v-if="canShare"
+                type="button"
+                :class="editActionBtn"
+                aria-label="Publish a share link…"
+                @click="openShare"
+              >
+                Share
+              </button>
+              <button
+                v-if="canEdit"
+                type="button"
+                :class="[
+                  'roadmap-action inline-flex h-10 shrink-0 items-center rounded-lg px-3 text-single-sm-medium font-medium transition-colors',
+                  editMode
+                    ? 'bg-[color:var(--color-accent-brand-default)] text-[color:var(--color-text-primary-inverted-default)] hover:opacity-90'
+                    : 'roadmap-primary-action',
+                ]"
+                :aria-label="
+                  editMode
+                    ? `Done editing — signed in as ${editorLogin}`
+                    : `Edit the roadmap — signed in as ${editorLogin}`
+                "
+                :title="editMode ? 'Done editing (e)' : 'Edit (e)'"
+                data-test="edit-toggle"
+                @click="toggleEditMode"
+              >
+                {{ editMode ? 'Done' : 'Edit' }}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <!-- Edit action bar: the create actions get their own row, appearing/disappearing
+          <div v-if="!present" v-show="viewOptionsOpen" id="board-view-options" class="board-view-options">
+            <label
+              >Group by<Select v-model="filters.group" :options="groupOptions" name="group" aria-label="Group by"
+            /></label>
+            <label>Sort by<Select v-model="sort" :options="sortOptions" name="sort" aria-label="Sort" /></label>
+          </div>
+
+          <!-- Edit action bar: the create actions get their own row, appearing/disappearing
              ONLY here, below the view-controls row above — which is why toggling edit mode
              never reflows filters/search/selects/presence/Edit. Pure-CSS entrance (see
              `.edit-action-bar` below), same reasoning as the toast/cheat-sheet's: a plain
              v-if, not a <Transition>, keeps show/hide synchronous for tests. -->
-        <div
-          v-if="canEdit && editMode && !present"
-          class="edit-action-bar mb-3 flex flex-wrap items-center gap-2"
-          data-test="edit-action-bar"
-        >
-          <button
-            v-if="aiAvailable"
-            type="button"
-            :class="editActionBtn"
-            aria-label="Draft a new roadmap item with AI"
-            title="Draft a new item with AI"
-            data-test="new-with-ai"
-            @click="newWithAiOpen = true"
+          <div
+            v-if="canEdit && editMode && !present"
+            class="edit-action-bar mb-3 flex flex-wrap items-center gap-2"
+            data-test="edit-action-bar"
           >
-            <PhSparkle :size="16" /> New with AI
-          </button>
-          <button
-            type="button"
-            class="roadmap-action inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-[color:var(--color-accent-brand-default)] px-3 text-single-sm-medium font-medium text-[color:var(--color-text-primary-inverted-default)] transition-opacity hover:opacity-90"
-            aria-label="Add a new roadmap item"
-            title="Add a new item"
-            data-test="new-item"
-            @click="addNewItem"
-          >
-            <PhPlus :size="16" /> New item
-          </button>
-        </div>
-
-        <p
-          v-if="filters.q.trim() && !present"
-          class="text-single-sm-medium text-text-subtle-default -mt-2 mb-3 flex flex-wrap items-center gap-x-2 gap-y-1"
-          data-test="search-results-line"
-        >
-          <span>{{ focused.length }} {{ focused.length === 1 ? 'result' : 'results' }} for “{{ filters.q.trim() }}”</span>
-          <button
-            v-for="match in hiddenLaneMatches"
-            :key="match.key"
-            type="button"
-            class="text-text-link-default min-h-8 rounded-lg px-1 hover:underline"
-            data-test="hidden-lane-match"
-            @click="toggleHorizon(match.key)"
-          >
-            + {{ match.count }} more in {{ match.key }}
-          </button>
-        </p>
-
-        <!-- Reordering priority only makes sense scoped to one product, sorted by Priority,
-             with nothing else filtering the lane — otherwise a drag wouldn't reorder what
-             the user thinks it does. Keep the hint quiet either way: it's guidance, not a
-             warning. -->
-        <p v-if="canEdit && editMode && !present" class="text-single-sm-medium text-text-subtle-default -mt-2 mb-3" data-test="reorder-hint">
-          <template v-if="canReorder">Drag a card's ⠿ handle to set priority.</template>
-          <template v-else>To reorder priority, filter to one product, sort by Priority, and clear other filters.</template>
-        </p>
-
-        <!-- R13: a soft, advisory-only "also editing" nudge — never a lock/merge signal,
-             just a heads-up that another editor is in the same edit mode right now.
-             See PresenceIndicator.vue. -->
-        <PresenceIndicator :others-editing="othersEditing" :can-edit="canEdit" :edit-mode="editMode" :present="present" />
-
-        <ActiveFilterChips
-          v-if="activeChips.length && !present"
-          :chips="activeChips"
-          @remove="removeFilterChip"
-          @clear="clear"
-        />
-
-        <!-- Empty -->
-        <div
-          v-if="!focused.length"
-          class="roadmap-panel text-single-base-medium text-text-subtle-default rounded-2xl border border-dashed px-6 py-14 text-center"
-        >
-          <BrandMark class="mx-auto mb-4 size-12 opacity-90" />
-          <p class="font-display roadmap-title text-[1.35rem] leading-tight">
-            {{ horizons.length === 0 ? 'No horizons selected' : 'No matching roadmap items' }}
-          </p>
-          <p class="mx-auto mt-1 max-w-sm text-sm leading-relaxed">
-            {{ horizons.length === 0 ? 'Pick at least one horizon chip above to see items.' : 'The filters are too narrow for this view.' }}
-          </p>
-          <button
-            v-if="activeFilterCount(filters) || horizons.length === 0"
-            class="text-text-link-default mt-3 hover:underline"
-            @click="clear"
-          >
-            {{ horizons.length === 0 && !activeFilterCount(filters) ? 'Reset horizons' : 'Clear all filters' }}
-          </button>
-          <div v-if="canEdit && editMode" class="mt-4">
+            <button
+              v-if="aiAvailable"
+              type="button"
+              :class="editActionBtn"
+              aria-label="Draft a new roadmap item with AI"
+              title="Draft a new item with AI"
+              data-test="new-with-ai"
+              @click="newWithAiOpen = true"
+            >
+              <PhSparkle :size="16" /> New with AI
+            </button>
             <button
               type="button"
-              class="roadmap-action inline-flex items-center gap-1.5 rounded-lg bg-[color:var(--color-accent-brand-default)] px-3.5 py-2 text-single-sm-medium font-medium text-[color:var(--color-text-primary-inverted-default)] transition-opacity hover:opacity-90"
-              data-test="empty-new-item"
+              class="roadmap-action inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-[color:var(--color-accent-brand-default)] px-3 text-single-sm-medium font-medium text-[color:var(--color-text-primary-inverted-default)] transition-opacity hover:opacity-90"
+              aria-label="Add a new roadmap item"
+              title="Add a new item"
+              data-test="new-item"
               @click="addNewItem"
             >
               <PhPlus :size="16" /> New item
             </button>
           </div>
-        </div>
 
-        <!-- Board view: each lane is a bordered container; radii stay concentric
-             (outer 16px − 8px padding = 8px cards). -->
-        <template v-else>
-        <LaneJumpBar
-          v-if="!present"
-          :lanes="lanes"
-          :active-key="activeLaneKey"
-          @jump="jumpToLane"
-        />
-        <div class="board-scroll flex flex-col gap-5 pb-2 md:flex-row md:items-start md:gap-4 md:overflow-x-auto">
-          <section
-            v-for="(lane, i) in lanes"
-            :key="lane.key"
-            :id="laneDomId(lane.key)"
-            :ref="(el) => registerLaneSectionEl(lane.key, el as Element | null)"
-            class="reveal w-full rounded-[20px] border border-border-subtle-default/80 p-2.5 shadow-sm md:min-w-[270px] md:flex-1 md:basis-0"
-            :class="dragOverLaneKey === lane.key ? 'roadmap-lane-drop-target' : ''"
-            :data-lane-key="lane.key"
-            :style="{ background: laneWash(lane.key), '--i': i + 1, '--lane-accent': lane.dot }"
+          <p
+            v-if="filters.q.trim() && !present"
+            class="text-single-sm-medium text-text-subtle-default -mt-2 mb-3 flex flex-wrap items-center gap-x-2 gap-y-1"
+            data-test="search-results-line"
           >
-            <header class="px-3 pt-2.5">
-              <div class="flex items-center gap-2">
-                <span class="h-5 w-1 rounded-full bg-[color:var(--lane-accent)]" />
-                <h2 class="font-display roadmap-title text-[1.3rem] leading-none">{{ lane.key }}</h2>
-                <span
-                  class="border-border-subtle-default bg-card/85 text-single-sm-medium text-text-primary-default ml-auto grid size-7 place-items-center rounded-lg border tabular-nums shadow-sm"
-                >
-                  {{ lane.items.length }}
-                </span>
-              </div>
-              <p v-if="lane.desc" class="text-single-sm-medium text-text-subtle-default mt-1.5 leading-snug">
-                {{ lane.desc }}
-              </p>
-              <div class="border-border-subtle-default mt-2.5 border-t" />
-            </header>
-            <div
-              class="mt-3 flex flex-col gap-2"
-              :ref="(el) => registerLaneListEl(lane.key, el as Element | null)"
+            <span
+              >{{ focused.length }} {{ focused.length === 1 ? 'result' : 'results' }} for “{{ filters.q.trim() }}”</span
             >
-              <RoadmapCard
-                v-for="it in lane.items"
-                :key="it.id"
-                :item="it"
-                :show-horizon="filters.group === 'product'"
-                :active="selected?.id === it.id"
-                :client="present"
-                :editing="canEdit && editMode"
-                :draggable="canEdit && editMode"
-                :pending="canEdit && editMode ? (it as any).pending : undefined"
-                :highlight-query="filters.q"
-                @select="select"
-                @discard="editStore.revertItem($event)"
-                @rename="onCardRename"
-                @duplicate="onCardDuplicate"
-              />
-              <p
-                v-if="!lane.items.length"
-                class="text-single-sm-medium text-text-subtle-default px-2.5 pt-1 pb-3"
-                data-test="lane-empty-copy"
-              >
-                {{ laneEmptyCopy(lane.key, filters.group) }}
-              </p>
+            <button
+              v-for="match in hiddenLaneMatches"
+              :key="match.key"
+              type="button"
+              class="text-text-link-default min-h-8 rounded-lg px-1 hover:underline"
+              data-test="hidden-lane-match"
+              @click="toggleHorizon(match.key)"
+            >
+              + {{ match.count }} more in {{ match.key }}
+            </button>
+          </p>
+
+          <!-- Reordering priority only makes sense scoped to one product, sorted by Priority,
+             with nothing else filtering the lane — otherwise a drag wouldn't reorder what
+             the user thinks it does. Keep the hint quiet either way: it's guidance, not a
+             warning. -->
+          <p
+            v-if="canEdit && editMode && !present"
+            class="text-single-sm-medium text-text-subtle-default -mt-2 mb-3"
+            data-test="reorder-hint"
+          >
+            <template v-if="canReorder">Drag a card's ⠿ handle to set priority.</template>
+            <template v-else
+              >To reorder priority, filter to one product, sort by Priority, and clear other filters.</template
+            >
+          </p>
+
+          <!-- R13: a soft, advisory-only "also editing" nudge — never a lock/merge signal,
+             just a heads-up that another editor is in the same edit mode right now.
+             See PresenceIndicator.vue. -->
+          <PresenceIndicator
+            :others-editing="othersEditing"
+            :can-edit="canEdit"
+            :edit-mode="editMode"
+            :present="present"
+          />
+
+          <ActiveFilterChips
+            v-if="activeChips.length && !present"
+            :chips="activeChips"
+            @remove="removeFilterChip"
+            @clear="clear"
+          />
+
+          <!-- Empty -->
+          <div
+            v-if="!focused.length"
+            class="roadmap-panel text-single-base-medium text-text-subtle-default rounded-2xl border border-dashed px-6 py-14 text-center"
+          >
+            <BrandMark class="mx-auto mb-4 size-12 opacity-90" />
+            <p class="font-display roadmap-title text-[1.35rem] leading-tight">
+              {{
+                !itemsForBoard.length
+                  ? 'No roadmap items yet'
+                  : horizons.length === 0
+                    ? 'No horizons selected'
+                    : 'No matching roadmap items'
+              }}
+            </p>
+            <p class="mx-auto mt-1 max-w-sm text-sm leading-relaxed">
+              {{
+                !itemsForBoard.length
+                  ? IS_PUBLIC
+                    ? 'There are no public roadmap items to show yet.'
+                    : 'Items will appear here when they are added to the roadmap.'
+                  : horizons.length === 0
+                    ? 'Pick at least one horizon above to see items.'
+                    : 'Try a different search, filter, or horizon.'
+              }}
+            </p>
+            <button
+              v-if="itemsForBoard.length && (activeFilterCount(filters) || horizons.length === 0)"
+              class="text-text-link-default mt-3 hover:underline"
+              @click="clear"
+            >
+              {{ horizons.length === 0 && !activeFilterCount(filters) ? 'Reset horizons' : 'Clear all filters' }}
+            </button>
+            <div v-if="canEdit && editMode" class="mt-4">
               <button
-                v-if="canEdit && editMode"
                 type="button"
-                class="roadmap-action text-single-sm-medium text-text-link-default mt-1 inline-flex items-center gap-1.5 self-start rounded-lg px-2 py-1.5 hover:underline"
-                @click="addToLane(lane)"
+                class="roadmap-action inline-flex items-center gap-1.5 rounded-lg bg-[color:var(--color-accent-brand-default)] px-3.5 py-2 text-single-sm-medium font-medium text-[color:var(--color-text-primary-inverted-default)] transition-opacity hover:opacity-90"
+                data-test="empty-new-item"
+                @click="addNewItem"
               >
-                <PhPlus :size="14" /> Add item
+                <PhPlus :size="16" /> New item
               </button>
             </div>
-          </section>
+          </div>
+
+          <!-- Board view: each lane is a bordered container; radii stay concentric
+             (outer 16px − 8px padding = 8px cards). -->
+          <template v-else>
+            <LaneJumpBar v-if="!present" :lanes="lanes" :active-key="activeLaneKey" @jump="jumpToLane" />
+            <div class="board-scroll flex flex-col gap-5 pb-2 md:flex-row md:items-start md:gap-4 md:overflow-x-auto">
+              <section
+                v-for="(lane, i) in lanes"
+                :key="lane.key"
+                :id="laneDomId(lane.key)"
+                :ref="(el) => registerLaneSectionEl(lane.key, el as Element | null)"
+                class="roadmap-lane reveal w-full rounded-[20px] border border-border-subtle-default/80 p-2.5 shadow-sm md:min-w-[270px] md:flex-1 md:basis-0"
+                :class="dragOverLaneKey === lane.key ? 'roadmap-lane-drop-target' : ''"
+                :data-lane-key="lane.key"
+                :style="{ '--i': i + 1, '--lane-accent': lane.dot }"
+              >
+                <header class="px-3 pt-2.5">
+                  <div class="flex items-center gap-2">
+                    <span class="h-5 w-1 rounded-full bg-[color:var(--lane-accent)]" />
+                    <h2 class="font-display roadmap-title text-[1.3rem] leading-none">{{ lane.key }}</h2>
+                    <span
+                      class="border-border-subtle-default bg-card/85 text-single-sm-medium text-text-primary-default ml-auto grid size-7 place-items-center rounded-lg border tabular-nums shadow-sm"
+                    >
+                      {{ lane.items.length }}
+                    </span>
+                  </div>
+                  <p
+                    v-if="lane.desc"
+                    class="lane-description text-single-sm-medium text-text-subtle-default mt-1.5 leading-snug"
+                  >
+                    {{ lane.desc }}
+                  </p>
+                  <div class="border-border-subtle-default mt-2.5 border-t" />
+                </header>
+                <div class="mt-3 flex flex-col gap-2" :ref="(el) => registerLaneListEl(lane.key, el as Element | null)">
+                  <RoadmapCard
+                    v-for="it in lane.items"
+                    :key="it.id"
+                    :item="it"
+                    :show-horizon="filters.group === 'product'"
+                    :active="selected?.id === it.id"
+                    :client="present || IS_PUBLIC"
+                    :editing="canEdit && editMode"
+                    :draggable="canEdit && editMode"
+                    :pending="canEdit && editMode ? (it as any).pending : undefined"
+                    :highlight-query="filters.q"
+                    @select="select"
+                    @discard="editStore.revertItem($event)"
+                    @rename="onCardRename"
+                    @duplicate="onCardDuplicate"
+                  />
+                  <p
+                    v-if="!lane.items.length"
+                    class="text-single-sm-medium text-text-subtle-default px-2.5 pt-1 pb-3"
+                    data-test="lane-empty-copy"
+                  >
+                    {{ laneEmptyCopy(lane.key, filters.group) }}
+                  </p>
+                  <button
+                    v-if="canEdit && editMode"
+                    type="button"
+                    class="roadmap-action text-single-sm-medium text-text-link-default mt-1 inline-flex items-center gap-1.5 self-start rounded-lg px-2 py-1.5 hover:underline"
+                    @click="addToLane(lane)"
+                  >
+                    <PhPlus :size="14" /> Add item
+                  </button>
+                </div>
+              </section>
+            </div>
+          </template>
         </div>
-        </template>
       </div>
-    </div>
     </div>
 
     <!-- Mobile filter sheet (below lg the sidebar lives here) -->
@@ -2568,7 +2466,9 @@ const editActionBtn =
           class="sheet-panel bg-background absolute top-0 left-0 flex h-full w-[300px] max-w-[85vw] flex-col shadow-xl outline-none"
         >
           <div class="border-border-subtle-default flex items-center justify-between border-b px-5 py-3">
-            <span class="text-single-sm-medium text-text-subtle-default font-semibold tracking-wide uppercase">Filters</span>
+            <span class="text-single-sm-medium text-text-subtle-default font-semibold tracking-wide uppercase"
+              >Filters</span
+            >
             <div class="flex items-center gap-2">
               <button
                 v-if="activeFilterCount(filters)"
@@ -2591,6 +2491,7 @@ const editActionBtn =
           <div class="flex-1 overflow-y-auto p-5">
             <FiltersSidebar
               :filters="filters"
+              :owners="availableOwners"
               :assets="availableAssets"
               :stages="availableStages"
               :impact-options="availableImpact"
@@ -2606,7 +2507,7 @@ const editActionBtn =
               class="bg-foreground text-text-primary-inverted-default text-single-base-medium w-full rounded-lg py-2.5"
               @click="sheetOpen = false"
             >
-              Show {{ shown.length }} item{{ shown.length === 1 ? '' : 's' }}
+              Show {{ focused.length }} item{{ focused.length === 1 ? '' : 's' }}
             </button>
           </div>
         </div>
@@ -2616,7 +2517,7 @@ const editActionBtn =
     <DetailDrawer
       :item="drawerItem"
       :pos="navPos"
-      :client="present"
+      :client="present || IS_PUBLIC"
       :edit="false"
       :raw-body="selected ? (rawBodies.get(selected.id) ?? null) : null"
       @close="closeDrawer"
@@ -2640,7 +2541,21 @@ const editActionBtn =
       @close="onEditorClose"
       @reset-field="onEditorResetField"
       @rewrite-accept="onEditorRewriteAccept"
-    />
+      ><template #save-status
+        ><SaveStatus
+          :detail="resourceTransferCount ? 'Finish or cancel file uploads before publishing' : draftSync.detail.value"
+          :auth-expired="sessionExpired"
+          @signin="signIn"
+          :dirty="editStore.dirtyCount.value"
+          :pending="syncPending"
+          :error="syncError"
+          :publication="publishing"
+          :summary="changeSummary"
+          :blocked="!!draftSync.conflict.value || !baseVersionLoaded || !!resourceTransferCount || !!conflictIds.length"
+          @publish="doSync"
+          @discard="onDiscardAll"
+          @retry="publishing && startDeployPoll(publishing.sha)" /></template
+    ></component>
 
     <component
       :is="NewWithAiDialog"
@@ -2650,23 +2565,62 @@ const editActionBtn =
       @drafted="onDrafted"
     />
 
-    <SyncBar
-      v-if="canEdit && editMode && unsynced"
-      :dirty-count="editStore.dirtyCount.value"
+    <SaveStatus
+      v-if="canEdit && editMode && !editingItem && !shareOpen"
+      class="board-save-status"
+      :detail="resourceTransferCount ? 'Finish or cancel file uploads before publishing' : draftSync.detail.value"
+      :auth-expired="sessionExpired"
+      @signin="signIn"
+      :dirty="editStore.dirtyCount.value"
       :pending="syncPending"
-      :result="syncResult"
       :error="syncError"
-      :publishing="publishing"
-      :overwrite-warning="newVersion"
-      :change-summary="changeSummary"
-      :progression-step="progressionStep"
-      @sync="doSync"
+      :publication="publishing"
+      :summary="changeSummary"
+      :blocked="!!draftSync.conflict.value || !baseVersionLoaded || !!resourceTransferCount || !!conflictIds.length"
+      @publish="doSync"
       @discard="onDiscardAll"
+      @retry="publishing && startDeployPoll(publishing.sha)"
+    />
+    <button
+      v-if="canEdit && draftSync.conflict.value && !draftConflictOpen"
+      class="draft-conflict-reopen"
+      type="button"
+      @click="draftConflictOpen = true"
+    >
+      Review draft versions
+    </button>
+    <DraftConflicts
+      v-if="draftSync.conflict.value && draftConflictOpen"
+      :mine="editStore.snapshot()"
+      :remote="draftSync.conflict.value.remote.data"
+      :fields="draftSync.conflict.value.fields"
+      :titles="Object.fromEntries(liveItems.map((i) => [i.id, i.title]))"
+      @resolve="
+        draftSync.resolve($event);
+        draftConflictOpen = false;
+      "
+      @close="draftConflictOpen = false"
+    />
+    <button
+      v-if="conflictIds.length && !conflictsOpen"
+      type="button"
+      class="review-conflicts-button"
+      @click="conflictsOpen = true"
+    >
+      Review {{ conflictIds.length }} conflicting {{ conflictIds.length === 1 ? 'item' : 'items' }}
+    </button>
+    <PublicationConflicts
+      v-if="conflictsOpen && conflictIds.length"
+      :ids="conflictIds"
+      :drafts="conflictDrafts"
+      @resolve="resolveItemConflict"
+      @close="conflictsOpen = false"
     />
 
     <ShareDialog
       v-if="shareOpen"
       :items="shareItems"
+      :resources="shareResources"
       :context="shareContext"
       :author="shareAuthor"
       :shares="sortedAuthoredShares"
@@ -2719,7 +2673,7 @@ const editActionBtn =
             <dd class="font-mono">N</dd>
           </div>
           <div class="flex items-center justify-between gap-4">
-            <dt class="text-text-subtle-default">Sync</dt>
+            <dt class="text-text-subtle-default">Publish changes</dt>
             <dd class="font-mono">⌘/Ctrl + Enter</dd>
           </div>
           <div class="flex items-center justify-between gap-4">
@@ -2783,7 +2737,7 @@ const editActionBtn =
       data-test="skipped-reorder-notice"
     >
       <span class="text-single-sm-medium text-text-primary-default">
-        Some reorders couldn't be applied — reload. ({{ capList(skippedReorderNames) }})
+        Some priority changes were skipped because those items moved. ({{ capList(skippedReorderNames) }})
       </span>
       <button
         type="button"
@@ -2796,85 +2750,65 @@ const editActionBtn =
       </button>
     </div>
 
-    <!-- U11 (R12): exiting edit mode ("Done") with unsynced changes is a conscious Publish /
-         Keep / Discard decision (see toggleEditMode/onExit* above) — not a silent drop.
-         Escape/backdrop click just closes the modal (still editing, nothing decided); only
-         the three buttons below actually act. -->
-    <div
-      v-if="exitPromptOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-surface-transparent-black-50 p-4"
-      data-test="exit-edit-prompt"
-      @click.self="closeExitPrompt"
-    >
-      <div
-        ref="exitPromptPanel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="exit-edit-prompt-title"
-        tabindex="-1"
-        class="roadmap-panel w-full max-w-sm rounded-2xl border border-border-subtle-default bg-card p-5 shadow-xl outline-none"
-      >
-        <div class="mb-1 flex items-center justify-between">
-          <h2 id="exit-edit-prompt-title" class="font-display roadmap-title text-[1.15rem] leading-none">
-            You have unpublished changes
-          </h2>
-          <button
-            type="button"
-            class="text-icons-subtle-default hover:text-text-primary-default grid size-8 place-items-center"
-            aria-label="Close"
-            data-test="exit-edit-prompt-close"
-            @click="closeExitPrompt"
-          >
-            <PhX :size="16" />
-          </button>
-        </div>
-        <p class="text-single-sm-default text-text-subtle-default mb-4">
-          {{ editStore.dirtyCount.value }} unpublished change{{ editStore.dirtyCount.value === 1 ? '' : 's' }} — saved on
-          this device, not yet published. Publish now, keep the draft for later, or discard it.
-        </p>
-        <div class="flex flex-col gap-2">
-          <button
-            type="button"
-            class="bg-accent-brand-default text-text-primary-inverted-default text-single-sm-medium rounded-lg px-4 py-2.5 disabled:opacity-50"
-            data-test="exit-publish"
-            :disabled="syncPending"
-            @click="onExitPublish"
-          >
-            {{ syncPending ? 'Publishing…' : 'Publish now' }}
-          </button>
-          <button
-            type="button"
-            class="border-border-subtle-default bg-card/80 text-single-sm-medium text-text-primary-default rounded-lg border px-4 py-2.5 transition-colors hover:bg-surface-primary-hover"
-            data-test="exit-keep"
-            @click="onExitKeep"
-          >
-            Keep for later
-          </button>
-          <button
-            type="button"
-            class="text-single-sm-medium rounded-lg border px-4 py-2.5 transition-colors"
-            :style="{ borderColor: toneText.red, color: toneText.red }"
-            data-test="exit-discard"
-            @click="onExitDiscard"
-          >
-            Discard
-          </button>
-        </div>
-      </div>
-    </div>
+    <ConfirmAction
+      v-if="discardConfirmation"
+      title="Discard unpublished changes?"
+      :message="`This discards ${editStore.dirtyCount.value} unpublished ${editStore.dirtyCount.value === 1 ? 'change' : 'changes'} from your working draft. A recovery copy is kept on this device.`"
+      confirm-label="Discard changes"
+      @cancel="discardConfirmation = null"
+      @confirm="confirmDiscard"
+    />
   </div>
 </template>
 
 <style scoped>
+.draft-conflict-reopen {
+  position: fixed;
+  bottom: 90px;
+  right: 1rem;
+  z-index: 100;
+  background: var(--color-card);
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--color-border-subtle-default);
+  border-radius: 8px;
+}
+/* The masthead switches to two columns at wide viewport sizes, but its stats column can
+   still be narrow. Size the tile grid from its own container so five stages are never
+   squeezed into the old ~360px column (which made Candidates/Completed cross borders). */
+.horizon-stats-container {
+  container: horizon-stats / inline-size;
+}
+
+.horizon-stat-label,
+.horizon-stat-sub {
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 640px) {
+  .horizon-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  @container horizon-stats (min-width: 400px) {
+    .horizon-stats-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @container horizon-stats (min-width: 640px) {
+    .horizon-stats-grid {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+  }
+}
+
 /* R1/R9: an unmistakable edit-mode cue on the board container itself (the banner above
    announces it; this reinforces it while scrolling past the banner). */
 .board-root[data-editing='true'] .board-body {
   position: relative;
-  border-radius: 16px;
-  background-color: color-mix(in srgb, var(--color-accent-brand-default) 4%, transparent);
-  box-shadow:
-    inset 0 0 0 2px color-mix(in srgb, var(--color-accent-brand-default) 62%, transparent),
-    0 0 36px -12px color-mix(in srgb, var(--color-accent-brand-default) 40%, transparent);
+  background-color: color-mix(in srgb, var(--color-accent-brand-default) 2%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent-brand-default) 28%, transparent);
 }
 /* A solid accent stripe along the top edge of the editable board — a persistent "you are
    editing" cue that still reads once the banner has scrolled out of view. */
@@ -2882,18 +2816,14 @@ const editActionBtn =
   content: '';
   position: absolute;
   inset: 0 0 auto 0;
-  height: 3px;
-  border-radius: 16px 16px 0 0;
+  height: 2px;
+  border-radius: 24px 24px 0 0;
   background: var(--color-accent-brand-default);
   pointer-events: none;
   z-index: 1;
 }
 
-/* Drag-to-change-horizon: a quiet brand-accent ring on whichever lane is currently under
-   the pointer while a card is being dragged — just enough to make the drop target obvious
-   without competing with the edit-mode chrome above. `!important` because the lane's own
-   background gradient is set inline (see `laneWash`), which otherwise always wins over a
-   plain class rule. */
+/* Keep the drop target visible against the shared reading-surface styles. */
 .roadmap-lane-drop-target {
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color-accent-brand-default) 55%, transparent);
   background: color-mix(in srgb, var(--color-accent-brand-default) 6%, transparent) !important;
@@ -2983,20 +2913,12 @@ const editActionBtn =
   }
 }
 
-/* Sticks below the site header (Navbar is `sticky top-0`, z-40, 48px tall) as the board
-   scrolls — `sticky`, not `fixed`: it stays in normal document flow and reserves its own
-   height automatically (no manual spacer to keep in sync, and no risk of the two headers
-   fighting over the same top-0 band — see `top` in bannerStyle above, which offsets this
-   banner to start exactly where the Navbar ends). z-30 — strictly under the Navbar's z-40,
-   as a second line of defense if the top offsets above ever drift out of sync — while
-   staying above ordinary board content as it scrolls past underneath. Comfortably under
-   the full-screen ItemEditor/ShareDialog overlays (z-50) too, though `!editingItem &&
-   !shareOpen` above already removes it from the page entirely while either is open, rather
-   than relying on stacking alone. */
+/* A compact in-flow status bar: it reserves its own space and scrolls with the board, so it
+   never covers filters or lane controls. Full-screen overlays remove it entirely via the
+   template guard above. */
 .edit-banner {
-  position: sticky;
-  z-index: 30;
-  box-shadow: 0 8px 20px -12px rgb(0 0 0 / 0.3);
+  position: relative;
+  box-shadow: 0 6px 18px -14px rgb(0 0 0 / 0.28);
 }
 
 /* Fix #5: quiet by design — a muted surface (not the loud brand fill the edit banner
@@ -3016,7 +2938,11 @@ const editActionBtn =
    quiet corner chip, not a modal or a competing top banner (R16) — a tinted-error surface
    says "pay attention" without shouting. */
 .persist-failed-notice {
-  background: color-mix(in srgb, var(--color-feedback-error-surface-primary-default) 12%, var(--color-surface-primary-default));
+  background: color-mix(
+    in srgb,
+    var(--color-feedback-error-surface-primary-default) 12%,
+    var(--color-surface-primary-default)
+  );
   color: var(--color-feedback-error-surface-primary-default);
   border-color: color-mix(in srgb, var(--color-feedback-error-surface-primary-default) 35%, transparent);
 }
@@ -3150,5 +3076,54 @@ const editActionBtn =
   .edit-action-bar {
     animation: none;
   }
+}
+</style>
+
+<style scoped>
+.board-save-status {
+  position: sticky;
+  bottom: 0;
+  z-index: 35;
+  margin-top: 1rem;
+  border: 1px solid var(--color-border-subtle-default);
+  border-radius: 12px;
+}
+.draft-conflict-panel {
+  position: relative;
+  z-index: 110;
+  background: var(--color-card);
+  border: 1px solid var(--color-border-subtle-default);
+  padding: 1.25rem;
+  border-radius: 12px;
+  margin: 1rem 0;
+}
+.draft-conflict-panel button {
+  padding: 0.5rem 0.75rem;
+  margin: 0.25rem;
+  border: 1px solid var(--color-border-subtle-default);
+  border-radius: 6px;
+}
+</style>
+
+<style scoped>
+.review-conflicts-button {
+  position: fixed;
+  bottom: 100px;
+  right: 24px;
+  z-index: 130;
+  padding: 12px 16px;
+  border: 1px solid var(--color-accent-brand-default);
+  border-radius: 8px;
+  background: var(--color-card);
+  color: var(--color-accent-brand-default);
+}
+.draft-conflict-panel {
+  position: fixed;
+  inset: 15% 10% auto;
+  max-height: 65vh;
+  overflow: auto;
+  z-index: 145;
+  box-shadow: 0 0 0 100vmax #0009;
+  background: var(--color-card);
 }
 </style>

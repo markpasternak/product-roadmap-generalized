@@ -10,7 +10,8 @@
 // The preamble (the `# Title` line the metadata Title field manages, plus any lead-in
 // prose) is kept internally so it round-trips, but is never rendered — a roadmap item
 // HAS a known shape, and that shape starts at "One-liner", not at a raw text box.
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
+import { insertImageKey } from '../../lib/edit/imageAuthoring';
 import {
   parseSections,
   splitSpine,
@@ -39,10 +40,12 @@ import {
   PhLinkSimple,
   PhCode,
   PhQuotes,
+  PhImage,
 } from '@phosphor-icons/vue';
 import { toneSurfaceStrong, toneText, type Tone } from '../../lib/display';
 
 const model = defineModel<string>({ default: '' });
+const requestImage = inject(insertImageKey, undefined);
 
 const mode = ref<'structured' | 'markdown'>('structured');
 
@@ -137,7 +140,8 @@ function enterEdit(key: string) {
 // only ever flushes the final value; there's no intermediate "nothing is editing" frame
 // to flicker through. A toolbar button's `@mousedown.prevent` (below) is what keeps a
 // button click from ever reaching this at all.
-function exitEdit() {
+function exitEdit(event?: FocusEvent) {
+  if ((event?.relatedTarget as Element | null)?.closest('[role="toolbar"]')) return;
   editingKey.value = null;
   activeTextarea.value = null;
 }
@@ -400,7 +404,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-3">
+  <div class="flex min-w-0 flex-col gap-3">
     <div class="flex shrink-0 items-center justify-between gap-3">
       <span class="roadmap-label">{{ mode === 'structured' ? 'Sections' : 'Markdown' }}</span>
       <button
@@ -413,7 +417,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
       </button>
     </div>
 
-    <div v-if="mode === 'structured'" ref="structuredRef" class="flex flex-1 flex-col gap-6 overflow-y-auto pr-1" data-test="structured-fields">
+    <div v-if="mode === 'structured'" ref="structuredRef" class="flex flex-col gap-6 pr-1" data-test="structured-fields">
       <!-- Pinned spine: always present, canonical order, not removable/reorderable. Styled
            to read like the published item's own headings + prose (see DetailDrawer's
            storyBlocks) rather than a form: a small tone-tinted icon + a display-font
@@ -484,6 +488,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
                 >
                   <component :is="btn.icon" :size="14" />
                 </button>
+                <button v-if="requestImage" type="button" aria-label="Insert image" title="Insert image" class="text-icons-subtle-default grid size-7 place-items-center rounded-md" @mousedown.prevent @click="requestImage(activeTextarea ?? undefined)"><PhImage :size="16" /></button>
               </div>
               <textarea
                 :id="`spine-${i}`"
@@ -506,7 +511,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
             <div
               v-else
               data-test="spine-display"
-              class="se-display roadmap-prose w-full cursor-text"
+              class="resource-markdown se-display roadmap-prose w-full cursor-text"
               role="button"
               tabindex="0"
               :aria-label="`Edit ${heading}`"
@@ -613,6 +618,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
               >
                 <component :is="btn.icon" :size="14" />
               </button>
+              <button v-if="requestImage" type="button" aria-label="Insert image" title="Insert image" class="text-icons-subtle-default grid size-7 place-items-center rounded-md" @mousedown.prevent @click="requestImage(activeTextarea ?? undefined)"><PhImage :size="16" /></button>
             </div>
             <textarea
               :ref="(el) => bindEditingTextarea(el as Element | null)"
@@ -632,7 +638,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
           <div
             v-else
             data-test="optional-display"
-            class="se-display roadmap-prose w-full cursor-text"
+            class="resource-markdown se-display roadmap-prose w-full cursor-text"
             role="button"
             tabindex="0"
             :aria-label="`Edit ${row.heading}`"
@@ -670,7 +676,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
       </div>
     </div>
 
-    <MarkdownEditor v-else v-model="model" class="min-h-0 flex-1" />
+    <MarkdownEditor v-else v-model="model" class="h-[min(65vh,720px)] min-h-[360px]" />
   </div>
 </template>
 

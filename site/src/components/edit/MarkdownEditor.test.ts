@@ -14,6 +14,17 @@ import MarkdownEditor from './MarkdownEditor.vue';
 // library's own exposed `insert` API (forwarded via `editorRef`) instead of raw DOM
 // events — a real edit path, just not raw keystrokes.
 describe('MarkdownEditor', () => {
+  it('refreshes image previews when recovered draft bytes arrive', async () => {
+    const { resourcePreviewURLs } = await import('../../lib/edit/resourceClient');
+    const path = 'content/assets/ast_one/rev_one/image.png';
+    resourcePreviewURLs.value = { [path]: '' };
+    const w = mount(MarkdownEditor, { props: { modelValue: '![Diagram](../../assets/ast_one/rev_one/image.png)' } });
+    await new Promise(r => setTimeout(r, 30));
+    resourcePreviewURLs.value = { [path]: 'blob:http://localhost/recovered' };
+    await new Promise(r => setTimeout(r, 30));
+    expect(w.get('.md-editor-preview img').attributes('src')).toBe('blob:http://localhost/recovered');
+    w.unmount(); resourcePreviewURLs.value = {};
+  });
   it('renders the live preview from the initial value with no console errors', async () => {
     const w = mount(MarkdownEditor, { props: { modelValue: '# Hello' } });
     await new Promise((r) => setTimeout(r, 20));

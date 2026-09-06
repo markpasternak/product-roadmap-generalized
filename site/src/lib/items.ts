@@ -1,3 +1,5 @@
+import { parseSections as parseEditableSections } from './edit/sections';
+import { resourcePlacements, repositoryAssetPath, resourceHref } from './resources';
 import { HORIZONS } from './schema';
 import type { ItemFrontmatter } from './schema';
 
@@ -59,24 +61,7 @@ export function sectionText(body: string, heading: string): string {
 
 /** Every `## Heading` section of a body, in file order, placeholders excluded. */
 export function parseSections(body: string): { heading: string; raw: string }[] {
-  const out: { heading: string; raw: string }[] = [];
-  let current: { heading: string; lines: string[] } | null = null;
-  const push = () => {
-    if (!current) return;
-    const raw = current.lines.join('\n').trim();
-    if (raw && !isPlaceholder(raw)) out.push({ heading: current.heading, raw });
-  };
-  for (const line of body.split('\n')) {
-    const h = line.match(/^##\s+(.*)/);
-    if (h) {
-      push();
-      current = { heading: h[1].trim(), lines: [] };
-    } else if (current) {
-      current.lines.push(line);
-    }
-  }
-  push();
-  return out;
+  return parseEditableSections(body).sections.map(s => ({ heading: s.heading, raw: s.body.trim() })).filter(s => s.raw && !isPlaceholder(s.raw));
 }
 
 const escapeHtml = (s: string): string =>
@@ -136,24 +121,15 @@ export function mdToHtml(md: string): string {
 
 /** Pull a `## Heading` section's prose out of a rendered-markdown body. */
 export function extractSection(body: string, heading: string): string {
-  const out: string[] = [];
-  let capture = false;
-  for (const line of body.split('\n')) {
-    const h = line.match(/^##\s+(.*)/);
-    if (h) {
-      capture = h[1].trim() === heading;
-      continue;
-    }
-    if (capture) out.push(line);
-  }
-  return out.join('\n').trim();
+  return parseEditableSections(body).sections.filter(s => s.heading === heading).map(s => s.body).join('\n').trim();
 }
 
 export interface ItemLink {
   label: string;
-  kind: 'doc' | 'external' | 'presentation';
+  kind: 'doc' | 'external' | 'presentation' | 'file';
   href: string;
   target: string;
+  image?: boolean;
 }
 
 const DOC_ROUTE: Record<string, string> = {
@@ -171,13 +147,14 @@ export function docTargetKey(target: string): string | null {
 export function parseLinks(body: string, base: string): ItemLink[] {
   const prefix = base.replace(/\/$/, '');
   const out: ItemLink[] = [];
-  for (const line of extractSection(body, 'Links').split('\n')) {
-    const m = line.match(/^-\s*([^:]+):\s*(\S.*)$/);
-    if (!m) continue;
-    const label = m[1].trim();
-    const target = m[2].trim();
+  const placements = resourcePlacements(body).filter(p => ['Resources','Links'].includes(p.section));
+  for (const placement of placements) {
+    const label = placement.label.replace(/:/g, ' –').trim() || 'Image';
+    const target = placement.href.trim();
+    const image = placement.image ? { image: true } : {};
+    if (repositoryAssetPath(target)) { out.push({ label, kind: 'file', href: resourceHref(target, base), target, ...image }); continue; }
     if (/^https?:\/\//i.test(target)) {
-      out.push({ label, kind: 'external', href: target, target });
+      out.push({ label, kind: 'external', href: target, target, ...image });
       continue;
     }
     // A hosted microsite/presentation: `/p/<slug>/`, `p/<slug>` or `presentations/<slug>`.

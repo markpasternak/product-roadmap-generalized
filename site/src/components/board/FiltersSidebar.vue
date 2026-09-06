@@ -2,34 +2,19 @@
 import { ref, computed } from 'vue';
 import Select from '../ui/Select.vue';
 import { cn } from '../../lib/utils';
-import { PRODUCTS } from '../../lib/schema';
+import { PRODUCTS, VISIBILITIES } from '../../lib/schema';
+import { IS_PUBLIC } from '../../lib/audience';
 import {
   activeFilterCount,
-  ANY_ASSET_KEY,
   type AssetFilterOption,
   type FilterState,
   type LevelFilterOption,
   type StageFilterOption,
   type TagFilterOption,
 } from '../../lib/filters';
-import {
-  levelColor,
-  toneSurface,
-  toneSurfaceStrong,
-  toneText,
-  type Tone,
-} from '../../lib/display';
-import { linkSource } from '../../lib/sources';
-import {
-  PhArrowUp,
-  PhDiamond,
-  PhGauge,
-  PhStack,
-  PhTrendUp,
-} from '@phosphor-icons/vue';
-
 const props = defineProps<{
   filters: FilterState;
+  owners?: string[];
   assets: AssetFilterOption[];
   stages: StageFilterOption[];
   impactOptions: LevelFilterOption[];
@@ -47,44 +32,44 @@ const productModel = computed({
   get: () => props.filters.product ?? '',
   set: (v: string) => (props.filters.product = v || null),
 });
+const visibilityOptions = [{ value: '', label: 'All items' }, ...VISIBILITIES.map((value) => ({ value, label: value }))];
+const visibilityModel = computed({
+  get: () => props.filters.visibility ?? '',
+  set: (value: string) => (props.filters.visibility = value || null),
+});
+const ownerOptions = computed(() => [
+  { value: '', label: 'All owners' },
+  ...[...new Set([...(props.owners ?? []), props.filters.owner].filter((v): v is string => !!v))]
+    .sort((a, b) => a.localeCompare(b)).map((value) => ({ value, label: value })),
+]);
+const ownerModel = computed({
+  get: () => props.filters.owner ?? '',
+  set: (value: string) => (props.filters.owner = value || null),
+});
 
 type MultiKey = 'stage' | 'impact' | 'effort' | 'assets';
-
-const stageToneMap: Record<string, Tone> = {
-  Discovery: 'violet',
-  Validation: 'blue',
-  Shaping: 'yellow',
-  Committed: 'orange',
-  Building: 'green',
-  Pilot: 'blue',
-  Shipped: 'green',
-  Parked: 'gray',
-};
-const levelToneMap: Record<string, Tone> = {
-  Low: 'green',
-  Medium: 'yellow',
-  High: 'orange',
-};
 
 const tagQuery = ref('');
 const showAllTags = ref(false);
 const showAllStages = ref(false);
+const showAllAssets = ref(false);
+const visibleAssets = computed(() => showAllAssets.value ? props.assets : props.assets.filter((asset, index) => index < 6 || props.filters.assets.includes(asset.key)));
 const filteredTokens = computed(() =>
   props.tagOptions.filter((t) => t.label.toLowerCase().includes(tagQuery.value.toLowerCase())),
 );
-const visibleTokens = computed(() => (showAllTags.value ? filteredTokens.value : filteredTokens.value.slice(0, 7)));
-const visibleStages = computed(() => (showAllStages.value ? props.stages : props.stages.slice(0, 5)));
+const visibleTokens = computed(() => (showAllTags.value ? filteredTokens.value : filteredTokens.value.filter((tag, index) => index < 7 || props.filters.tags.includes(tag.token))));
+const visibleStages = computed(() => (showAllStages.value ? props.stages : props.stages.filter((stage, index) => index < 5 || props.filters.stage.includes(stage.value))));
 
 const sectionTitle = 'text-single-sm-medium text-text-primary-default mb-1.5 block font-semibold';
 const optionClass = (active: boolean) =>
   cn(
-    'roadmap-action flex min-h-10 cursor-pointer items-center gap-2.5 rounded-xl border px-2.5 py-2 text-single-sm-medium transition-colors',
+    'roadmap-action flex min-h-11 cursor-pointer items-center gap-2.5 rounded-md border px-2.5 py-2 text-single-sm-medium transition-colors',
     active
       ? 'roadmap-selected-filter'
-      : 'border-border-subtle-default bg-card/70 text-text-subtle-default hover:bg-card hover:text-text-primary-default',
+      : 'border-transparent text-text-subtle-default hover:bg-card hover:text-text-primary-default',
   );
 const countClass =
-  'ml-auto min-w-5 rounded-lg border border-border-subtle-default/70 bg-surface-subtle-default px-1.5 py-0.5 text-center text-[11px] leading-none text-text-subtle-default tabular-nums';
+  'ml-auto min-w-5 text-right text-xs text-text-subtle-default tabular-nums';
 
 function checked(key: MultiKey, value: string) {
   return props.filters[key].includes(value);
@@ -99,13 +84,6 @@ function toggleTag(token: string) {
   const i = props.filters.tags.indexOf(token);
   if (i >= 0) props.filters.tags.splice(i, 1);
   else props.filters.tags.push(token);
-}
-function assetIcon(option: AssetFilterOption) {
-  if (option.key === ANY_ASSET_KEY) return PhStack;
-  return linkSource(option.label).Icon;
-}
-function assetTone(option: AssetFilterOption): Tone {
-  return option.key === ANY_ASSET_KEY ? 'orange' : linkSource(option.label).tone;
 }
 </script>
 
@@ -127,53 +105,19 @@ function assetTone(option: AssetFilterOption): Tone {
         <label :for="idp + '-product'" :class="sectionTitle">Product</label>
         <Select :id="idp + '-product'" v-model="productModel" :options="productOptions" />
       </div>
-
-      <div v-if="impactOptions.length">
-        <span :class="sectionTitle">Impact</span>
-        <div class="grid gap-1.5">
-          <label v-for="l in impactOptions" :key="l.value" :class="optionClass(checked('impact', l.value))">
-            <input
-              type="checkbox"
-              :checked="checked('impact', l.value)"
-              class="size-4 shrink-0 rounded accent-[color:var(--color-accent-brand-default)]"
-              @change="toggleMulti('impact', l.value)"
-            />
-            <span
-              class="grid size-7 shrink-0 place-items-center rounded-lg"
-              :style="{ background: toneSurfaceStrong[levelToneMap[l.value]], color: levelColor(l.value) }"
-            >
-              <PhArrowUp :size="15" weight="bold" />
-            </span>
-            <span class="min-w-0 flex-1">{{ l.value }}</span>
-            <span :class="countClass">{{ l.count }}</span>
-          </label>
-        </div>
+      <div v-if="!IS_PUBLIC">
+        <label :for="idp + '-owner'" :class="sectionTitle">Owner</label>
+        <Select :id="idp + '-owner'" v-model="ownerModel" :options="ownerOptions" />
       </div>
 
-      <div v-if="effortOptions.length">
-        <span :class="sectionTitle">Effort</span>
-        <div class="grid gap-1.5">
-          <label v-for="l in effortOptions" :key="l.value" :class="optionClass(checked('effort', l.value))">
-            <input
-              type="checkbox"
-              :checked="checked('effort', l.value)"
-              class="size-4 shrink-0 rounded accent-[color:var(--color-accent-brand-default)]"
-              @change="toggleMulti('effort', l.value)"
-            />
-            <span
-              class="grid size-7 shrink-0 place-items-center rounded-lg"
-              :style="{ background: toneSurfaceStrong[levelToneMap[l.value]], color: levelColor(l.value) }"
-            >
-              <PhGauge :size="15" />
-            </span>
-            <span class="min-w-0 flex-1">{{ l.value }}</span>
-            <span :class="countClass">{{ l.count }}</span>
-          </label>
-        </div>
+      <div v-if="!IS_PUBLIC">
+        <label :for="idp + '-visibility'" :class="sectionTitle">Visibility</label>
+        <Select :id="idp + '-visibility'" v-model="visibilityModel" :options="visibilityOptions" />
+        <p class="mt-2 text-xs leading-relaxed text-text-subtle-default">Item visibility. Share access is set separately.</p>
       </div>
 
-      <div v-if="stages.length">
-        <span :class="sectionTitle">Stage</span>
+      <fieldset class="min-w-0" v-if="stages.length">
+        <legend :class="sectionTitle">Stage</legend>
         <div class="grid gap-1.5">
           <label v-for="s in visibleStages" :key="s.value" :class="optionClass(checked('stage', s.value))">
             <input
@@ -182,12 +126,6 @@ function assetTone(option: AssetFilterOption): Tone {
               class="size-4 shrink-0 rounded accent-[color:var(--color-accent-brand-default)]"
               @change="toggleMulti('stage', s.value)"
             />
-            <span
-              class="grid size-7 shrink-0 place-items-center rounded-lg"
-              :style="{ background: toneSurface[stageToneMap[s.value]], color: toneText[stageToneMap[s.value]] }"
-            >
-              <PhTrendUp :size="15" />
-            </span>
             <span class="min-w-0 flex-1 truncate">{{ s.value }}</span>
             <span :class="countClass">{{ s.count }}</span>
           </label>
@@ -199,13 +137,45 @@ function assetTone(option: AssetFilterOption): Tone {
         >
           {{ showAllStages ? 'Show fewer stages' : 'Show all stages' }}
         </button>
-      </div>
+      </fieldset>
 
-      <div v-if="assets.length">
-        <span :class="sectionTitle">Assets</span>
+      <fieldset class="min-w-0" v-if="impactOptions.length">
+        <legend :class="sectionTitle">Impact</legend>
+        <div class="grid gap-1.5">
+          <label v-for="l in impactOptions" :key="l.value" :class="optionClass(checked('impact', l.value))">
+            <input
+              type="checkbox"
+              :checked="checked('impact', l.value)"
+              class="size-4 shrink-0 rounded accent-[color:var(--color-accent-brand-default)]"
+              @change="toggleMulti('impact', l.value)"
+            />
+            <span class="min-w-0 flex-1">{{ l.value }}</span>
+            <span :class="countClass">{{ l.count }}</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="min-w-0" v-if="effortOptions.length">
+        <legend :class="sectionTitle">Effort</legend>
+        <div class="grid gap-1.5">
+          <label v-for="l in effortOptions" :key="l.value" :class="optionClass(checked('effort', l.value))">
+            <input
+              type="checkbox"
+              :checked="checked('effort', l.value)"
+              class="size-4 shrink-0 rounded accent-[color:var(--color-accent-brand-default)]"
+              @change="toggleMulti('effort', l.value)"
+            />
+            <span class="min-w-0 flex-1">{{ l.value }}</span>
+            <span :class="countClass">{{ l.count }}</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="min-w-0" v-if="assets.length">
+        <legend :class="sectionTitle">Linked resources</legend>
         <div class="grid gap-1.5">
           <label
-            v-for="asset in assets"
+            v-for="asset in visibleAssets"
             :key="asset.key"
             :class="optionClass(checked('assets', asset.key))"
           >
@@ -215,20 +185,15 @@ function assetTone(option: AssetFilterOption): Tone {
               class="size-4 shrink-0 rounded accent-[color:var(--color-accent-brand-default)]"
               @change="toggleMulti('assets', asset.key)"
             />
-            <span
-              class="grid size-7 shrink-0 place-items-center rounded-lg"
-              :style="{ background: toneSurfaceStrong[assetTone(asset)], color: toneText[assetTone(asset)] }"
-            >
-              <component :is="assetIcon(asset)" :size="15" />
-            </span>
             <span class="min-w-0 flex-1 truncate">{{ asset.label }}</span>
             <span :class="countClass">{{ asset.count }}</span>
           </label>
         </div>
-      </div>
+        <button v-if="assets.length > 6" type="button" class="mt-2 text-single-sm-medium text-text-subtle-default hover:text-text-primary-default" @click="showAllAssets = !showAllAssets">{{ showAllAssets ? 'Show fewer resources' : 'Show all resources' }}</button>
+      </fieldset>
 
-      <div v-if="tagOptions.length || filters.tags.length">
-        <span :class="sectionTitle">Tags</span>
+      <fieldset class="min-w-0" v-if="tagOptions.length || filters.tags.length">
+        <legend :class="sectionTitle">Tags</legend>
         <input
           v-model="tagQuery"
           type="search"
@@ -250,12 +215,6 @@ function assetTone(option: AssetFilterOption): Tone {
               class="size-4 shrink-0 rounded accent-[color:var(--color-accent-brand-default)]"
               @change="toggleTag(t.token)"
             />
-            <span
-              class="grid size-7 shrink-0 place-items-center rounded-lg"
-              :style="{ background: t.theme ? toneSurface.orange : toneSurface.gray, color: t.theme ? toneText.orange : toneText.gray }"
-            >
-              <PhDiamond :size="13" weight="fill" />
-            </span>
             <span class="min-w-0 flex-1 truncate">{{ t.label }}</span>
             <span :class="countClass">{{ t.count }}</span>
           </label>
@@ -268,7 +227,7 @@ function assetTone(option: AssetFilterOption): Tone {
         >
           {{ showAllTags ? 'Show fewer tags' : 'Show more tags' }}
         </button>
-      </div>
+      </fieldset>
     </div>
   </aside>
 </template>

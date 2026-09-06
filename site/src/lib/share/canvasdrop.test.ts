@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { getCanvasdrop, canAuthor, updateAuthoredCanvas, type AuthoredCanvas } from './canvasdrop';
+import { getCanvasdrop, canAuthor, requirePersistedAccess, updateAuthoredCanvas, type AuthoredCanvas } from './canvasdrop';
 
 afterEach(() => {
   delete (globalThis as any).canvasdrop;
@@ -13,6 +13,7 @@ const share = (over: Partial<AuthoredCanvas> = {}): AuthoredCanvas => ({
   title: 'Share',
   tags: [],
   access: 'public_link',
+  hasPassword: false,
   status: 'live',
   createdAt: 1,
   updatedAt: 2,
@@ -101,5 +102,29 @@ describe('updateAuthoredCanvas', () => {
     expect(init?.method).toBe('PUT');
     expect(init?.credentials).toBe('include');
     expect(init?.body).toBeInstanceOf(FormData);
+  });
+});
+
+describe('requirePersistedAccess', () => {
+  it('rejects a response whose stored access does not match the requested rung', () => {
+    expect(() => requirePersistedAccess(share({ access: 'private' }), 'public_link')).toThrow(
+      'Canvas Drop saved this share as Restricted instead of Public link',
+    );
+  });
+
+  it('accepts password shares persisted on the public-link rung', () => {
+    expect(requirePersistedAccess(share({ access: 'public_link', hasPassword: true }), 'password').id).toBe('S1');
+  });
+
+  it('rejects a public link when the requested independent password was not persisted', () => {
+    expect(() => requirePersistedAccess(share({ hasPassword: false }), 'public_link', true)).toThrow(
+      'did not protect this share with the requested password',
+    );
+  });
+
+  it('rejects a share when a requested password removal was not persisted', () => {
+    expect(() => requirePersistedAccess(share({ hasPassword: true }), 'public_link', false)).toThrow(
+      'kept a password on this share',
+    );
   });
 });

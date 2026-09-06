@@ -8,6 +8,7 @@ import { getVisibleDocCollection } from '../../../lib/docs';
 import { parseLinks } from '../../../lib/items';
 import { toneSurface, toneText, type Tone } from '../../../lib/display';
 import { IS_PUBLIC } from '../../../lib/audience';
+import { formatDateOnly, isoDateOnly } from '../../../lib/dates';
 import {
   DOC_COLLECTIONS,
   DOC_TYPE_LABEL,
@@ -42,24 +43,29 @@ export async function getStaticPaths() {
       const slug = docBasename(entry.id);
       const type = DOC_TYPE_ROUTE[coll];
       const selfHref = `${prefix}/docs/${type}/${slug}`;
-      paths.push({ params: { type, slug }, props: { entry, coll, backlinks: back[selfHref] ?? [] } });
+      const backlinks = [...(back[selfHref] ?? [])];
+      const linkedItem = items.find((item) => item.data.id === entry.data.roadmap_item);
+      if (linkedItem && !backlinks.some((link) => link.id === linkedItem.data.id)) {
+        backlinks.push({ id: linkedItem.data.id, title: linkedItem.data.title, href: `${prefix}/item/${linkedItem.data.id}` });
+      }
+      paths.push({ params: { type, slug }, props: { entry, coll, backlinks } });
     }
   }
   return paths;
 }
 
 const { entry, coll, backlinks } = Astro.props;
-const base = import.meta.env.BASE_URL;
+const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/`;
 const title = entry.data.title ?? docBasename(entry.id);
 const typeTone = { prds: 'orange', techDesign: 'blue', research: 'green' }[coll] as Tone;
 ---
 
-<Base title={`${title} · Docs`} active="docs">
-  <main class="page-reveal mx-auto max-w-3xl px-6 py-10">
+<Base title={`${title} · Source documents`} active="docs">
+  <main class="support-page page-reveal mx-auto max-w-3xl px-6 py-10">
       <Breadcrumb
         items={[
           { label: 'Roadmap', href: base },
-          { label: 'Docs', href: `${base}docs` },
+          { label: 'Source documents', href: `${base}docs` },
           { label: title },
         ]}
       />
@@ -80,25 +86,23 @@ const typeTone = { prds: 'orange', techDesign: 'blue', research: 'green' }[coll]
         }
       </div>
 
-      <h1 class="text-heading-lg-semibold text-text-primary-default mt-3 tracking-tight text-balance">{title}</h1>
+      <h1 class="roadmap-display text-text-primary-default mt-5 text-[2.25rem] sm:text-[3rem] text-balance">{title}</h1>
+      {entry.data.updated && <p class="text-single-sm-medium text-text-subtle-default mt-4">Updated <time datetime={isoDateOnly(entry.data.updated)}>{formatDateOnly(entry.data.updated)}</time></p>}
 
       {
         backlinks.length > 0 && (
-          <p class="text-single-sm-medium text-text-subtle-default mt-2">
-            For{' '}
-            {backlinks.map((b, i) => (
-              <>
-                {i > 0 && <span>, </span>}
-                <a href={b.href} class="text-text-link-default hover:underline">
-                  {b.title} ({b.id})
-                </a>
-              </>
-            ))}
-          </p>
+          <details class="document-disclosure mt-5">
+            <summary>Related roadmap items <span class="text-text-subtle-default">· {backlinks.length}</span></summary>
+            <ul class="grid gap-1 pb-3">
+              {backlinks.map((b) => (
+                <li><a href={b.href} class="inline-flex min-h-10 items-center py-1 text-sm text-text-link-default underline-offset-4 hover:underline">{b.title} ({b.id})</a></li>
+              ))}
+            </ul>
+          </details>
         )
       }
 
-      <article class="mt-8"><MarkdownContent entry={entry} /></article>
+      <article class="mt-5"><MarkdownContent entry={entry} showContents /></article>
       <Mermaid client:load />
     </main>
 </Base>

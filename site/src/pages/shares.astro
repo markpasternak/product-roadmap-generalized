@@ -9,9 +9,9 @@ const base = import.meta.env.BASE_URL;
 <Base
   title="Shares · Roadmap"
   active="shares"
-  description="Live roadmap share links and published versions."
+  description="Manage published, expired, and unpublished roadmap snapshots in Canvas Drop."
 >
-  <main class="page-reveal mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
+  <main class="support-page page-reveal mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
     <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: 'Shares' }]} />
     <div class="mt-6">
       <ShareLibrary client:load base={base} />

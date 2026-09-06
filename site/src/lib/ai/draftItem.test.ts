@@ -139,6 +139,6 @@ describe('draftItem', () => {
     err.name = 'QuotaExceededError';
     stubCanvasdrop({ chat: vi.fn(async () => { throw err; }) });
 
-    await expect(draftItem('anything', 'Core Platform & Data')).rejects.toBeInstanceOf(AiQuotaError);
+    await expect(draftItem('anything', 'Spotify for Artists')).rejects.toBeInstanceOf(AiQuotaError);
   });
 });

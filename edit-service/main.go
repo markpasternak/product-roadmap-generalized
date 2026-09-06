@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+var version = "dev"
+
 func main() {
 	cfg, err := LoadConfig(os.Getenv)
 	if err != nil {

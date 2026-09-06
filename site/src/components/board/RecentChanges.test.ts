@@ -39,6 +39,19 @@ const rows = (n: number): ParsedActivity[] =>
   }));
 
 describe('RecentChanges', () => {
+  it('offers a useful empty state and retry on the full activity page', async () => {
+    fetchActivityMock.mockResolvedValueOnce([]).mockResolvedValueOnce(rows(1));
+    const w = mount(RecentChanges, { props: { items, showEmpty: true, showSeeAll: false } });
+    expect(w.get('[role=status]').text()).toContain('Loading');
+    await flushPromises();
+    expect(w.text()).toContain('No commit activity to show');
+    expect(w.get('a[href="/changelog"]').text()).toContain('View item updates');
+    await w.get('button').trigger('click');
+    await flushPromises();
+    expect(w.text()).toContain('Commit 0');
+    w.unmount();
+  });
+
   it('renders nothing — no empty box — when the feed is empty', async () => {
     fetchActivityMock.mockResolvedValue([]);
     const w = mount(RecentChanges, { props: { items } });

@@ -6,7 +6,7 @@ export interface PublishOptions {
   title: string;
   slug?: string;
   tags?: string[];
-  access?: AccessRung;
+  access: AccessRung;
   password?: string;
   expiresAt?: number;
   metadata?: ShareMetadata;
@@ -21,9 +21,20 @@ export interface UpdateOptions {
   expiresAt?: number | null;
   metadata?: ShareMetadata;
   bundle?: Blob | ArrayBuffer;
+  /** Reject the update if Canvas Drop changed since this value was loaded. */
+  expectedUpdatedAt?: number;
 }
 
+/** Access choices the roadmap authoring API can set. `password` is a public-link
+ * audience plus a password lock, rather than a persisted audience rung. */
 export type AccessRung = 'private' | 'specific_people' | 'whole_org' | 'public_link' | 'password';
+/** Audience rungs Canvas Drop may return. Team membership is managed in Canvas Drop. */
+export type ShareAudience = 'private' | 'specific_people' | 'team' | 'whole_org' | 'public_link';
+/** Canonical effective audience returned by current Canvas Drop deployments. */
+export type AccessMode = 'restricted' | 'whole_org' | 'public_link';
+/** Canonical publication lifecycle, independent of audience. */
+export type PublicationStatus = 'draft' | 'published' | 'expired' | 'unpublished' | 'archived' | 'disabled' | 'deleted';
+/** @deprecated Canvas Drop keeps this audience/lifecycle conflation for older clients only. */
 export type ShareStatus = 'live' | 'expired' | 'revoked' | 'private';
 export type ShareMetadata = Record<string, unknown>;
 
@@ -38,11 +49,28 @@ export interface AuthoredCanvas {
   url: string;
   title: string;
   tags: string[];
-  access: AccessRung;
+  access: ShareAudience;
+  /** Added additively by the restricted-access model; absent on older deployments. */
+  accessMode?: AccessMode;
+  /** Added additively by the restricted-access model; absent on older deployments. */
+  publicationStatus?: Exclude<PublicationStatus, 'deleted'>;
+  /** Added by Canvas Drop authoring v2; absent on older deployments. */
+  hasPassword?: boolean;
+  /** @deprecated Use accessMode and publicationStatus. */
   status: ShareStatus;
   createdAt: number;
   updatedAt: number;
   expiresAt: number | null;
+  /** Added by Canvas Drop authoring v2; absent on older deployments. */
+  galleryListed?: boolean;
+  /** Added additively by newer Canvas Drop authoring APIs. */
+  galleryTemplatable?: boolean;
+  discoverability?: 'link_only' | 'listed' | null;
+  viewerRole?: 'owner' | 'editor' | 'admin';
+  audienceSummary?: {
+    count: number | null;
+    names: string[];
+  };
   revokedAt: number | null;
   createdBy: string;
   version: string | null;
@@ -103,6 +131,47 @@ declare global {
 
 export function getCanvasdrop(): Canvasdrop | null {
   return (globalThis as { canvasdrop?: Canvasdrop }).canvasdrop ?? null;
+}
+
+const accessLabels: Record<AccessRung, string> = {
+  private: 'Restricted',
+  specific_people: 'Restricted',
+  whole_org: 'Whole org',
+  public_link: 'Public link',
+  password: 'Password protected',
+};
+
+const audienceLabels: Record<ShareAudience, string> = {
+  private: 'Restricted',
+  specific_people: 'Restricted',
+  team: 'Restricted',
+  whole_org: 'Whole org',
+  public_link: 'Public link',
+};
+
+/** Fail visibly if Canvas Drop did not store the audience and password state chosen. */
+export function requirePersistedAccess(
+  share: AuthoredCanvas,
+  requested: AccessRung,
+  expectsPassword?: boolean,
+): AuthoredCanvas {
+  const persistedAsRequested = requested === 'password'
+    ? share.access === 'public_link' && share.hasPassword === true
+    : share.access === requested;
+  if (!persistedAsRequested) {
+    throw new Error(
+      `Canvas Drop saved this share as ${audienceLabels[share.access]} instead of ${accessLabels[requested]}. `
+      + 'The share is still available from Shares and can be updated.',
+    );
+  }
+  if (expectsPassword !== undefined && share.hasPassword !== expectsPassword) {
+    throw new Error(
+      expectsPassword
+        ? 'Canvas Drop did not protect this share with the requested password. The public link was not accepted as safely published.'
+        : 'Canvas Drop kept a password on this share after it was removed. Refresh Shares before trying again.',
+    );
+  }
+  return share;
 }
 
 /** True iff the SDK is loaded and the viewer is a signed-in member. */
@@ -169,8 +238,13 @@ async function updateViaAuthoringEndpoint(
 }
 
 async function canvasdropRequestError(res: Response): Promise<Error> {
-  const body = await res.json().catch(() => null) as { code?: string; message?: string; hint?: string } | null;
+  const body = await res.json().catch(() => null) as {
+    code?: string;
+    message?: string;
+    hint?: string;
+    current?: AuthoredCanvas | null;
+  } | null;
   const err = new Error(body?.hint ?? body?.message ?? body?.code ?? `Canvas Drop request failed (${res.status})`);
-  Object.assign(err, { status: res.status, code: body?.code, hint: body?.hint });
+  Object.assign(err, { status: res.status, code: body?.code, hint: body?.hint, current: body?.current });
   return err;
 }

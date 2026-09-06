@@ -7,7 +7,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 import Button from '../ui/Button.vue';
 import Select from '../ui/Select.vue';
 import { PhX, PhSparkle, PhCircleNotch, PhStop } from '@phosphor-icons/vue';
-import { trapFocus } from '../../lib/focusTrap';
+import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
 import { PRODUCTS } from '../../lib/schema';
 import { draftItem, type DraftedItem } from '../../lib/ai/draftItem';
 import { friendlyAiMessage, AiAbortedError } from '../../lib/ai/client';
@@ -43,12 +43,14 @@ async function generate() {
   controller = thisController;
   try {
     const draft = await draftItem(prompt.value, product.value, { signal: thisController.signal });
-    emit('drafted', { ...draft, product: product.value });
+    if (controller === thisController && !thisController.signal.aborted) emit('drafted', { ...draft, product: product.value });
   } catch (err) {
-    if (!(err instanceof AiAbortedError)) error.value = friendlyMessage(err);
+    if (controller === thisController && !(err instanceof AiAbortedError)) error.value = friendlyMessage(err);
   } finally {
-    generating.value = false;
-    if (controller === thisController) controller = null;
+    if (controller === thisController) {
+      generating.value = false;
+      controller = null;
+    }
   }
 }
 
@@ -73,17 +75,16 @@ function closeDialog() {
   emit('close');
 }
 function onKey(e: KeyboardEvent) {
+  if (!isTopFocusTrap(panel.value)) return;
   if (e.key === 'Escape') closeDialog();
 }
 onMounted(async () => {
   document.addEventListener('keydown', onKey);
-  document.body.style.overflow = 'hidden';
   await nextTick();
-  if (panel.value) release = trapFocus(panel.value);
+  if (panel.value) release = trapFocus(panel.value, { initialFocus: () => panel.value?.querySelector<HTMLTextAreaElement>('#ai-prompt') });
 });
 onUnmounted(() => {
   document.removeEventListener('keydown', onKey);
-  document.body.style.overflow = '';
   release?.();
   controller?.abort();
 });
@@ -104,7 +105,7 @@ const primaryCls =
       aria-modal="true"
       aria-label="New with AI"
       tabindex="-1"
-      class="ai-panel bg-background border-border-subtle-default relative z-10 flex max-h-[90vh] w-[560px] max-w-[94vw] flex-col overflow-hidden rounded-2xl border shadow-xl outline-none"
+      class="ai-panel bg-background border-border-subtle-default relative z-10 flex max-h-[calc(100dvh-2rem)] w-[560px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border shadow-xl outline-none"
     >
       <header class="border-border-subtle-default flex items-start justify-between gap-4 border-b px-6 py-4">
         <div class="flex items-center gap-2">

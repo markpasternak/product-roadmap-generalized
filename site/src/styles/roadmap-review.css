@@ -1,0 +1,99 @@
+/* Shared by the working board and baked shares. */
+:root .board-root .roadmap-masthead { padding: 1.4rem 0 1.25rem; margin-bottom: 0; }
+:root .board-root .roadmap-masthead .hero-grid { display: grid; grid-template-columns: 1fr; gap: 1.3rem; }
+:root .board-root .roadmap-masthead h1 { margin-top: .8rem; font-size: clamp(2.5rem, 4.6vw, 4rem); max-width: 26ch; line-height: 1.07; }
+:root .board-root .roadmap-masthead .hero-intro,
+:root .board-root .roadmap-masthead .intro { margin-top: 1rem; max-width: 65ch; font-size: .9rem; line-height: 1.6; }
+:root .board-root .horizon-stats-container,
+:root .board-root .stats { padding: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+:root .board-root .horizon-stats-grid,
+:root .board-root .stats { display: flex; width: 100%; gap: .6rem; flex-wrap: wrap; box-shadow: none; }
+:root .board-root .horizon-stats-grid > button,
+:root .board-root .stats > button {
+  flex: 1 1 130px; display: flex; align-items: center; gap: .7rem;
+  min-width: 0; min-height: 48px; padding: .7rem .9rem; border-radius: 6px;
+  background: transparent; border: 1px solid var(--roadmap-glass-border); box-shadow: none;
+}
+:root .board-root .horizon-stats-grid > button[aria-pressed='true'],
+:root .board-root .stats > button[aria-pressed='true'] {
+  background: var(--color-card); border-color: var(--horizon-accent, var(--roadmap-glass-border));
+}
+.horizon-selected-mark { flex-shrink: 0; color: var(--roadmap-ink-muted); }
+:root .board-root .horizon-stat-sub, :root .board-root .stat-sub { display: none; }
+:root .board-root .stat-value,
+:root .board-root .horizon-stats-grid > button > span:nth-child(2) { margin: 0 0 0 auto; font: inherit; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+
+.product-navigation { display: flex; flex-wrap: wrap; align-items: center; column-gap: 1.65rem; border-bottom: 1px solid var(--roadmap-glass-border); margin-bottom: 1.25rem; }
+.product-navigation button { min-height: 56px; border-bottom: 2px solid transparent; color: var(--roadmap-ink-muted); font-size: .82rem; cursor: pointer; }
+.product-navigation button:hover { color: var(--roadmap-ink); }
+.product-navigation button[aria-pressed='true'] { border-color: var(--color-accent-brand-default); color: var(--roadmap-ink); font-weight: 600; }
+.product-navigation-count { margin-left: auto; color: var(--roadmap-ink-muted); font-size: .75rem; font-variant-numeric: tabular-nums; }
+.product-mobile { display: none; }
+
+:root .board-root .board-body,
+:root .board-root .board-shell { padding: 0; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; background: transparent; }
+.board-toolbar { gap: .5rem; padding: .35rem 0 .8rem; }
+.board-search { flex: 1 1 220px; min-width: 180px; }
+.board-filter-count { display: grid; place-items: center; min-width: 1.15rem; height: 1.15rem; border-radius: 4px; background: var(--color-surface-subtle-default); font-size: .68rem; font-variant-numeric: tabular-nums; }
+.board-toolbar button[aria-expanded='true'] { border-color: var(--color-accent-brand-default); }
+.board-more { position: relative; }
+.board-more-panel { top: calc(100% + .5rem); right: 0; width: 240px; }
+.board-more-panel > button { display: block; width: 100%; min-height: 44px; padding: .65rem .75rem; border-radius: 5px; text-align: left; }
+.board-more-panel > button:hover { background: var(--color-surface-primary-hover); }
+.board-more-panel > p { margin: .25rem .75rem .75rem; font-size: .75rem; line-height: 1.5; color: var(--color-text-subtle-default); }
+.board-view-options { display: flex; align-items: end; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.3rem; padding: 1rem; border: 1px solid var(--roadmap-glass-border); border-radius: 8px; background: var(--color-card); }
+.board-view-options label { display: grid; gap: .5rem; flex: 1 1 170px; font-size: .75rem; font-weight: 500; color: var(--roadmap-ink-muted); }
+:root .board-root .roadmap-lane,
+:root .board-root .lane { border: 0; border-radius: 0; padding: 0; background: transparent; box-shadow: none; }
+:root .board-root .roadmap-lane > header { padding: 1.2rem .25rem 0; border-top: 2px solid var(--lane-accent, var(--roadmap-glass-border)); }
+:root .board-root .lane-head { padding: 1.2rem .25rem 0; border-top: 2px solid var(--lane-accent); }
+:root .board-root .lane-bar { display: none; }
+:root .board-root .lane-count { background: transparent; border: 0; box-shadow: none; color: var(--roadmap-ink-muted); }
+:root .board-root .roadmap-lane > header h2,
+:root .board-root .lane-head h2 { font-size: 1.65rem; }
+:root .board-root .roadmap-lane > header > div:first-child > span:first-child { display: none; }
+:root .board-root .roadmap-lane > header > div:first-child > span:last-child { background: transparent; border: 0; box-shadow: none; color: var(--roadmap-ink-muted); }
+:root .board-root .lane-description,
+:root .board-root .lane-head p { max-width: none; margin-top: .6rem; font-size: .76rem; line-height: 1.5; }
+:root .board-root .roadmap-lane > header > div:last-child,
+:root .board-root .lane-rule { border: 0; }
+:root .board-root .roadmap-card.roadmap-action { padding: 1.1rem; border-radius: 8px; box-shadow: var(--roadmap-card-shadow); background: var(--color-card); border-color: var(--roadmap-glass-border); }
+:root .board-root .roadmap-card.roadmap-action:hover { background: color-mix(in srgb, var(--color-card) 92%, var(--roadmap-ink) 8%); border-color: var(--color-border-subtle-hover); }
+:root .board-root .roadmap-card:has(~ .roadmap-drag-handle) { padding-left: 3rem; }
+:root .board-root .roadmap-card.roadmap-card-active,
+:root .board-root .roadmap-card.roadmap-card-pending { border-color: var(--color-accent-brand-default); box-shadow: inset 3px 0 0 var(--color-accent-brand-default); }
+:root .board-root .roadmap-card h3 { line-height: 1.4; letter-spacing: -.015em; text-wrap: pretty; }
+:root .board-root .roadmap-card .roadmap-quiet-chip { padding: .2rem .4rem; font-size: .7rem; border-radius: 4px; }
+
+@media (min-width: 768px) {
+  :root .board-root .lane-description, :root .board-root .lane-head p { min-height: 3em; }
+}
+@media (min-width: 641px) and (max-width: 900px) {
+  :root .board-root .horizon-stats-container { overflow-x: auto; scrollbar-width: thin; padding-bottom: .4rem; }
+  :root .board-root .horizon-stats-grid { flex-wrap: nowrap; width: max-content; }
+  :root .board-root .stats { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; padding-bottom: .4rem; }
+  :root .board-root .horizon-stats-grid > button,
+  :root .board-root .stats > button { flex: 0 0 138px; }
+}
+@media (max-width: 640px) {
+  :root .board-root .roadmap-masthead { padding: 1.5rem 0 1.2rem; }
+  :root .board-root .roadmap-masthead .hero-grid { gap: 1.1rem; }
+  :root .board-root .horizon-stats-container { overflow-x: auto; scrollbar-width: thin; padding-bottom: .4rem; }
+  :root .board-root .horizon-stats-grid { gap: .4rem; flex-wrap: nowrap; width: max-content; }
+  :root .board-root .stats { gap: .4rem; flex-wrap: nowrap; overflow-x: auto; }
+  :root .board-root .horizon-stats-grid > button, :root .board-root .stats > button { flex: 0 0 128px; min-width: 0; padding: .6rem .7rem; min-height: 44px; }
+  .product-navigation { display: none; }
+  .product-mobile { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem; padding: .9rem 0; color: var(--roadmap-ink-muted); font-size: .75rem; }
+  .board-toolbar { position: relative; column-gap: .4rem; row-gap: .65rem; }
+  .board-search { flex-basis: 100%; }
+  .board-more { position: static; }
+  .board-more-panel { top: calc(100% - .3rem); left: 0; right: auto; width: min(280px, 100%); }
+  .board-toolbar > button { padding-inline: .7rem; }
+}
+
+/* Item summaries and long-form reading share one hierarchy. */
+.item-facts { display: flex; flex-wrap: wrap; gap: 1.25rem 2.5rem; padding: 1rem 0; border-block: 1px solid var(--color-border-subtle-default); }
+.item-facts dt { color: var(--color-text-subtle-default); font-size: .75rem; line-height: 1.5; }
+.item-facts dd { margin: .25rem 0 0; color: var(--color-text-primary-default); font-size: .9375rem; font-weight: 500; }
+.item-reading-section { min-width: 0; }
+.item-reading-section p, .item-reading-section .item-prose { max-width: 70ch; line-height: 1.7; }

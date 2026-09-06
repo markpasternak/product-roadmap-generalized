@@ -24,10 +24,10 @@ const base = import.meta.env.BASE_URL;
         Open the roadmap
       </a>
       <a
-        href={`${base}docs`}
+        href={`${base.replace(/\/$/, '')}/docs`}
         class="border-border-subtle-default bg-card text-single-base-medium text-text-primary-default hover:bg-surface-primary-hover rounded-lg border px-4 py-2.5 transition-colors"
       >
-        Browse docs
+        Source documents
       </a>
     </div>
   </main>

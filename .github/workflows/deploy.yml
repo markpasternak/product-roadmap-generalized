@@ -69,14 +69,9 @@ jobs:
         working-directory: site
         run: npm run build
 
-      # Publish each presentations/<slug>/ folder verbatim at /p/<slug>/.
-      - name: Bundle presentations into the build
-        run: |
-          mkdir -p site/dist/p
-          if [ -d presentations ]; then
-            cp -R presentations/. site/dist/p/
-            rm -f site/dist/p/README.md   # keep the convention doc out of the artifact
-          fi
+      - name: Verify fictional demo content
+        working-directory: site
+        run: node scripts/check-demo.mjs
 
       # canvas-drop expects a zip whose root is the site root (index.html at top).
       - name: Package the static site
@@ -95,3 +90,14 @@ jobs:
             -H "Authorization: Bearer ${CANVAS_DROP_TOKEN}" \
             --data-binary @"$GITHUB_WORKSPACE/site.zip"
           echo "✓ Deployed to https://${CANVAS_HOST}/"
+
+      - name: Verify every deployed file and release commit
+        env:
+          CANVAS_DROP_TOKEN: ${{ secrets.CANVAS_DROP_TOKEN }}
+        run: node site/scripts/verify-deploy.mjs
+
+      - name: Record verified deployment
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-verification
+          path: deployment-verification.json

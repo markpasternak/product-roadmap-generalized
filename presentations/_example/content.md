@@ -30,5 +30,5 @@ Duplicate this `_example/` folder, rename it to your slug, and edit:
 - `app.js` — behaviour (or delete it and write plain HTML)
 - `content.md` — the words
 
-Push, and it's live at `/p/<your-slug>/`. See the [presentations README](https://github.com/seenthis-ab/product-roadmap/blob/main/presentations/README.md)
+Push, and it's live at `/p/<your-slug>/`. See the [presentations README](https://github.com/markpasternak/product-roadmap-generalized/blob/main/presentations/README.md)
 for the full convention.

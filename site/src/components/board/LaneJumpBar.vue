@@ -11,7 +11,7 @@ defineEmits<{ (e: 'jump', key: string): void }>();
 <template>
   <nav
     v-if="lanes.length > 1"
-    class="lane-jump-bar bg-background/90 border-border-subtle-default/70 sticky top-12 z-20 -mx-1 mb-3 overflow-x-auto border-y py-2 backdrop-blur md:hidden"
+    class="lane-jump-bar bg-background/90 border-border-subtle-default/70 sticky top-[var(--roadmap-nav-height)] z-20 -mx-1 mb-3 overflow-x-auto border-y py-2 backdrop-blur md:hidden"
     aria-label="Roadmap lanes"
     data-test="lane-jump-bar"
   >

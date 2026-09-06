@@ -23,6 +23,15 @@ function mountCard(props: Record<string, unknown> = {}) {
 
 beforeEach(() => localStorage.clear());
 
+it('shows ownership internally and omits it in presentation cards', () => {
+  expect(mountCard().text()).toContain('mark@example.com');
+  const publicCard = mountCard({ client: true });
+  expect(publicCard.text()).not.toContain('mark@example.com');
+  expect(publicCard.text()).not.toContain('workflow');
+  expect(publicCard.text()).not.toContain('High');
+  expect(publicCard.text()).toContain('Building');
+});
+
 afterEach(() => {
   for (const w of wrappers) w.unmount();
   wrappers = [];

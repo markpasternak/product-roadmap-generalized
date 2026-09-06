@@ -147,12 +147,14 @@ describe('splitSpine / assembleBody', () => {
 
   it('exposes every real-corpus optional heading in a stable menu order', () => {
     expect(OPTIONAL_SECTIONS).toEqual([
+      'Bottom line',
       "Who it's for",
       'Target outcome',
       'Acceptance criteria',
       'Open questions',
       'Current behavior',
       'In the codebase',
+      'Resources',
       'Links',
       'What shipped',
     ]);

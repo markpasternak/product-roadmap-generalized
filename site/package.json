@@ -9,7 +9,7 @@
     "prebuild": "node scripts/sync-presentations.mjs && node scripts/gen-version.mjs",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check",
+    "check": "astro check && vue-tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
@@ -28,7 +28,7 @@
     "motion": "^12.42.2",
     "sortablejs": "^1.15.7",
     "tailwind-merge": "^3.3.1",
-    "vue": "^3.5.18",
+    "vue": "^3.5.42",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -41,6 +41,7 @@
     "jsdom": "^29.1.1",
     "tailwindcss": "^4.1.12",
     "typescript": "^5.9.2",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "vue-tsc": "^3.0.8"
   }
 }

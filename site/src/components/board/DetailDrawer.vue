@@ -1,26 +1,24 @@
 <script setup lang="ts">
+import RichMarkdown from '../markdown/RichMarkdown.vue';
+import ImageThumbnail from '../markdown/ImageThumbnail.vue';
+import { isImageResource } from '../../lib/resources';
+import { resourcePreviewURLs } from '../../lib/edit/resourceClient';
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
 import { animate, type AnimationPlaybackControlsWithThen } from 'motion';
 import ProductMark from '../ui/ProductMark.vue';
+import { useClipboard } from '../../composables/useClipboard';
+import ConfirmAction from '../ui/ConfirmAction.vue';
 import Select from '../ui/Select.vue';
 import {
   PhX,
-  PhArrowUp,
   PhArrowSquareOut,
   PhCaretLeft,
   PhCaretRight,
   PhLink,
   PhCheck,
-  PhPencilSimple,
   PhUser,
   PhSquaresFour,
   PhCalendarBlank,
-  PhTarget,
-  PhHeart,
-  PhCube,
-  PhGauge,
-  PhTrendUp,
-  PhFileText,
   PhStack,
   PhTrash,
   PhArrowCounterClockwise,
@@ -28,16 +26,13 @@ import {
 } from '@phosphor-icons/vue';
 import {
   horizonDot,
-  horizonStatLabel,
-  levelColor,
   toneSurface,
   toneSurfaceStrong,
   toneText,
   tagTone,
-  type Tone,
 } from '../../lib/display';
 import { linkSource, linkDisplay } from '../../lib/sources';
-import { trapFocus } from '../../lib/focusTrap';
+import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
 import type { ItemVM } from '../../lib/filters';
 import { formatDateTime, formatDateTimeOrDate } from '../../lib/dates';
 import { PRODUCTS, HORIZONS, STAGES, LEVELS, VISIBILITIES } from '../../lib/schema';
@@ -117,11 +112,11 @@ const bodyModel = computed<string>({
 
 const isMarkedDeleted = computed(() => (props.item ? editStore.isDeleted(props.item.id) : false));
 
-function onDeleteItem() {
-  if (!props.item) return;
-  const ok = window.confirm(`Delete "${props.item.title}" (${props.item.id})? This removes it on the next sync.`);
-  if (!ok) return;
-  editStore.deleteItem(props.item.id);
+const confirmDelete = ref(false);
+function onDeleteItem() { confirmDelete.value = true; }
+function deleteConfirmed() {
+  if (props.item) editStore.deleteItem(props.item.id);
+  confirmDelete.value = false;
 }
 function onUndoDelete() {
   if (props.item) editStore.revertItem(props.item.id);
@@ -156,9 +151,11 @@ const panel = ref<HTMLElement>();
 let releaseFocus: (() => void) | null = null;
 
 function onKey(e: KeyboardEvent) {
-  const tag = (e.target as HTMLElement | null)?.tagName;
-  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-  if (e.key === 'Escape') emit('close');
+  if (!isTopFocusTrap(panel.value)) return;
+  if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'Escape') { emit('close'); return; }
+  const target = e.target as HTMLElement | null;
+  if (target?.closest('input, select, textarea, button, a, summary, [contenteditable=true]')) return;
   else if (e.key === 'ArrowLeft') emit('prev');
   else if (e.key === 'ArrowRight') emit('next');
 }
@@ -425,7 +422,7 @@ async function commitSwipe(decision: Exclude<SwipeDecision, 'cancel'>, velocity:
   }
 
   swipeTransitionDisabled.value = true;
-  emit(decision);
+  if (decision === 'next') emit('next'); else emit('prev');
   await nextTick();
   if (!isCurrentEpoch(epoch)) return;
   const changed = beforeId !== (props.item?.id ?? null);
@@ -468,27 +465,25 @@ watch(
     if (typeof document === 'undefined') return;
     if (v) {
       document.addEventListener('keydown', onKey);
-      document.body.style.overflow = 'hidden';
       if (!prev) {
         await nextTick();
-        if (panel.value) releaseFocus = trapFocus(panel.value);
+        if (panel.value) releaseFocus = trapFocus(panel.value, { initialFocus: () => panel.value?.querySelector<HTMLElement>('#drawer-title') });
       }
     } else {
       gestureEpoch += 1;
       resetPanelStyles();
       abandonGesture(true);
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
       releaseFocus?.();
       releaseFocus = null;
     }
   },
+  { immediate: true },
 );
 onUnmounted(() => {
   if (typeof document !== 'undefined') {
     gestureEpoch += 1;
     document.removeEventListener('keydown', onKey);
-    document.body.style.overflow = '';
     releaseFocus?.();
     resetPanelStyles();
     abandonGesture(true);
@@ -499,25 +494,6 @@ const label = 'text-single-sm-medium font-semibold uppercase tracking-wide text-
 const actionBtn =
   'roadmap-action border-border-subtle-default bg-card/80 text-single-sm-medium text-text-primary-default hover:bg-card inline-flex h-10 items-center gap-2 rounded-lg border px-3.5 transition-colors';
 
-function sectionTone(heading: string): Tone {
-  const h = heading.toLowerCase();
-  if (h.includes('target')) return 'orange';
-  if (h.includes('why')) return 'red';
-  if (h.includes('ships')) return 'violet';
-  return 'blue';
-}
-function sectionIcon(heading: string) {
-  const h = heading.toLowerCase();
-  if (h.includes('target')) return PhTarget;
-  if (h.includes('why')) return PhHeart;
-  if (h.includes('ships')) return PhCube;
-  return PhFileText;
-}
-function horizonSub(horizon: string) {
-  return horizon in horizonStatLabel
-    ? horizonStatLabel[horizon as keyof typeof horizonStatLabel]
-    : horizon;
-}
 
 function historyValue(at: string | undefined, date: string | undefined): string {
   return formatDateTimeOrDate(at, date);
@@ -536,16 +512,15 @@ function tagFilterHref(token: string): string {
 }
 
 // Copy a clean, shareable deep link to this item (drops any active filter params).
-const copied = ref(false);
-let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+const { copy, copied, copying, copyError, resetCopy } = useClipboard();
 function copyLink() {
-  if (!props.item) return;
-  const url = `${location.origin}${location.pathname}?item=${props.item.id}`;
-  navigator.clipboard?.writeText(url);
-  copied.value = true;
-  clearTimeout(copiedTimer);
-  copiedTimer = setTimeout(() => (copied.value = false), 1500);
+  if (props.item) void copy(new URL(props.item.href, location.origin).href);
 }
+const scrollArea = ref<HTMLElement>();
+watch(() => props.item?.id, () => {
+  resetCopy();
+  if (scrollArea.value) scrollArea.value.scrollTop = 0;
+});
 </script>
 
 <template>
@@ -599,13 +574,13 @@ function copyLink() {
           </div>
         </div>
 
-        <div class="flex-1 overflow-y-auto">
+        <div ref="scrollArea" class="flex-1 overflow-y-auto">
           <Transition :name="drawerItemTransitionName" mode="out-in">
           <div :key="item.id" class="px-4 pb-5 sm:px-6 sm:pb-6">
             <div class="grid items-start gap-3 lg:grid-cols-[46px_minmax(0,1fr)]">
               <ProductMark :product="item.product" :size="42" />
               <div class="min-w-0">
-                <h2 id="drawer-title" class="roadmap-display roadmap-title text-[1.5rem] sm:text-[1.8rem]">
+                <h2 id="drawer-title" tabindex="-1" aria-live="polite" class="roadmap-display roadmap-title text-[1.5rem] sm:text-[1.8rem]">
                   {{ item.title }}
                 </h2>
                 <p class="roadmap-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
@@ -613,7 +588,7 @@ function copyLink() {
                     <PhSquaresFour :size="17" /> {{ item.product }}
                   </span>
                   <span class="inline-flex items-center gap-2">
-                    <span class="h-4 w-1 rounded-full" :style="{ background: horizonDot[item.horizon] }" /> {{ item.horizon }}
+                    <span class="h-4 w-1 rounded-full" :style="{ background: horizonDot[item.horizon as keyof typeof horizonDot] }" /> {{ item.horizon }}
                   </span>
                   <span v-if="item.owner && !client" class="inline-flex items-center gap-2">
                     <PhUser :size="17" /> {{ item.owner }}
@@ -644,11 +619,11 @@ function copyLink() {
                 <div v-if="!client" class="mt-4 flex flex-wrap items-center gap-2.5">
                   <a
                     :href="item.href"
-                    class="roadmap-action roadmap-primary-action inline-flex h-10 items-center gap-2 rounded-lg px-4 text-single-sm-medium"
+                    class="roadmap-action border border-border-subtle-default bg-card inline-flex h-10 items-center gap-2 rounded-lg px-4 text-single-sm-medium"
                   >
                     Open full page <PhArrowSquareOut :size="18" />
                   </a>
-                  <button type="button" :class="actionBtn" @click="copyLink">
+                  <button type="button" :class="actionBtn" :disabled="copying" @click="copyLink">
                     <template v-if="copied"><PhCheck :size="18" class="text-icons-subtle-default" /> Copied</template>
                     <template v-else><PhLink :size="18" class="text-icons-subtle-default" /> Copy link</template>
                   </button>
@@ -665,6 +640,9 @@ function copyLink() {
                 </div>
               </div>
             </div>
+
+            <p v-if="copyError" role="alert" class="mt-3 text-sm text-text-subtle-default">{{ copyError }}</p>
+            <p v-else-if="copied" role="status" class="sr-only">Item link copied.</p>
 
             <div v-if="edit && !client" class="roadmap-panel mt-4 rounded-xl p-3.5" data-test="edit-panel">
               <div class="flex items-center justify-between gap-3">
@@ -767,50 +745,11 @@ function copyLink() {
               </div>
             </div>
 
-            <div v-if="!client" class="mt-4 grid gap-2.5 md:grid-cols-3">
-              <div class="roadmap-panel rounded-xl p-2.5">
-                <div :class="label">Stage</div>
-                <div class="mt-2 flex items-center gap-2.5">
-                  <span class="roadmap-icon-tile size-8 rounded-lg text-[color:var(--color-data-green-border-primary-default)]">
-                    <PhTrendUp :size="16" />
-                  </span>
-                  <div>
-                    <div class="font-display roadmap-title text-[1.08rem] leading-none">{{ item.stage }}</div>
-                    <div class="text-single-sm-medium mt-1" :style="{ color: toneText.green }">
-                      {{ horizonSub(item.horizon) }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="roadmap-panel rounded-xl p-2.5">
-                <div :class="label">Impact</div>
-                <div class="mt-2 flex items-center gap-2.5">
-                  <span class="roadmap-icon-tile size-8 rounded-lg text-[color:var(--color-accent-brand-default)]">
-                    <PhArrowUp :size="16" />
-                  </span>
-                  <div>
-                    <div class="font-display roadmap-title text-[1.08rem] leading-none">{{ item.impact ?? '—' }}</div>
-                    <div class="text-single-sm-medium mt-1" :style="{ color: levelColor(item.impact) }">
-                      {{ item.impact ? `${item.impact} impact` : 'Not scored' }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="roadmap-panel rounded-xl p-2.5">
-                <div :class="label">Effort</div>
-                <div class="mt-2 flex items-center gap-2.5">
-                  <span class="roadmap-icon-tile size-8 rounded-lg text-[color:var(--color-data-blue-border-primary-default)]">
-                    <PhGauge :size="16" />
-                  </span>
-                  <div>
-                    <div class="font-display roadmap-title text-[1.08rem] leading-none">{{ item.effort ?? '—' }}</div>
-                    <div class="text-single-sm-medium mt-1 text-text-link-default">
-                      {{ item.effort ? `${item.effort} effort` : 'Not scoped' }}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <dl v-if="!client" class="item-facts mt-5">
+              <div><dt>Stage</dt><dd>{{ item.stage }}</dd></div>
+              <div><dt>Impact</dt><dd>{{ item.impact || 'Not scored' }}</dd></div>
+              <div><dt>Effort</dt><dd>{{ item.effort || 'Not scoped' }}</dd></div>
+            </dl>
 
             <p v-if="item.oneliner" class="mt-5 max-w-4xl text-base leading-relaxed text-text-primary-default">
               {{ item.oneliner }}
@@ -820,17 +759,12 @@ function copyLink() {
               <section
                 v-for="s in storyBlocks"
                 :key="s.heading"
-                class="grid gap-3 sm:grid-cols-[44px_minmax(0,1fr)]"
+                class="item-reading-section"
               >
-                <span
-                  class="roadmap-icon-tile grid size-10 place-items-center rounded-lg"
-                  :style="{ background: toneSurfaceStrong[sectionTone(s.heading)], color: toneText[sectionTone(s.heading)] }"
-                >
-                  <component :is="sectionIcon(s.heading)" :size="20" />
-                </span>
                 <div>
                   <h3 class="roadmap-label">{{ s.heading }}</h3>
-                  <p class="mt-1.5 whitespace-pre-line text-base leading-relaxed text-text-primary-default">
+                  <RichMarkdown v-if="s.markdown && !client" :markdown="s.markdown" :overrides="resourcePreviewURLs" class="mt-1.5" />
+                  <p v-else class="mt-1.5 whitespace-pre-line text-base leading-relaxed text-text-primary-default">
                     {{ s.text }}
                   </p>
                 </div>
@@ -898,7 +832,8 @@ function copyLink() {
                   :rel="ln.kind === 'external' || ln.kind === 'presentation' ? 'noopener' : undefined"
                     class="roadmap-panel roadmap-action flex items-center gap-3 rounded-xl px-3 py-2.5"
                 >
-                  <span
+                  <ImageThumbnail v-if="ln.image || isImageResource(ln.target)" :href="ln.target" />
+                  <span v-else
                     class="grid size-10 shrink-0 place-items-center rounded-lg"
                     :style="{ background: toneSurfaceStrong[ln.src.tone], color: toneText[ln.src.tone] }"
                   >
@@ -922,6 +857,7 @@ function copyLink() {
       </aside>
     </div>
   </Transition>
+  <ConfirmAction v-if="confirmDelete && item" title="Delete this item?" :message="`“${item.title}” will be marked for deletion. It stays published until you publish the changes.`" confirm-label="Mark for deletion" @cancel="confirmDelete = false" @confirm="deleteConfirmed" />
 </template>
 
 <style scoped>

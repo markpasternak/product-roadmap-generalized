@@ -57,6 +57,27 @@ afterEach(() => {
 });
 
 describe('RewriteWithAi', () => {
+  it('ignores a stopped stream after another instruction has started', async () => {
+    let resume!: () => void;
+    streamMock.mockImplementationOnce(() => (async function* () {
+      await new Promise<void>((resolve) => resume = resolve);
+      yield 'STALE REPLY';
+    })());
+    streamMock.mockImplementationOnce(neverEndingStream);
+    const w = mountPanel();
+    await w.get('[data-test="rewrite-instruction"]').setValue('First request');
+    await w.get('[data-test="rewrite-send"]').trigger('click');
+    await w.get('[data-test="rewrite-stop"]').trigger('click');
+    await w.get('[data-test="rewrite-instruction"]').setValue('New request');
+    await w.get('[data-test="rewrite-send"]').trigger('click');
+    resume();
+    await flushPromises();
+    expect(w.text()).not.toContain('STALE REPLY');
+    expect(w.text()).toContain('New request');
+    expect(w.find('[data-test="rewrite-stop"]').exists()).toBe(true);
+    expect(streamMock).toHaveBeenCalledTimes(2);
+  });
+
   describe('close/Escape/scrim cancel an in-flight generation instead of blocking (client-side abort)', () => {
     it('Escape cancels a PLAN stream in flight, resets state, and closes', async () => {
       streamMock.mockImplementation(() => neverEndingStream());

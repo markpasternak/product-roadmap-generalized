@@ -14,7 +14,7 @@
 import { PRODUCTS, HORIZONS, STAGES, LEVELS, VISIBILITIES } from '../schema';
 
 export interface FieldError {
-  /** The item's id — a real id (`PLATFORM-001`) for an updated item, or a client-only temp id
+  /** The item's id — a real id (`ARTISTS-001`) for an updated item, or a client-only temp id
    *  (`new-1`) for a not-yet-synced created item. */
   id: string;
   field: string;

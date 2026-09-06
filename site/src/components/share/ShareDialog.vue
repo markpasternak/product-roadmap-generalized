@@ -2,9 +2,13 @@
 import { ref, computed, onMounted, onUnmounted, nextTick, watch, type Component } from 'vue';
 import Button from '../ui/Button.vue';
 import Select from '../ui/Select.vue';
+import SearchInput from '../ui/SearchInput.vue';
 import Avatar from '../ui/Avatar.vue';
-import { trapFocus } from '../../lib/focusTrap';
+import ConfirmAction from '../ui/ConfirmAction.vue';
+import { useClipboard } from '../../composables/useClipboard';
+import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
 import { horizonDot } from '../../lib/display';
+import { HORIZONS } from '../../lib/schema';
 import {
   PhX,
   PhCheckCircle,
@@ -22,43 +26,81 @@ import {
   PhPencilSimple,
   PhLinkBreak,
 } from '@phosphor-icons/vue';
+import { prepareShareResources, type ShareResourceChoice } from '../../lib/share/resources';
 import type { ProjectedItem } from '../../lib/share/project';
-import type { AccessRung, AuthoredCanvas, Me, ShareStatus } from '../../lib/share/canvasdrop';
-import type { ShareTheme } from '../../lib/share/render';
+import type { AccessMode, AccessRung, AuthoredCanvas, Me, PublicationStatus, ShareAudience, ShareStatus } from '../../lib/share/canvasdrop';
+import { renderShareHtml, type ShareTheme, type ShareContext } from '../../lib/share/render';
+import { inlinePreviewAssets, type ShareAssetUrls } from '../../lib/share/assets';
 import {
   SHARE_TAG,
-  isLiveRoadmapShare,
+  isOpenableRoadmapShare,
+  isUnpublishableRoadmapShare,
+  isUpdateableRoadmapShare,
+  isVisibleRoadmapShare,
   shareAccessDescription,
   shareAccessLabel,
+  shareAccessMode,
+  shareAudienceDetail,
   shareCanvasHref,
   shareCanvasTitle,
   shareDate,
+  shareEditableAccess,
+  shareHasPassword,
   shareMetaString,
   shareRoadmapTitle,
+  sharePublicationLabel,
+  sharePublicationStatus,
+  shareViewerRoleLabel,
 } from '../../lib/share/roadmapShares';
 
 const props = defineProps<{
   items: ProjectedItem[];
-  context: { title: string; product: string | null; generatedAt: string };
+  resources?: ShareResourceChoice[];
+  context: ShareContext;
   author?: Me | null;
   shares?: AuthoredCanvas[];
   sharesLoading?: boolean;
   sharesError?: string | null;
   pending?: boolean;
-  result?: { id?: string; url: string; expiresAt: number | null; status?: ShareStatus; action?: 'created' | 'updated' } | null;
+  result?: {
+    id?: string;
+    url: string;
+    expiresAt: number | null;
+    access?: ShareAudience;
+    accessMode?: AccessMode;
+    publicationStatus?: Exclude<PublicationStatus, 'deleted'>;
+    /** Compatibility with Canvas Drop responses from before the split contract. */
+    status?: ShareStatus;
+    action?: 'created' | 'updated';
+  } | null;
   error?: string | null;
 }>();
 const emit = defineEmits<{
   (e: 'close'): void;
-  (e: 'submit', payload: {
-    targetShareId: string | null; canvasTitle: string; canvasDescription: string; roadmapTitle: string; roadmapIntro: string; access: AccessRung; password: string;
-    expiresAt: number; tags: string[]; theme: ShareTheme; items: ProjectedItem[];
-  }): void;
+  (
+    e: 'submit',
+    payload: {
+      targetShareId: string | null;
+      canvasTitle: string;
+      canvasDescription: string;
+      roadmapTitle: string;
+      roadmapIntro: string;
+      access: AccessRung | null;
+      password?: string | null;
+      expectsPassword: boolean;
+      expectedUpdatedAt?: number;
+      tags: string[];
+      preservedMetadata: Record<string, unknown>;
+      theme: ShareTheme;
+      items: ProjectedItem[];
+      resources: ShareResourceChoice[];
+    },
+  ): void;
   (e: 'refreshShares'): void;
   (e: 'revoke', id: string): void;
 }>();
 
-const HORIZON_ORDER = ['Now', 'Next', 'Later', 'Completed', 'Candidates'];
+const HORIZON_ORDER = HORIZONS;
 
 // Step 1 = choose what to share · step 2 = share settings.
 const step = ref(1);
@@ -66,22 +108,64 @@ const canvasTitle = ref(props.context.title);
 const canvasDescription = ref('');
 const roadmapTitle = ref(props.context.title);
 const roadmapIntro = ref('');
-const access = ref<AccessRung>('public_link');
+const access = ref<AccessRung>('private');
 const password = ref('');
+const passwordEnabled = ref(false);
+const passwordWasSet = ref(false);
 const theme = ref<ShareTheme>('light');
 const targetMode = ref<'new' | 'existing'>('new');
 const selectedShareId = ref('');
+const existingShareQuery = ref('');
 
 // Selection is a single set of item ids. The sharer owns the judgment call, so
 // everything in the current filtered view starts selected.
 const selected = ref(new Set(props.items.map((i) => i.id)));
 
 const lanes = computed(() =>
-  HORIZON_ORDER.map((h) => ({ h, items: props.items.filter((i) => i.horizon === h) })).filter((l) => l.items.length),
+  HORIZON_ORDER.map((h) => ({
+    h,
+    items: props.items.filter((i) => i.horizon === h),
+  })).filter((l) => l.items.length),
 );
 const total = computed(() => props.items.length);
 const effectiveItems = computed(() => props.items.filter((i) => selected.value.has(i.id)));
-const laneCountInShare = computed(() => new Set(effectiveItems.value.map((i) => i.horizon)).size);
+const laneCountInShare = computed(() => props.context.horizons?.length ?? new Set(effectiveItems.value.map((i) => i.horizon)).size);
+const selectedResources = ref<string[]>([]);
+const resourceChoices = computed(() => (props.resources??[]).filter(r=>selected.value.has(r.itemId)));
+const includedResources = computed(() => resourceChoices.value.filter(r=>selectedResources.value.includes(r.key)));
+const previewResources = ref<ProjectedItem[]|null>(null);
+const resourceError = ref('');
+let resourcePreviewEpoch=0;
+async function loadResourcePreview(){ const epoch=++resourcePreviewEpoch;previewResources.value=null;resourceError.value='';try{const prepared=await prepareShareResources(effectiveItems.value,includedResources.value,import.meta.env.BASE_URL,true);if(epoch===resourcePreviewEpoch)previewResources.value=prepared.items;}catch(e){if(epoch===resourcePreviewEpoch)resourceError.value=(e as Error).message;} }
+const previewOpen = ref(false);
+const previewSize = ref('desktop');
+const previewViewport = ref<HTMLElement>();
+const previewWidth = ref(390);
+let previewObserver: ResizeObserver | undefined;
+watch(previewViewport, (element) => {
+  previewObserver?.disconnect();
+  if (!element || typeof ResizeObserver === 'undefined') return;
+  previewObserver = new ResizeObserver(([entry]) => {
+    if (entry) previewWidth.value = entry.contentRect.width;
+  });
+  previewObserver.observe(element);
+});
+// Keep the recipient viewport at 390px, scaling its preview to fit small dialogs.
+const previewDocumentWidth = computed(() => previewSize.value === 'mobile' ? 390 : Math.max(390, previewWidth.value));
+const previewScale = computed(() => Math.min(1, previewWidth.value / previewDocumentWidth.value));
+const previewAssets = ref<ShareAssetUrls | null>(null);
+const previewAssetError = ref(false);
+async function loadPreviewAssets() {
+  if (previewAssets.value) return;
+  previewAssetError.value = false;
+  try { previewAssets.value = await inlinePreviewAssets(); }
+  catch { previewAssetError.value = true; }
+}
+watch([previewOpen,effectiveItems,includedResources], ([open]) => { if(open){void loadPreviewAssets();void loadResourcePreview();} });
+const previewHtml = computed(() => previewOpen.value && previewAssets.value && previewResources.value ? renderShareHtml({
+  ...props.context, title: roadmapTitle.value, intro: roadmapIntro.value, theme: theme.value,
+  assets: previewAssets.value,
+}, previewResources.value) : '');
 
 function toggleItem(id: string) {
   const s = new Set(selected.value);
@@ -121,28 +205,85 @@ function toggleCollapse(h: string) {
 }
 
 const canProceed = computed(() => effectiveItems.value.length > 0);
-const needsPassword = computed(() => access.value === 'password');
-const shares = computed(() => (props.shares ?? []).filter(isLiveRoadmapShare));
-const updateableShares = computed(() => shares.value);
+const shares = computed(() => (props.shares ?? []).filter(isVisibleRoadmapShare).sort((a, b) => b.updatedAt - a.updatedAt));
+const filteredShares = computed(() => {
+  const query = existingShareQuery.value.trim().toLocaleLowerCase();
+  if (!query) return shares.value;
+  return shares.value.filter((share) =>
+    [
+      shareRoadmapTitle(share),
+      shareCanvasTitle(share),
+      shareMetaString(share, 'product'),
+      shareAccessLabel(shareAccessMode(share)),
+      shareHasPassword(share) ? 'Password protected' : '',
+      share.galleryListed === true ? 'Listed' : share.galleryListed === false ? 'Unlisted' : '',
+      share.discoverability ?? '',
+      share.galleryTemplatable ? 'Reusable template' : '',
+      share.viewerRole ?? '',
+      share.audienceSummary?.names?.join(' ') ?? '',
+      sharePublicationLabel(sharePublicationStatus(share)),
+    ]
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(query),
+  );
+});
+const updateableShares = computed(() => shares.value.filter(isUpdateableRoadmapShare));
 const selectedShare = computed(() => updateableShares.value.find((s) => s.id === selectedShareId.value) ?? null);
+const effectiveAccess = computed<AccessRung | null>(() => {
+  if (targetMode.value !== 'existing' || !selectedShare.value) return access.value;
+  return access.value === shareEditableAccess(selectedShare.value) ? null : access.value;
+});
+const accessSummary = computed(() => shareAccessLabel(access.value));
 const authorName = computed(() => props.author?.name || props.author?.email || 'Signed-in author');
-const authorEmail = computed(() =>
-  props.author?.email && props.author.email !== authorName.value ? props.author.email : '',
-);
+const authorEmail = computed(() => (props.author?.email && props.author.email !== authorName.value ? props.author.email : ''));
 const canUpdateSelectedShare = computed(() => targetMode.value !== 'existing' || !!selectedShare.value);
-const canSubmit = computed(() => canProceed.value && canUpdateSelectedShare.value && (!needsPassword.value || password.value.length > 0));
+const staleShare = ref(false);
+const canSubmit = computed(
+  () =>
+    canProceed.value &&
+    canUpdateSelectedShare.value &&
+    !staleShare.value &&
+    (!passwordEnabled.value || password.value.length > 0 || (targetMode.value === 'existing' && passwordWasSet.value)),
+);
 const submitLabel = computed(() => {
   const isUpdate = targetMode.value === 'existing';
   if (props.pending) return isUpdate ? 'Updating...' : 'Publishing...';
   return isUpdate ? 'Update share' : 'Publish share';
 });
-const resultVerb = computed(() => (props.result?.action === 'updated' ? 'Updated' : 'Published'));
+const resultVerb = computed(() => (props.result?.action === 'updated' ? 'Updated' : 'Created'));
+const resultPublicationStatus = computed<PublicationStatus>(() => {
+  if (props.result?.publicationStatus) return props.result.publicationStatus;
+  if (props.result?.status === 'expired') return 'expired';
+  if (props.result?.status === 'revoked') return 'unpublished';
+  return 'published';
+});
+const resultIsPublished = computed(() => resultPublicationStatus.value === 'published');
+const resultStatusLabel = computed(() => sharePublicationLabel(resultPublicationStatus.value));
+const resultAccessLabel = computed(() => {
+  if (props.result?.accessMode) return shareAccessLabel(props.result.accessMode);
+  if (props.result?.access) return shareAccessLabel(props.result.access);
+  return '';
+});
+const resultHeader = computed(() => {
+  if (resultIsPublished.value) return props.result?.action === 'updated' ? 'Your share is updated' : 'Your share is published';
+  return props.result?.action === 'updated' ? 'Share update complete' : 'Share created';
+});
+const resultMessage = computed(() => {
+  const subject = props.result?.action === 'updated' ? 'Content was updated' : 'The share was created';
+  if (resultPublicationStatus.value === 'expired')
+    return `${subject}, but the share remains Expired. Remove or extend its expiry in Canvas Drop.`;
+  if (resultPublicationStatus.value === 'unpublished') return `${subject}, but the share remains Unpublished.`;
+  return props.result?.action === 'updated' ? 'Your share was updated in place at the same URL.' : 'Your share is ready.';
+});
 
 const accessOptions = [
+  {
+    value: 'private',
+    label: 'Restricted — owners, editors, and added people/teams',
+  },
   { value: 'public_link', label: 'Public link — anyone with the link' },
   { value: 'whole_org', label: 'Whole org — signed-in members' },
-  { value: 'password', label: 'Password protected' },
-  { value: 'private', label: 'Private — just me' },
 ];
 const selectableAccess = new Set<AccessRung>(accessOptions.map((option) => option.value as AccessRung));
 const themeOptions = [
@@ -152,26 +293,74 @@ const themeOptions = [
 const shareOptions = computed(() =>
   updateableShares.value.map((share) => ({
     value: share.id,
-    label: `${shareRoadmapTitle(share)} — ${shareAccessLabel(share.access)}`,
+    label: `${shareRoadmapTitle(share)} — ${shareAccessLabel(shareAccessMode(share))}${shareHasPassword(share) ? ' · Password protected' : ''}`,
   })),
 );
 
-function editableAccess(accessValue: AccessRung): AccessRung {
-  if (accessValue === 'specific_people') return 'whole_org';
-  return selectableAccess.has(accessValue) ? accessValue : 'private';
+function editableAccess(share: AuthoredCanvas): AccessRung | null {
+  const accessValue = shareEditableAccess(share);
+  return accessValue && selectableAccess.has(accessValue) ? accessValue : null;
 }
 
 let hydratedShareId = '';
-watch(selectedShare, (share) => {
-  if (!share || targetMode.value !== 'existing' || share.id === hydratedShareId) return;
+let hydratedUpdatedAt: number | null = null;
+let hydrating = false;
+const formDirty = ref(false);
+
+function hydrateExistingShare(share: AuthoredCanvas) {
+  hydrating = true;
   hydratedShareId = share.id;
+  hydratedUpdatedAt = share.updatedAt;
   canvasTitle.value = shareCanvasTitle(share) || props.context.title;
   canvasDescription.value = typeof share.metadata.canvasDescription === 'string' ? share.metadata.canvasDescription : '';
   roadmapTitle.value = shareRoadmapTitle(share) || props.context.title;
   roadmapIntro.value = typeof share.metadata.roadmapIntro === 'string' ? share.metadata.roadmapIntro : '';
-  access.value = editableAccess(share.access);
-  if (share.metadata.theme === 'light' || share.metadata.theme === 'dark') {
-    theme.value = share.metadata.theme;
+  const existingAccess = editableAccess(share);
+  if (existingAccess) access.value = existingAccess;
+  theme.value = share.metadata.theme === 'dark' ? 'dark' : 'light';
+  password.value = '';
+  passwordEnabled.value = shareHasPassword(share);
+  passwordWasSet.value = shareHasPassword(share);
+  staleShare.value = false;
+  formDirty.value = false;
+  hydrating = false;
+}
+
+function resetNewShare() {
+  hydrating = true;
+  hydratedShareId = '';
+  hydratedUpdatedAt = null;
+  canvasTitle.value = props.context.title;
+  canvasDescription.value = '';
+  roadmapTitle.value = props.context.title;
+  roadmapIntro.value = '';
+  access.value = 'private';
+  password.value = '';
+  passwordEnabled.value = false;
+  passwordWasSet.value = false;
+  theme.value = 'light';
+  staleShare.value = false;
+  formDirty.value = false;
+  hydrating = false;
+}
+
+watch(
+  [canvasTitle, canvasDescription, roadmapTitle, roadmapIntro, access, password, passwordEnabled, theme],
+  () => {
+    if (!hydrating && targetMode.value === 'existing' && hydratedShareId) formDirty.value = true;
+  },
+  { flush: 'sync' },
+);
+
+watch(selectedShare, (share, previous) => {
+  if (!share || targetMode.value !== 'existing') return;
+  if (!previous || share.id !== previous.id || share.id !== hydratedShareId) {
+    hydrateExistingShare(share);
+    return;
+  }
+  if (share.updatedAt !== hydratedUpdatedAt) {
+    if (formDirty.value) staleShare.value = true;
+    else hydrateExistingShare(share);
   }
 });
 watch(updateableShares, (current) => {
@@ -184,95 +373,124 @@ watch(updateableShares, (current) => {
 function setTargetMode(mode: 'new' | 'existing') {
   if (mode === 'existing' && !updateableShares.value.length) return;
   targetMode.value = mode;
-  if (mode === 'existing' && !selectedShareId.value) selectedShareId.value = updateableShares.value[0]?.id ?? '';
-  if (mode === 'new') hydratedShareId = '';
+  if (mode === 'existing') {
+    if (!selectedShareId.value) selectedShareId.value = updateableShares.value[0]?.id ?? '';
+    if (selectedShare.value) hydrateExistingShare(selectedShare.value);
+  } else resetNewShare();
 }
 function useExistingShare(share: AuthoredCanvas) {
-  if (share.status !== 'live') return;
+  if (!isUpdateableRoadmapShare(share)) return;
   setTargetMode('existing');
   selectedShareId.value = share.id;
   step.value = 2;
 }
 
+function passwordMutation(): string | null | undefined {
+  if (targetMode.value === 'new') return passwordEnabled.value ? password.value : undefined;
+  if (passwordEnabled.value) return password.value || undefined;
+  return passwordWasSet.value ? null : undefined;
+}
+
 function submit() {
-  if (!canSubmit.value) return;
+  if (!canSubmit.value || props.pending) return;
+  const preservedTags = targetMode.value === 'existing' ? (selectedShare.value?.tags ?? []) : [];
+  const previousProduct =
+    targetMode.value === 'existing' && typeof selectedShare.value?.metadata.product === 'string'
+      ? selectedShare.value.metadata.product
+      : null;
+  const unrelatedTags = preservedTags.filter((tag) => tag !== SHARE_TAG && tag !== previousProduct && tag !== props.context.product);
   emit('submit', {
     targetShareId: targetMode.value === 'existing' ? selectedShareId.value : null,
     canvasTitle: canvasTitle.value,
     canvasDescription: canvasDescription.value,
     roadmapTitle: roadmapTitle.value,
     roadmapIntro: roadmapIntro.value,
-    access: access.value,
-    password: password.value,
-    expiresAt: Date.now() + 30 * 86_400_000,
-    tags: [props.context.product, SHARE_TAG].filter(Boolean) as string[],
+    access: effectiveAccess.value,
+    password: passwordMutation(),
+    expectsPassword: passwordEnabled.value,
+    expectedUpdatedAt: targetMode.value === 'existing' ? (hydratedUpdatedAt ?? undefined) : undefined,
+    tags: [...new Set([...unrelatedTags, props.context.product, SHARE_TAG].filter(Boolean) as string[])],
+    preservedMetadata: targetMode.value === 'existing' ? (selectedShare.value?.metadata ?? {}) : {},
     theme: theme.value,
     items: effectiveItems.value,
+    resources: includedResources.value,
   });
 }
 
-function statusLabel(status: ShareStatus) {
-  return ({ live: 'Live', expired: 'Expired', revoked: 'Revoked', private: 'Private' } satisfies Record<ShareStatus, string>)[status];
-}
-function statusClass(status: ShareStatus) {
-  return ({
-    live: 'bg-surface-transparent-green-25',
-    expired: 'bg-surface-transparent-yellow-25',
-    revoked: 'bg-surface-transparent-red-25',
-    private: 'bg-surface-transparent-blue-25',
-  } satisfies Record<ShareStatus, string>)[status];
-}
-function accessIcon(accessValue: AccessRung): Component {
-  return ({
-    public_link: PhGlobe,
-    whole_org: PhUsersThree,
-    specific_people: PhUsersThree,
-    password: PhKey,
-    private: PhLock,
-  } satisfies Record<AccessRung, Component>)[accessValue];
-}
-function accessClass(accessValue: AccessRung) {
-  return ({
-    public_link: 'bg-surface-transparent-green-25',
-    whole_org: 'bg-surface-transparent-blue-25',
-    specific_people: 'bg-surface-transparent-blue-25',
-    password: 'bg-surface-transparent-yellow-25',
-    private: 'bg-surface-transparent-violet-25',
-  } satisfies Record<AccessRung, string>)[accessValue];
-}
-const formatDate = shareDate;
-function requestDisableShare(share: AuthoredCanvas) {
-  if (share.status !== 'live') return;
-  const ok = window.confirm(`Disable the share link for "${shareRoadmapTitle(share)}"? Viewers will no longer be able to open it.`);
-  if (ok) emit('revoke', share.id);
+function reloadShareSettings() {
+  if (selectedShare.value) hydrateExistingShare(selectedShare.value);
 }
 
-// Result — copy the share link.
-const copied = ref(false);
-let copyTimer: ReturnType<typeof setTimeout> | undefined;
+const predictedStatus = computed<PublicationStatus>(() => {
+  if (targetMode.value === 'existing' && selectedShare.value?.expiresAt && selectedShare.value.expiresAt <= Date.now()) return 'expired';
+  return 'published';
+});
+
+function statusClass(status: PublicationStatus) {
+  return (
+    {
+      published: 'bg-surface-transparent-green-25',
+      expired: 'bg-surface-transparent-yellow-25',
+      unpublished: 'bg-surface-transparent-red-25',
+      draft: 'bg-surface-transparent-blue-25',
+      archived: 'bg-card',
+      disabled: 'bg-surface-transparent-red-25',
+      deleted: 'bg-surface-transparent-red-25',
+    } satisfies Record<PublicationStatus, string>
+  )[status];
+}
+function accessIcon(accessValue: AccessMode): Component {
+  return (
+    {
+      public_link: PhGlobe,
+      whole_org: PhUsersThree,
+      restricted: PhLock,
+    } satisfies Record<AccessMode, Component>
+  )[accessValue];
+}
+function accessClass(accessValue: AccessMode) {
+  return (
+    {
+      public_link: 'bg-surface-transparent-green-25',
+      whole_org: 'bg-surface-transparent-blue-25',
+      restricted: 'bg-surface-transparent-violet-25',
+    } satisfies Record<AccessMode, string>
+  )[accessValue];
+}
+const formatDate = shareDate;
+const revokeTarget = ref<AuthoredCanvas | null>(null);
+function requestDisableShare(share: AuthoredCanvas) {
+  if (isUnpublishableRoadmapShare(share) && !props.pending) revokeTarget.value = share;
+}
+function confirmRevoke() {
+  if (revokeTarget.value && !props.pending) emit('revoke', revokeTarget.value.id);
+  revokeTarget.value = null;
+}
+const { copy, copied, copying, copyError } = useClipboard();
 function copyUrl() {
-  if (props.result?.url) navigator.clipboard?.writeText(props.result.url);
-  copied.value = true;
-  clearTimeout(copyTimer);
-  copyTimer = setTimeout(() => (copied.value = false), 1500);
+  if (props.result?.url) void copy(props.result.url);
 }
 
 // A11y: Escape to close, focus trap, scroll lock while open.
 const panel = ref<HTMLElement>();
 let release: (() => void) | null = null;
+watch([step, () => props.result], async () => {
+  await nextTick();
+  if (isTopFocusTrap(panel.value)) panel.value?.querySelector<HTMLElement>('[data-share-heading]')?.focus();
+});
 function onKey(e: KeyboardEvent) {
+  if (!isTopFocusTrap(panel.value)) return;
   if (e.key === 'Escape') emit('close');
 }
 onMounted(async () => {
   document.addEventListener('keydown', onKey);
-  document.body.style.overflow = 'hidden';
   await nextTick();
-  if (panel.value) release = trapFocus(panel.value);
+  if (panel.value) release = trapFocus(panel.value, { initialFocus: () => panel.value?.querySelector<HTMLElement>('[data-share-heading]') });
 });
 onUnmounted(() => {
   document.removeEventListener('keydown', onKey);
-  document.body.style.overflow = '';
   release?.();
+  previewObserver?.disconnect();
 });
 
 // Native checkbox indeterminate can't be set declaratively.
@@ -301,16 +519,17 @@ const primaryCls =
       aria-modal="true"
       aria-label="Share this view"
       tabindex="-1"
-      class="share-panel bg-background border-border-subtle-default relative z-10 flex max-h-[86vh] w-[860px] max-w-[94vw] flex-col overflow-hidden rounded-2xl border shadow-xl outline-none"
+      :style="{ width: previewOpen ? '1200px' : '860px' }"
+      class="share-panel bg-background border-border-subtle-default relative z-10 flex max-h-[calc(100dvh-2rem)] w-[860px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border shadow-xl outline-none"
     >
       <!-- Header + stepper -->
       <header class="border-border-subtle-default flex items-start justify-between gap-4 border-b px-6 py-4">
         <div>
-          <p class="roadmap-label">Share this view</p>
+          <h2 data-share-heading tabindex="-1" class="roadmap-label">{{ result ? resultHeader : step === 1 ? "Choose what to share" : "Share settings" }}</h2>
           <p v-if="!result" class="text-single-sm-medium text-text-subtle-default mt-1">
-            Step {{ step }} of 2 — {{ step === 1 ? 'Choose what to share' : 'Share settings' }}
+            Step {{ step }} of 2 —
+            {{ step === 1 ? 'Choose what to share' : 'Share settings' }}
           </p>
-          <p v-else class="text-single-sm-medium text-text-subtle-default mt-1">Your share is live</p>
         </div>
         <button
           type="button"
@@ -333,12 +552,24 @@ const primaryCls =
             {{ effectiveItems.length }}<span class="text-text-subtle-default font-normal"> of {{ total }} selected</span>
           </p>
           <div class="text-single-sm-medium flex items-center gap-2">
-            <button type="button" data-test="select-all" class="text-text-link-default hover:underline" @click="selectAll">Select all</button>
+            <button type="button" data-test="select-all" class="text-text-link-default hover:underline" @click="selectAll">
+              Select all
+            </button>
             <span class="text-border-strong-default">·</span>
-            <button type="button" data-test="deselect-all" class="text-text-subtle-default hover:text-text-primary-default" @click="deselectAll">Clear</button>
+            <button
+              type="button"
+              data-test="deselect-all"
+              class="text-text-subtle-default hover:text-text-primary-default"
+              @click="deselectAll"
+            >
+              Clear
+            </button>
           </div>
         </div>
 
+        <p class="mb-5 text-single-sm-medium text-text-subtle-default">
+          Review the selected text before publishing. Internal items can be included; owner names are omitted. Files and links stay excluded unless you select them below.
+        </p>
         <div class="space-y-6">
           <section v-for="l in lanes" :key="l.h">
             <header class="mb-2.5 flex items-center gap-2.5">
@@ -359,7 +590,9 @@ const primaryCls =
                 @click="toggleCollapse(l.h)"
               >
                 <span class="size-2.5 shrink-0 rounded-full" :style="{ background: horizonDot[l.h] }" />
-                <h3 class="text-single-base-medium text-text-primary-default font-semibold">{{ l.h }}</h3>
+                <h3 class="text-single-base-medium text-text-primary-default font-semibold">
+                  {{ l.h }}
+                </h3>
                 <span class="text-single-sm-medium text-text-subtle-default ml-auto tabular-nums">
                   {{ laneSelected(l.h) }}/{{ l.items.length }}
                 </span>
@@ -391,19 +624,36 @@ const primaryCls =
               </li>
             </ul>
           </section>
+          <section v-if="resourceChoices.length" class="rounded-xl border border-border-subtle-default p-4"><h3 class="font-medium">Files and external links</h3><p class="mt-1 mb-3 text-sm text-text-subtle-default">Choose what recipients can open. Files are copied into this snapshot; later edits and deletions won’t change it.</p><label v-for="resource in resourceChoices" :key="resource.key" class="flex items-start gap-3 py-2"><input v-model="selectedResources" :value="resource.key" type="checkbox" class="mt-1" /><span class="text-sm">{{ resource.label }}<span class="block text-xs text-text-subtle-default">{{ items.find(i=>i.id===resource.itemId)?.title }} · {{ resource.repoPath?'File copy':'External link' }}</span></span></label></section>
         </div>
       </div>
 
       <!-- STEP 2 — settings -->
       <div v-else-if="!result && step === 2" class="flex-1 overflow-y-auto px-6 py-5">
         <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.82fr)]">
+            <section class="lg:col-span-2 rounded-xl border border-border-subtle-default p-4">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <Button variant="outline" :aria-expanded="previewOpen" @click="previewOpen = !previewOpen">
+                  {{ previewOpen ? 'Hide recipient preview' : 'Preview as recipient' }}
+                </Button>
+                <Select v-if="previewOpen" v-model="previewSize" aria-label="Preview width"
+                  :options="[{ value: 'desktop', label: 'Full width' }, { value: 'mobile', label: 'Mobile · 390px' }]" />
+              </div>
+              <p class="mt-2 text-single-sm-medium text-text-subtle-default">The published snapshot uses this layout and selected content. Access follows your sharing settings.</p>
+              <div v-if="previewOpen" ref="previewViewport" class="mt-3 overflow-hidden rounded-lg bg-surface-subtle-default p-1">
+                <p v-if="resourceError" role="alert" class="p-2 text-sm">{{ resourceError }}</p><p v-if="!previewAssets || (!previewResources && !resourceError)" role="status" class="p-2 text-single-sm-medium text-text-subtle-default">{{ previewAssetError ? 'Design assets could not load.' : 'Loading fonts and artwork…' }}</p>
+                <button v-if="previewAssetError" type="button" class="min-h-11 px-2 text-sm underline" @click="loadPreviewAssets">Retry preview</button>
+                <div v-if="previewAssets" class="mx-auto" :style="{ height: `${560 * previewScale}px`, width: `${previewDocumentWidth * previewScale}px` }">
+                  <iframe title="Recipient roadmap preview" sandbox="allow-scripts" :srcdoc="previewHtml"
+                    class="block h-[560px] origin-top-left border-0" :style="{ width: `${previewDocumentWidth}px`, transform: `scale(${previewScale})` }" />
+                </div>
+              </div>
+            </section>
           <div class="space-y-5">
             <section class="space-y-3.5">
               <div>
                 <p class="text-single-base-medium text-text-primary-default font-semibold">Canvas record</p>
-                <p class="text-single-sm-medium text-text-subtle-default mt-0.5">
-                  Used for finding and updating this share later.
-                </p>
+                <p class="text-single-sm-medium text-text-subtle-default mt-0.5">Used for finding and updating this share later.</p>
               </div>
               <div>
                 <label :class="labelCls" for="share-canvas-title">Canvas name</label>
@@ -411,14 +661,15 @@ const primaryCls =
               </div>
               <div>
                 <label :class="labelCls" for="share-canvas-description">
-                  Description <span class="text-text-subtle-default font-normal">— optional</span>
+                  Description
+                  <span class="text-text-subtle-default font-normal">— optional</span>
                 </label>
                 <textarea
                   id="share-canvas-description"
                   v-model="canvasDescription"
                   data-test="canvas-description"
                   rows="2"
-                  placeholder="Internal note for this share…"
+                  placeholder="Describe this share for your team…"
                   :class="inputCls"
                 />
               </div>
@@ -426,9 +677,7 @@ const primaryCls =
             <section class="space-y-3.5">
               <div>
                 <p class="text-single-base-medium text-text-primary-default font-semibold">Roadmap page</p>
-                <p class="text-single-sm-medium text-text-subtle-default mt-0.5">
-                  Shown to viewers inside the published roadmap.
-                </p>
+                <p class="text-single-sm-medium text-text-subtle-default mt-0.5">Shown to viewers inside the published roadmap.</p>
               </div>
               <div>
                 <label :class="labelCls" for="share-roadmap-title">Roadmap title</label>
@@ -436,7 +685,8 @@ const primaryCls =
               </div>
               <div>
                 <label :class="labelCls" for="share-roadmap-intro">
-                  Intro <span class="text-text-subtle-default font-normal">— optional</span>
+                  Intro
+                  <span class="text-text-subtle-default font-normal">— optional</span>
                 </label>
                 <textarea
                   id="share-roadmap-intro"
@@ -449,16 +699,53 @@ const primaryCls =
               </div>
             </section>
             <div>
-              <label :class="labelCls">Access</label>
+              <label :class="labelCls">General access</label>
               <Select v-model="access" :options="accessOptions" aria-label="Access" />
+              <div
+                v-if="targetMode === 'existing' && selectedShare"
+                data-test="canvasdrop-managed-audience"
+                class="border-border-subtle-default bg-card/70 mt-2 rounded-lg border px-3 py-2.5"
+              >
+                <p class="text-single-sm-medium text-text-primary-default font-semibold">Added people and teams are preserved</p>
+                <p class="text-single-sm-medium text-text-subtle-default mt-0.5">
+                  {{ shareAudienceDetail(selectedShare) || 'No viewer audience is currently added.' }}
+                  Manage this list in Canvas Drop. Changing general access does not remove it.
+                </p>
+              </div>
+            </div>
+            <div>
+              <label :class="labelCls">Password lock</label>
+              <label class="border-border-subtle-default bg-card/70 flex cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2.5">
+                <input v-model="passwordEnabled" data-test="password-enabled" type="checkbox" :class="[checkboxCls, 'mt-0.5']" />
+                <span>
+                  <span class="text-single-sm-medium text-text-primary-default block font-semibold">Require a password</span>
+                  <span class="text-single-sm-medium text-text-subtle-default block">
+                    This lock is separate from who is allowed to open the canvas.
+                  </span>
+                </span>
+              </label>
               <input
-                v-if="needsPassword"
+                v-if="passwordEnabled"
                 v-model="password"
                 data-test="password"
-                type="text"
-                placeholder="Set a password to share separately"
+                type="password"
+                :placeholder="
+                  targetMode === 'existing' && passwordWasSet
+                    ? 'Leave blank to keep the current password'
+                    : 'Set a password to share separately'
+                "
                 :class="[inputCls, 'mt-2']"
               />
+              <p
+                v-if="passwordEnabled && targetMode === 'existing' && passwordWasSet"
+                data-test="password-set"
+                class="text-single-sm-medium text-text-subtle-default mt-1.5"
+              >
+                Password is set. Leave the field blank to keep it, or enter a new password to replace it.
+              </p>
+              <p v-else-if="targetMode === 'existing' && passwordWasSet" class="text-single-sm-medium text-text-subtle-default mt-1.5">
+                The existing password will be removed when you update this share.
+              </p>
             </div>
             <div>
               <label :class="labelCls">Appearance</label>
@@ -493,18 +780,63 @@ const primaryCls =
               <div v-if="targetMode === 'existing'" class="mt-2" data-test="existing-select">
                 <Select v-model="selectedShareId" :options="shareOptions" aria-label="Existing share" />
                 <p class="text-single-sm-medium text-text-subtle-default mt-1.5">
-                  Updates replace the content and settings in place. The public URL stays the same.
+                  Updates replace the content and selected settings in place. The share URL stays the same.
                 </p>
+                <div
+                  v-if="selectedShare?.expiresAt"
+                  data-test="existing-expiry"
+                  class="border-border-subtle-default bg-card/70 mt-2 rounded-lg border px-3 py-2.5"
+                >
+                  <p class="text-single-sm-medium text-text-primary-default inline-flex items-center gap-1.5 font-semibold">
+                    <PhClock :size="14" /> Canvas expiry is set:
+                    {{ shareDate(selectedShare.expiresAt) }}
+                  </p>
+                  <p class="text-single-sm-medium text-text-subtle-default mt-0.5">
+                    This roadmap update will preserve it. Change or remove it in Canvas Drop.
+                  </p>
+                </div>
+                <div
+                  v-if="staleShare"
+                  data-test="share-stale"
+                  class="border-border-subtle-default bg-surface-transparent-yellow-25 mt-2 rounded-lg border px-3 py-2.5"
+                >
+                  <p class="text-single-sm-medium text-text-primary-default font-semibold">This share changed in Canvas Drop.</p>
+                  <p class="text-single-sm-medium text-text-subtle-default mt-0.5">
+                    Reload its current settings before updating so newer sharing changes are not overwritten.
+                  </p>
+                  <Button variant="outline" data-test="reload-share-settings" class="mt-2 h-8" @click="reloadShareSettings">
+                    Reload current settings
+                  </Button>
+                </div>
               </div>
             </div>
 
+
+
             <div class="border-border-subtle-default bg-card/50 rounded-xl border px-4 py-3.5">
               <p class="text-single-sm-medium text-text-primary-default">
-                Sharing <b class="tabular-nums">{{ effectiveItems.length }}</b> item{{ effectiveItems.length === 1 ? '' : 's' }}
-                across <b class="tabular-nums">{{ laneCountInShare }}</b> lane{{ laneCountInShare === 1 ? '' : 's' }}.
+                Sharing
+                <b class="tabular-nums">{{ effectiveItems.length }}</b> item{{ effectiveItems.length === 1 ? '' : 's' }} across
+                <b class="tabular-nums">{{ laneCountInShare }}</b> lane{{ laneCountInShare === 1 ? '' : 's' }}.
               </p>
               <p class="text-single-sm-medium text-text-subtle-default mt-1">
-                {{ theme === 'dark' ? 'Dark' : 'Light' }} share. Link expires in 30 days.
+                {{ accessSummary }}{{ passwordEnabled ? ' · Password protected' : '' }} · {{ theme === 'dark' ? 'Dark' : 'Light' }} share ·
+                {{
+                  selectedShare?.expiresAt && targetMode === 'existing'
+                    ? `Expires ${shareDate(selectedShare.expiresAt)} (preserved)`
+                    : 'No expiry'
+                }}.
+              </p>
+              <p
+                v-if="targetMode === 'existing'"
+                data-test="predicted-status"
+                class="text-single-sm-medium text-text-primary-default mt-1 font-semibold"
+              >
+                After update: {{ sharePublicationLabel(predictedStatus) }}
+              </p>
+              <p v-if="targetMode === 'existing' && selectedShare" class="text-single-sm-medium text-text-subtle-default mt-1">
+                Canvas title, roadmap content, general access, password lock, and appearance will be updated. Canvas Drop preserves added
+                people, teams, and expiry and applies its gallery rules.
               </p>
             </div>
           </div>
@@ -512,8 +844,10 @@ const primaryCls =
           <aside class="border-border-subtle-default/70 space-y-3 lg:border-l lg:pl-5">
             <header class="flex items-center justify-between gap-3">
               <div>
-                <p class="text-single-base-medium text-text-primary-default font-semibold">Your live share links</p>
-                <p class="text-single-sm-medium text-text-subtle-default">Only viewer-openable links for this account are shown here.</p>
+                <p class="text-single-base-medium text-text-primary-default font-semibold">Your share links</p>
+                <p class="text-single-sm-medium text-text-subtle-default">
+                  Update content at the same URL. Existing audience, password, and expiry are shown before you publish.
+                </p>
               </div>
               <Button
                 variant="ghost"
@@ -525,29 +859,51 @@ const primaryCls =
                 Refresh
               </Button>
             </header>
-            <div
-              v-if="author"
-              class="border-border-subtle-default bg-card/70 flex items-center gap-2.5 rounded-lg border px-3 py-2"
-            >
+            <div v-if="author" class="border-border-subtle-default bg-card/70 flex items-center gap-2.5 rounded-lg border px-3 py-2">
               <Avatar :name="authorName" :size="28" />
               <div class="min-w-0">
                 <p class="text-single-sm-medium text-text-primary-default truncate">Signed in as {{ authorName }}</p>
-                <p v-if="authorEmail" class="text-single-sm-medium text-text-subtle-default truncate">{{ authorEmail }}</p>
+                <p v-if="authorEmail" class="text-single-sm-medium text-text-subtle-default truncate">
+                  {{ authorEmail }}
+                </p>
               </div>
             </div>
 
-            <p v-if="sharesLoading" class="text-single-sm-medium text-text-subtle-default rounded-lg border border-border-subtle-default px-3 py-3">
+            <SearchInput
+              v-if="shares.length > 3 || existingShareQuery"
+              v-model="existingShareQuery"
+              name="existing-share-search"
+              aria-label="Search existing shares"
+              placeholder="Find an existing share…"
+            />
+
+            <p
+              v-if="sharesLoading"
+              class="text-single-sm-medium text-text-subtle-default rounded-lg border border-border-subtle-default px-3 py-3"
+            >
               Loading shares...
             </p>
-            <p v-else-if="sharesError" class="text-single-sm-medium rounded-lg border border-border-subtle-default bg-surface-transparent-orange-25 px-3 py-3 text-[color:var(--color-accent-brand-default)]">
+            <p
+              v-else-if="sharesError"
+              class="text-single-sm-medium rounded-lg border border-border-subtle-default bg-surface-transparent-orange-25 px-3 py-3 text-[color:var(--color-accent-brand-default)]"
+            >
               {{ sharesError }}
             </p>
-            <p v-else-if="!shares.length" class="text-single-sm-medium text-text-subtle-default rounded-lg border border-border-subtle-default px-3 py-3">
-              No live roadmap shares yet.
+            <p
+              v-else-if="!shares.length"
+              class="text-single-sm-medium text-text-subtle-default rounded-lg border border-border-subtle-default px-3 py-3"
+            >
+              No roadmap shares yet.
+            </p>
+            <p
+              v-else-if="!filteredShares.length"
+              class="text-single-sm-medium text-text-subtle-default rounded-lg border border-border-subtle-default px-3 py-3"
+            >
+              No shares match that search.
             </p>
             <ul v-else class="space-y-2.5">
               <li
-                v-for="share in shares"
+                v-for="share in filteredShares"
                 :key="share.id"
                 :data-test="'share-row-' + share.id"
                 class="border-border-subtle-default bg-card/70 rounded-xl border px-3 py-3"
@@ -555,13 +911,13 @@ const primaryCls =
                 <div class="flex items-start gap-3">
                   <span
                     class="border-border-subtle-default text-icons-subtle-default mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg border"
-                    :class="accessClass(share.access)"
+                    :class="accessClass(shareAccessMode(share))"
                     aria-hidden="true"
                   >
-                    <component :is="accessIcon(share.access)" :size="16" />
+                    <component :is="accessIcon(shareAccessMode(share))" :size="16" />
                   </span>
                   <div class="min-w-0 flex-1">
-                    <div class="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                    <div class="min-w-0">
                       <div class="min-w-0">
                         <p
                           class="text-single-sm-medium text-text-primary-default truncate font-semibold"
@@ -569,34 +925,72 @@ const primaryCls =
                         >
                           {{ shareRoadmapTitle(share) }}
                         </p>
-                        <p class="text-single-sm-medium text-text-subtle-default mt-0.5 truncate">
-                          Canvas: {{ shareCanvasTitle(share) }}
-                        </p>
+                        <p class="text-single-sm-medium text-text-subtle-default mt-0.5 truncate">Canvas: {{ shareCanvasTitle(share) }}</p>
                       </div>
-                      <div class="flex shrink-0 flex-wrap justify-end gap-1.5">
+                      <div :data-test="'share-badges-' + share.id" class="mt-2 flex min-w-0 max-w-full flex-wrap justify-start gap-1.5">
                         <span
-                          class="text-single-sm-medium rounded-md border border-border-subtle-default px-2 py-0.5 font-semibold"
-                          :class="accessClass(share.access)"
+                          class="text-single-sm-medium shrink-0 whitespace-nowrap rounded-md border border-border-subtle-default px-2 py-0.5 font-semibold"
+                          :class="accessClass(shareAccessMode(share))"
                         >
-                          {{ shareAccessLabel(share.access) }}
+                          {{ shareAccessLabel(shareAccessMode(share)) }}
                         </span>
                         <span
-                          class="text-single-sm-medium rounded-md border border-border-subtle-default px-2 py-0.5 font-semibold"
-                          :class="statusClass(share.status)"
+                          v-if="shareHasPassword(share)"
+                          class="text-single-sm-medium bg-surface-transparent-yellow-25 shrink-0 whitespace-nowrap rounded-md border border-border-subtle-default px-2 py-0.5 font-semibold"
+                          :data-test="'share-password-' + share.id"
                         >
-                          {{ statusLabel(share.status) }}
+                          Password protected
+                        </span>
+                        <span
+                          v-if="share.galleryListed !== undefined"
+                          class="text-single-sm-medium bg-card shrink-0 whitespace-nowrap rounded-md border border-border-subtle-default px-2 py-0.5 font-semibold"
+                          :data-test="'share-gallery-' + share.id"
+                        >
+                          {{ share.galleryListed ? 'Gallery listed' : 'Not in gallery' }}
+                        </span>
+                        <span
+                          v-if="share.discoverability"
+                          class="text-single-sm-medium bg-card shrink-0 whitespace-nowrap rounded-md border border-border-subtle-default px-2 py-0.5 font-semibold"
+                        >
+                          {{ share.discoverability === 'listed' ? 'Org listed' : 'Link only' }}
+                        </span>
+                        <span
+                          v-if="share.galleryTemplatable"
+                          class="text-single-sm-medium bg-card shrink-0 whitespace-nowrap rounded-md border border-border-subtle-default px-2 py-0.5 font-semibold"
+                        >
+                          Reusable template
+                        </span>
+                        <span
+                          v-if="share.viewerRole"
+                          class="text-single-sm-medium bg-card shrink-0 whitespace-nowrap rounded-md border border-border-subtle-default px-2 py-0.5 font-semibold"
+                          title="Your management role on this Canvas Drop canvas"
+                        >
+                          {{ shareViewerRoleLabel(share.viewerRole) }}
+                        </span>
+                        <span
+                          class="text-single-sm-medium shrink-0 whitespace-nowrap rounded-md border border-border-subtle-default px-2 py-0.5 font-semibold"
+                          :class="statusClass(sharePublicationStatus(share))"
+                          :data-test="'share-status-' + share.id"
+                        >
+                          {{ sharePublicationLabel(sharePublicationStatus(share)) }}
                         </span>
                       </div>
                     </div>
 
                     <div class="text-single-sm-medium text-text-subtle-default mt-3 grid gap-1.5">
-                      <span class="flex min-w-0 items-center gap-1.5">
-                        <component :is="accessIcon(share.access)" :size="14" class="text-icons-subtle-default shrink-0" />
-                        <span class="truncate">{{ shareAccessDescription(share.access) }}</span>
+                      <span class="flex min-w-0 items-start gap-1.5">
+                        <component :is="accessIcon(shareAccessMode(share))" :size="14" class="text-icons-subtle-default mt-0.5 shrink-0" />
+                        <span class="min-w-0">
+                          <span class="block">{{ shareAccessDescription(shareAccessMode(share)) }}</span>
+                          <span v-if="shareAudienceDetail(share)" class="mt-0.5 block">{{ shareAudienceDetail(share) }}</span>
+                        </span>
                       </span>
                       <span class="flex min-w-0 items-center gap-1.5">
                         <PhClock :size="14" class="text-icons-subtle-default shrink-0" />
-                        <span class="truncate">Updated {{ formatDate(share.updatedAt) }} · Expires {{ formatDate(share.expiresAt) }}</span>
+                        <span>
+                          Updated {{ formatDate(share.updatedAt) }} ·
+                          {{ share.expiresAt ? `Expires ${formatDate(share.expiresAt)}` : 'No expiry' }}
+                        </span>
                       </span>
                       <span v-if="shareMetaString(share, 'theme')" class="flex min-w-0 items-center gap-1.5">
                         <PhPalette :size="14" class="text-icons-subtle-default shrink-0" />
@@ -607,6 +1001,7 @@ const primaryCls =
                 </div>
                 <div class="mt-3 flex flex-wrap items-center gap-2">
                   <a
+                    v-if="isOpenableRoadmapShare(share)"
                     :href="share.url"
                     target="_blank"
                     rel="noreferrer"
@@ -624,27 +1019,32 @@ const primaryCls =
                     class="roadmap-action border-border-subtle-default bg-card text-single-sm-medium text-text-primary-default hover:bg-surface-primary-hover inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5"
                   >
                     <PhBrowsers :size="15" />
-                    Open canvas
+                    Manage in Canvas Drop
                   </a>
                   <button
                     type="button"
                     :data-test="'share-use-' + share.id"
                     class="roadmap-action text-single-sm-medium text-text-primary-default hover:text-[color:var(--color-accent-brand-default)] inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 disabled:pointer-events-none disabled:opacity-40"
-                    :disabled="share.status !== 'live'"
+                    :disabled="!isUpdateableRoadmapShare(share)"
                     @click="useExistingShare(share)"
                   >
                     <PhPencilSimple :size="15" />
-                    {{ targetMode === 'existing' && selectedShareId === share.id ? 'Selected' : 'Use' }}
+                    {{ targetMode === 'existing' && selectedShareId === share.id ? 'Selected' : 'Update this share' }}
                   </button>
                   <button
                     type="button"
                     :data-test="'share-revoke-' + share.id"
-                    class="roadmap-action text-single-sm-medium text-text-subtle-default hover:text-text-primary-default inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 disabled:pointer-events-none disabled:opacity-40"
-                    :disabled="share.status !== 'live' || pending"
+                    class="roadmap-action text-single-sm-medium inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 disabled:pointer-events-none disabled:opacity-40"
+                    :class="
+                      isUnpublishableRoadmapShare(share)
+                        ? 'text-text-primary-default hover:text-[color:var(--color-accent-brand-default)]'
+                        : 'text-text-subtle-default'
+                    "
+                    :disabled="!isUnpublishableRoadmapShare(share) || pending"
                     @click="requestDisableShare(share)"
                   >
                     <PhLinkBreak :size="15" />
-                    Disable link
+                    Unpublish
                   </button>
                 </div>
               </li>
@@ -657,28 +1057,34 @@ const primaryCls =
       <div v-else-if="result" class="flex-1 overflow-y-auto px-6 py-6">
         <div class="mb-1.5 flex items-center gap-2 text-[color:var(--color-text-success-default,#27be51)]">
           <PhCheckCircle :size="20" weight="fill" />
-          <span class="text-single-base-medium font-semibold">{{ resultVerb }}</span>
+          <span class="text-single-base-medium font-semibold">
+            {{ [resultVerb, resultStatusLabel, resultAccessLabel].filter(Boolean).join(' · ') }}
+          </span>
         </div>
         <p class="text-single-sm-medium text-text-subtle-default mb-4">
-          {{ result?.action === 'updated' ? 'Your share was updated in place at the same URL.' : 'Your share is ready.' }}
+          {{ resultMessage }}
         </p>
-        <label :class="labelCls" for="share-result">Share link</label>
-        <div class="flex gap-2">
-          <input id="share-result" :value="result.url" readonly data-test="result-url" :class="[inputCls, 'flex-1']" />
-          <Button variant="outline" :href="result.url" target="_blank" rel="noreferrer" class="shrink-0" data-test="open-result">
-            <PhArrowSquareOut :size="15" />
-            Open
-          </Button>
-          <Button variant="outline" class="shrink-0" @click="copyUrl">
-            <component :is="copied ? PhCheck : PhCopy" :size="15" />
-            {{ copied ? 'Copied' : 'Copy' }}
-          </Button>
-        </div>
+        <template v-if="resultIsPublished">
+          <label :class="labelCls" for="share-result">Share link</label>
+          <div class="flex flex-wrap gap-2">
+            <input id="share-result" :value="result.url" readonly data-test="result-url" :class="[inputCls, 'min-w-0 flex-1 max-sm:basis-full']" />
+            <Button variant="outline" :href="result.url" target="_blank" rel="noreferrer" class="shrink-0" data-test="open-result">
+              <PhArrowSquareOut :size="15" />
+              Open
+            </Button>
+            <Button variant="outline" class="shrink-0" :disabled="copying" @click="copyUrl">
+              <component :is="copied ? PhCheck : PhCopy" :size="15" />
+              {{ copied ? 'Copied' : 'Copy' }}
+            </Button>
+          </div>
+        </template>
       </div>
 
+      <p v-if="copyError" role="alert" class="mx-6 mb-4 text-sm text-text-subtle-default">{{ copyError }}</p>
+      <p v-else-if="copied" role="status" class="sr-only">Share link copied.</p>
       <!-- Error -->
       <p
-        v-if="error && !result"
+        v-if="error && !result" role="alert"
         class="bg-surface-transparent-orange-25 text-single-sm-medium mx-6 mb-1 rounded-lg px-3 py-2 text-[color:var(--color-accent-brand-default)]"
       >
         {{ error }}
@@ -697,7 +1103,7 @@ const primaryCls =
           </Button>
         </template>
         <template v-else>
-          <Button variant="ghost" data-test="back" @click="step = 1">Back</Button>
+          <Button variant="ghost" data-test="back" :disabled="pending" @click="step = 1">Back</Button>
           <Button variant="primary" data-test="submit" :class="primaryCls" :disabled="!canSubmit || pending" @click="submit">
             {{ submitLabel }}
           </Button>
@@ -705,6 +1111,7 @@ const primaryCls =
       </footer>
     </div>
   </div>
+  <ConfirmAction v-if="revokeTarget" title="Unpublish this share?" :message="`Viewers will no longer be able to open “${shareRoadmapTitle(revokeTarget)}”. You can publish it again at the same link.`" confirm-label="Unpublish share" @cancel="revokeTarget = null" @confirm="confirmRevoke" />
 </template>
 
 <style scoped>

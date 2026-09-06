@@ -1,13 +1,7 @@
 // Content-collection schemas + the canonical enum constants used across the site.
 import { z } from 'zod';
 
-export const PRODUCTS = [
-  'Music App',
-  'Podcasts & Audiobooks',
-  'Spotify for Artists',
-  'Ads Platform',
-  'Core Platform & Data',
-] as const;
+export const PRODUCTS = ['Music App', 'Podcasts & Audiobooks', 'Spotify for Artists', 'Ads Platform', 'Core Platform & Data'] as const;
 export const HORIZONS = ['Candidates', 'Now', 'Next', 'Later', 'Completed'] as const;
 export const STAGES = [
   'Discovery', 'Validation', 'Shaping', 'Committed', 'Building', 'Pilot', 'Shipped', 'Parked',
@@ -15,6 +9,10 @@ export const STAGES = [
 export const LEVELS = ['Low', 'Medium', 'High'] as const;
 export const VISIBILITIES = ['Internal', 'Public'] as const;
 export const EXTERNAL_VISIBILITIES = ['Internal only', 'Customer-safe', 'Public'] as const;
+// Exec layer: why an item is funded, when it is aimed at, and how firm that is.
+// Read by the C-level view alongside the item's `## Bottom line` section.
+export const COMMERCIAL_DRIVERS = ['Revenue', 'Retention', 'Cost', 'Compliance', 'Foundation'] as const;
+export const CONFIDENCES = ['Low', 'Medium', 'High'] as const;
 
 export type Product = (typeof PRODUCTS)[number];
 export type Horizon = (typeof HORIZONS)[number];
@@ -22,6 +20,8 @@ export type Stage = (typeof STAGES)[number];
 export type Level = (typeof LEVELS)[number];
 export type Visibility = (typeof VISIBILITIES)[number];
 export type ExternalVisibility = (typeof EXTERNAL_VISIBILITIES)[number];
+export type CommercialDriver = (typeof COMMERCIAL_DRIVERS)[number];
+export type Confidence = (typeof CONFIDENCES)[number];
 
 export const itemSchema = z.object({
   id: z.string(),
@@ -38,6 +38,10 @@ export const itemSchema = z.object({
   // External sharing metadata. Copy stays canonical; public/share surfaces hide
   // internal-only detail sections rather than using parallel customer-facing copy.
   external_visibility: z.enum(EXTERNAL_VISIBILITIES).default('Internal only'),
+  // Exec layer. Optional: only the funded items carry these today.
+  commercial_driver: z.enum(COMMERCIAL_DRIVERS).optional(),
+  target: z.string().optional(),
+  confidence: z.enum(CONFIDENCES).optional(),
 });
 export type ItemFrontmatter = z.infer<typeof itemSchema>;
 

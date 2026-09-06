@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -23,6 +24,8 @@ type syncOutcome struct {
 	Errors          []string
 	Conflicts       []string
 	SkippedReorders []string
+	CreatedIDs      map[string]string
+	NoChanges       bool
 }
 
 type ItemGitMetadata struct {
@@ -302,11 +305,7 @@ func applyRepoFiles(root string, write []RepoFile, del []string) error {
 		if err != nil {
 			return err
 		}
-		dst := filepath.Join(root, filepath.FromSlash(repoPath))
-		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(dst, []byte(f.Content), 0o644); err != nil {
+		if err := writeConfined(root, repoPath, []byte(f.Content)); err != nil {
 			return err
 		}
 	}
@@ -315,7 +314,11 @@ func applyRepoFiles(root string, write []RepoFile, del []string) error {
 		if err != nil {
 			return err
 		}
-		if err := os.Remove(filepath.Join(root, filepath.FromSlash(repoPath))); err != nil && !os.IsNotExist(err) {
+		dst, err := confinedPath(root, repoPath)
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
@@ -402,6 +405,9 @@ func (g *GitHub) syncChangeset(ctx context.Context, cs Changeset, msg, login str
 }
 
 func (g *GitHub) applyCommitPush(ctx context.Context, token, wt string, cs Changeset, msg, login, baseSHA string) (syncOutcome, []byte, error, error) {
+	if prior, exists, err := g.existingPublication(ctx, token, wt, login, cs); err != nil || exists {
+		return prior, nil, nil, err
+	}
 	current, err := readItemsFromDir(wt)
 	if err != nil {
 		return syncOutcome{}, nil, nil, err
@@ -420,15 +426,35 @@ func (g *GitHub) applyCommitPush(ctx context.Context, token, wt string, cs Chang
 	if err := applyRepoFiles(wt, write, del); err != nil {
 		return syncOutcome{}, nil, nil, err
 	}
-	if _, err := g.runGit(ctx, token, wt, "add", "-A", "--", "content/items"); err != nil {
+	if err := g.applyAssets(wt, cs.Assets, login); err != nil {
+		return syncOutcome{Errors: []string{err.Error()}}, nil, nil, nil
+	}
+	createdIDs, err := createdIdentityMap(cs, current)
+	if err != nil {
 		return syncOutcome{}, nil, nil, err
 	}
-	status, err := g.runGit(ctx, token, wt, "status", "--porcelain", "--", "content/items")
+	if _, err := g.runGit(ctx, token, wt, "add", "-A", "--", "content"); err != nil {
+		return syncOutcome{}, nil, nil, err
+	}
+	status, err := g.runGit(ctx, token, wt, "status", "--porcelain", "--", "content")
 	if err != nil {
 		return syncOutcome{}, nil, nil, err
 	}
 	if strings.TrimSpace(string(status)) == "" {
-		return syncOutcome{SHA: baseSHA, SkippedReorders: skippedReorders}, nil, nil, nil
+		return syncOutcome{SHA: baseSHA, SkippedReorders: skippedReorders, NoChanges: true}, nil, nil, nil
+	}
+	if cs.RequestID != "" {
+		receipt := PublicationReceipt{RequestID: cs.RequestID, Actor: login, Digest: payloadDigest(cs), CreatedIDs: createdIDs, CommittedAt: time.Now().UTC().Format(time.RFC3339)}
+		data, err := json.MarshalIndent(receipt, "", "  ")
+		if err != nil {
+			return syncOutcome{}, nil, nil, err
+		}
+		if err = writeConfined(wt, publicationPath(login, cs.RequestID), append(data, '\n')); err != nil {
+			return syncOutcome{}, nil, nil, err
+		}
+		if _, err = g.runGit(ctx, token, wt, "add", "--", publicationPath(login, cs.RequestID)); err != nil {
+			return syncOutcome{}, nil, nil, err
+		}
 	}
 	ident := cleanGitIdent(login)
 	author := fmt.Sprintf("%s <%s@users.noreply.github.com>", ident, ident)
@@ -447,5 +473,5 @@ func (g *GitHub) applyCommitPush(ctx context.Context, token, wt string, cs Chang
 	if pushErr != nil {
 		return syncOutcome{}, pushOut, pushErr, nil
 	}
-	return syncOutcome{SHA: strings.TrimSpace(string(shaOut)), SkippedReorders: skippedReorders}, nil, nil, nil
+	return syncOutcome{SHA: strings.TrimSpace(string(shaOut)), SkippedReorders: skippedReorders, CreatedIDs: createdIDs}, nil, nil, nil
 }

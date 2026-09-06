@@ -4,24 +4,14 @@ import { getCollection } from 'astro:content';
 import Breadcrumb from '../../components/ui/Breadcrumb.vue';
 import { DOC_COLLECTIONS, DOC_TYPE_LABEL, DOC_TYPE_ROUTE, docBasename } from '../../lib/slugs';
 import { getVisibleDocCollection } from '../../lib/docs';
-import { toneSurface, toneText, type Tone } from '../../lib/display';
 import { IS_PUBLIC } from '../../lib/audience';
 import { formatDateOnly } from '../../lib/dates';
 
 const base = import.meta.env.BASE_URL;
 const prefix = base.replace(/\/$/, '');
 
-// Doc-type identity colors (must match the doc pages).
-const TYPE_TONE: Record<(typeof DOC_COLLECTIONS)[number], Tone> = {
-  prds: 'orange',
-  techDesign: 'blue',
-  research: 'green',
-};
-
-const items = (await getCollection('items')).filter((e) => !IS_PUBLIC || e.data.visibility === 'Public');
-const itemTitle = new Map(
-  items.map((e) => [e.data.id, e.data.title]),
-);
+const items = (await getCollection('items')).filter((entry) => !IS_PUBLIC || entry.data.visibility === 'Public');
+const itemTitle = new Map(items.map((entry) => [entry.data.id, entry.data.title]));
 
 const groups = [];
 for (const coll of DOC_COLLECTIONS) {
@@ -29,88 +19,83 @@ for (const coll of DOC_COLLECTIONS) {
   groups.push({
     coll,
     label: DOC_TYPE_LABEL[coll],
-    tone: TYPE_TONE[coll],
-    docs: docs.map((e) => {
-      const itemId = e.data.roadmap_item ?? null;
+    docs: docs.map((entry) => {
+      const itemId = entry.data.roadmap_item ?? null;
+      const linkedItemTitle = itemId ? itemTitle.get(itemId) : null;
       return {
-        title: e.data.title ?? docBasename(e.id),
-        href: `${prefix}/docs/${DOC_TYPE_ROUTE[coll]}/${docBasename(e.id)}`,
-        status: e.data.status ?? null,
-        updated: e.data.updated ? e.data.updated.toISOString().slice(0, 10) : '',
-        item: itemId ? { id: itemId, title: itemTitle.get(itemId) ?? itemId, href: `${prefix}/item/${itemId}` } : null,
+        title: entry.data.title ?? docBasename(entry.id),
+        href: `${prefix}/docs/${DOC_TYPE_ROUTE[coll]}/${docBasename(entry.id)}`,
+        status: entry.data.status ?? null,
+        updated: entry.data.updated ? entry.data.updated.toISOString().slice(0, 10) : '',
+        item: itemId && linkedItemTitle
+          ? { id: itemId, title: linkedItemTitle, href: `${prefix}/item/${itemId}` }
+          : null,
       };
     }),
   });
 }
-const total = groups.reduce((n, g) => n + g.docs.length, 0);
+const total = groups.reduce((count, group) => count + group.docs.length, 0);
+const visibleGroups = groups.filter((group) => group.docs.length > 0);
 ---
 
-<Base title="Docs · Roadmap" active="docs" description="PRDs, technical designs, and research behind the roadmap.">
-  <main class="page-reveal mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-      <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: 'Docs' }]} />
-      <h1 class="font-display text-text-primary-default mt-6 text-[2rem] sm:text-[2.4rem]">Docs library</h1>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        {total > 0
-          ? `The ${total} PRDs, technical designs, and research notes behind the roadmap.`
-          : 'PRDs, technical designs, and research notes authored inside this repo will live here.'}
-      </p>
+<Base
+  title="Source documents · Roadmap"
+  active="docs"
+  description="Workshop notes, research, and planning documents referenced by roadmap items."
+>
+  <main class="support-page page-reveal mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
+    <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: 'Source documents' }]} />
 
+    <section class="roadmap-masthead mt-6 rounded-[20px] px-5 py-5 sm:px-6 sm:py-6 lg:px-7">
+      <h1 class="roadmap-display roadmap-title text-[2rem] sm:text-[2.55rem]">Source documents</h1>
+      <p class="roadmap-muted text-body-md mt-3 max-w-2xl">
+        Workshop notes, research, and planning documents referenced by roadmap items.
+        Open an item’s <b class="roadmap-title font-medium">Resources</b> to see the material relevant to that work.
+      </p>
+    </section>
+
+    <section class="mt-6" aria-label="Source documents">
       {total === 0 && (
-        <div class="border-border-subtle-default bg-card mt-8 rounded-xl border border-dashed px-5 py-6">
-          <p class="text-single-sm-medium mb-2 inline-flex items-center gap-2 rounded-full px-2.5 py-1" style={`background:${toneSurface.yellow};color:${toneText.yellow}`}>
-            Work in progress
+        <div class="border-border-subtle-default bg-card rounded-xl border border-dashed px-5 py-6">
+          <p class="text-single-base-medium text-text-primary-default">
+            No source documents available
           </p>
-          <p class="text-body-md text-text-primary-default mt-1">
-            This library is a placeholder for now. It fills in as we start adding internal
-            assets — PRDs, technical designs, and research — as markdown in the repo.
-          </p>
-          <p class="text-single-sm-medium text-text-subtle-default mt-3">
-            External resources (Notion, Figma, Google, decks…) don't live here — they attach
-            directly to each roadmap item and open in a new tab from its card.
+          <p class="text-body-md text-text-primary-default mt-1 max-w-2xl">
+            Return to the <a href={base} class="text-text-link-default underline underline-offset-4">roadmap</a> to explore current work.
           </p>
         </div>
       )}
 
-      {
-        groups.map(
-          (g) =>
-            g.docs.length > 0 && (
-              <section class="mt-8">
-                <h2 class="text-single-sm-medium text-text-subtle-default mb-3 flex items-center gap-2 tracking-wide uppercase">
-                  <span class="size-2 rounded-full" style={`background:${toneText[g.tone]}`} />
-                  {g.label}
-                  <span class="text-text-subtle-default font-normal normal-case">· {g.docs.length}</span>
-                </h2>
-                <div class="flex flex-col gap-2">
-                  {g.docs.map((d) => (
-                    <a
-                      href={d.href}
-                      class="border-border-subtle-default bg-card hover:border-border-subtle-hover block rounded-lg border px-4 py-3 shadow-sm transition duration-150 hover:shadow-md"
-                    >
-                      <span class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <span
-                          class="text-single-sm-medium rounded px-1.5 py-0.5 font-semibold tracking-wide uppercase"
-                          style={`background:${toneSurface[g.tone]};color:${toneText[g.tone]}`}
-                        >
-                          {g.label}
-                        </span>
-                        <span class="text-single-base-medium text-text-primary-default flex-1">{d.title}</span>
-                        {d.status && (
-                          <span class="text-single-sm-medium bg-surface-subtle-default text-text-subtle-default rounded-full px-2 py-0.5">
-                            {d.status}
-                          </span>
-                        )}
-                      </span>
-                      <span class="text-single-sm-medium text-text-subtle-default mt-1.5 flex flex-wrap items-center gap-x-2">
-                        {d.item && <span>For {d.item.title} ({d.item.id})</span>}
-                        {d.updated && <span>· Updated <time datetime={d.updated}>{formatDateOnly(d.updated)}</time></span>}
-                      </span>
-                    </a>
-                  ))}
-                </div>
-              </section>
-            ),
-        )
-      }
-    </main>
+      {visibleGroups.map((group, index) => (
+        <section class:list={[index > 0 && 'mt-6']}>
+          {visibleGroups.length > 1 && <h2 class="roadmap-label mb-3">{group.label}</h2>}
+          <ul class="divide-border-subtle-default divide-y border-b border-border-subtle-default">
+            {group.docs.map((doc) => (
+              <li>
+                <a href={doc.href} class="roadmap-action group hover:bg-surface-primary-hover block px-3 py-5">
+                  <span class="flex items-start justify-between gap-4">
+                    <span class="text-single-base-medium text-text-primary-default group-hover:text-text-link-default min-w-0">{doc.title}</span>
+                    <span aria-hidden="true" class="text-text-link-default shrink-0">→</span>
+                  </span>
+                  {(doc.status || doc.item || doc.updated) && (
+                    <span class="text-single-sm-medium text-text-subtle-default mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {doc.status && <span class="bg-surface-subtle-default rounded-full px-2 py-0.5">{doc.status}</span>}
+                      {doc.item && <span>For {doc.item.title} ({doc.item.id})</span>}
+                      {doc.updated && <span>Updated <time datetime={doc.updated}>{formatDateOnly(doc.updated)}</time></span>}
+                    </span>
+                  )}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+
+      {total > 0 && (
+        <p class="text-body-sm text-text-subtle-default mt-5 max-w-2xl">
+          These documents record the context when they were written. Check the <a href={base} class="text-text-link-default underline underline-offset-4">roadmap</a> for current priorities and progress.
+        </p>
+      )}
+    </section>
+  </main>
 </Base>

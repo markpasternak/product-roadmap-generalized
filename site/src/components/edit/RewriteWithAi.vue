@@ -22,7 +22,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import Button from '../ui/Button.vue';
 import { PhX, PhSparkle, PhPaperPlaneTilt, PhCircleNotch, PhCheck, PhArrowCounterClockwise, PhStop, PhCaretLeft } from '@phosphor-icons/vue';
-import { trapFocus } from '../../lib/focusTrap';
+import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
 import { renderMarkdown } from '../../lib/edit/renderMarkdown';
 import { parseSections } from '../../lib/edit/sections';
 import {
@@ -163,8 +163,10 @@ async function sendInstruction() {
   planController = controller;
   try {
     for await (const delta of planStream(convo.value, { signal: controller.signal })) {
+      if (planController !== controller) return;
       streamingText.value += delta;
     }
+    if (planController !== controller) return;
     if (controller.signal.aborted) {
       // Cancelled — discard the partial reply and roll back the instruction so the
       // editor can simply retry, same as a failed stream.
@@ -189,13 +191,16 @@ async function sendInstruction() {
       }
     }
   } catch (err) {
+    if (planController !== controller) return;
     if (!(err instanceof AiAbortedError)) error.value = friendlyMessage(err);
     convo.value = { snapshot: convo.value.snapshot, turns: convo.value.turns.slice(0, -1) };
     timeline.value = timeline.value.slice(0, -1);
   } finally {
-    planning.value = false;
-    streamingText.value = '';
-    if (planController === controller) planController = null;
+    if (planController === controller) {
+      planning.value = false;
+      streamingText.value = '';
+      planController = null;
+    }
   }
 }
 
@@ -218,6 +223,7 @@ async function applyChanges() {
   applyController = controller;
   try {
     const result = await applyRewrite(convo.value, props.body, { signal: controller.signal });
+    if (applyController !== controller || controller.signal.aborted) return;
     const nextDiff = sectionDiff(parseSections(props.body).sections, parseSections(result.body).sections);
     if (nextDiff.every((entry) => entry.status === 'unchanged')) {
       timeline.value = [
@@ -234,10 +240,12 @@ async function applyChanges() {
       mode.value = 'diff';
     }
   } catch (err) {
-    if (!(err instanceof AiAbortedError)) error.value = friendlyMessage(err);
+    if (applyController === controller && !(err instanceof AiAbortedError)) error.value = friendlyMessage(err);
   } finally {
-    applying.value = false;
-    if (applyController === controller) applyController = null;
+    if (applyController === controller) {
+      applying.value = false;
+      applyController = null;
+    }
   }
 }
 
@@ -297,6 +305,10 @@ function noteBubbleClass(noteKind: 'no-change' | 'applied'): string {
  * close/Escape/scrim (which then also emit('close')) and by the "Stop" button (which
  * doesn't — it just cancels and leaves the panel open). */
 function abortInFlight() {
+  if (planController) {
+    convo.value = { snapshot: convo.value.snapshot, turns: convo.value.turns.slice(0, -1) };
+    timeline.value = timeline.value.slice(0, -1);
+  }
   planController?.abort();
   applyController?.abort();
   planController = null;
@@ -317,12 +329,7 @@ function stopGeneration() {
 // way out, since canvas-drop's ai.chat/ai.stream have no server-side abort param).
 // Instead, closing while a generation is in flight cancels it first (client-side only —
 // see abortInFlight/client.ts) and then closes. A focus trap is scoped to this panel.
-// No scroll-lock here — this panel only ever opens from inside `ItemEditor`, which
-// already locks `document.body` scroll for as long as it's mounted; re-locking/unlocking
-// here (this panel is teleported to `<body>`, a sibling of ItemEditor's own DOM, but
-// still opens and closes while ItemEditor stays mounted) would otherwise re-enable
-// background scroll the moment this panel closes, out from under the still-open item
-// editor.
+// Nested panels share the focus helper’s scroll lock.
 const panel = ref<HTMLElement>();
 let release: (() => void) | null = null;
 function closePanel() {
@@ -330,6 +337,7 @@ function closePanel() {
   emit('close');
 }
 function onKey(e: KeyboardEvent) {
+  if (!isTopFocusTrap(panel.value)) return;
   if (e.key === 'Escape') closePanel();
 }
 function onScrimClick() {
@@ -338,13 +346,12 @@ function onScrimClick() {
 onMounted(async () => {
   document.addEventListener('keydown', onKey);
   await nextTick();
-  if (panel.value) release = trapFocus(panel.value);
+  if (panel.value) release = trapFocus(panel.value, { initialFocus: () => instructionInput.value });
 });
 onUnmounted(() => {
   document.removeEventListener('keydown', onKey);
   release?.();
-  planController?.abort();
-  applyController?.abort();
+  abortInFlight();
 });
 
 const primaryCls = 'bg-accent-brand-default hover:bg-accent-brand-hover active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none';

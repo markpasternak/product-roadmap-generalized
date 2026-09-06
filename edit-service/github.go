@@ -310,10 +310,12 @@ func (g *GitHub) collaboratorCanPush(ctx context.Context, login string) (bool, e
 // re-fetch rather than pin a run id, since git shas/run ids aren't ordered
 // and a superseded run can be cancelled by a newer one.
 type DeployRun struct {
-	Status     string `json:"status"`
-	Conclusion string `json:"conclusion"`
-	HeadSHA    string `json:"headSha"`
-	HTMLURL    string `json:"htmlUrl"`
+	Status         string `json:"status"`
+	Conclusion     string `json:"conclusion"`
+	HeadSHA        string `json:"headSha"`
+	HTMLURL        string `json:"htmlUrl"`
+	IncludesCommit bool   `json:"includesCommit,omitempty"`
+	Live           bool   `json:"live,omitempty"`
 }
 
 // latestDeployRun returns the most recent deploy.yml run on main via the

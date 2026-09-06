@@ -1,0 +1,64 @@
+/* Product Roadmap editorial surfaces: serif headlines, whitespace, and a single orange accent. */
+:root:root .support-page .roadmap-masthead {
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle-default);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 2rem 0 2.5rem;
+  --roadmap-ink: var(--color-text-primary-default);
+  --roadmap-ink-muted: var(--color-text-subtle-default);
+}
+:root:root .support-page .roadmap-masthead::after { display: none; }
+:root:root .support-page .roadmap-masthead h1 {
+  font-size: clamp(2.5rem, 4.5vw, 3.5rem);
+  line-height: 1.08;
+  max-width: 20ch;
+  margin-top: 1rem;
+}
+:root:root .support-page .roadmap-masthead h1 em { color: inherit; }
+:root:root .support-page .roadmap-glass,
+:root:root .support-page .roadmap-card {
+  background: var(--color-card);
+  border-color: var(--color-border-subtle-default);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+:root:root .support-page .roadmap-card { border-radius: 8px; }
+:root:root .support-page .roadmap-card:hover { border-color: var(--color-accent-brand-default); }
+:root:root .site-navbar { background: var(--color-card); backdrop-filter: none; }
+.disclosure-caret { display: inline-block; width: 6px; height: 6px; margin: 0 2px 3px 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); opacity: .65; }
+[aria-expanded='true'] > .disclosure-caret { transform: rotate(225deg); margin-bottom: -2px; }
+.control-popover { position: absolute; z-index: 35; padding: .4rem; border: 1px solid var(--color-border-subtle-default); border-radius: 8px; background: var(--color-card); color: var(--color-text-primary-default); box-shadow: 0 12px 36px rgb(0 0 0 / .18); font-size: .8rem; }
+.site-account { position: relative; justify-self: end; }
+.account-trigger { display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: .5rem .65rem; border-radius: 6px; font-size: .8rem; }
+.account-trigger:hover, .account-trigger[aria-expanded='true'] { background: var(--color-surface-primary-hover); }
+.account-panel { top: calc(100% + .65rem); right: 0; width: 288px; max-width: calc(100vw - 32px); }
+.account-section { display: grid; gap: .55rem; padding: .85rem; }
+.account-section + .account-section { border-top: 1px solid var(--color-border-subtle-default); }
+.account-label { font-size: .7rem; color: var(--color-text-subtle-default); }
+.account-section strong { font-size: .85rem; font-weight: 550; overflow-wrap: anywhere; }
+.account-section p, .account-identity > span { font-size: .75rem; line-height: 1.5; color: var(--color-text-subtle-default); overflow-wrap: anywhere; }
+.account-sign-in { display: flex; min-height: 40px; align-items: center; justify-content: center; border-radius: 5px; padding: .5rem 1rem; }
+
+:root:root body:has(.support-page) { background: var(--roadmap-page-bg); }
+
+/* Keep names visible on phones. The lane jump bar uses the same header height. */
+@media (max-width: 640px) {
+  :root:root { --roadmap-nav-height: 104px; }
+  .site-navigation-layout { grid-template-columns: 1fr auto; padding-top: .4rem; }
+  .site-navigation-layout > a { min-height: 48px; border: 0; justify-self: start; }
+  .site-navigation-layout > nav { grid-row: 2; grid-column: 1 / -1; justify-content: space-between; padding: 0; min-height: 48px; }
+  .site-navigation-layout > nav a { min-height: 44px; padding-inline: .5rem; gap: .35rem; font-size: .75rem; }
+  .site-navigation-layout > nav a > span { display: inline; }
+  .site-navigation-layout > div:last-child { grid-column: 2; grid-row: 1; }
+}
+
+.roadmap-prose { max-width: 70ch; line-height: 1.75; }
+.drawer-panel .item-prose { line-height: 1.75; }
+.document-disclosure { border-block: 1px solid var(--color-border-subtle-default); }
+.document-disclosure summary { padding: .85rem 0; min-height: 44px; cursor: pointer; font-size: .875rem; font-weight: 500; }
+.document-disclosure summary > span { font-weight: 400; }
+.document-disclosure + article .document-disclosure { border-top: 0; }
+
+.support-page :is(h2, h3, section)[id] { scroll-margin-top: calc(var(--roadmap-nav-height) + 1.5rem); }

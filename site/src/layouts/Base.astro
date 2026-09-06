@@ -1,7 +1,9 @@
 ---
 import '../styles/global.css';
+import '../styles/resources.css';
 import Navbar from '../components/ui/Navbar.vue';
 import { ClientRouter } from 'astro:transitions';
+import { ROADMAP_FAVICON } from '../lib/brand';
 import { formatDateTime } from '../lib/dates';
 
 interface Props {
@@ -14,7 +16,7 @@ interface Props {
   ogImage?: string;
 }
 const { title, active, description, ogType = 'website', ogImage } = Astro.props;
-const base = import.meta.env.BASE_URL;
+const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/`;
 const buildGlobal = globalThis as typeof globalThis & { __ROADMAP_BUILD_TIME__?: string };
 const builtIso = buildGlobal.__ROADMAP_BUILD_TIME__ ??= new Date().toISOString();
 const builtAt = new Date(builtIso);
@@ -22,15 +24,6 @@ const built = formatDateTime(builtAt, { timeZone: 'UTC', suffix: 'UTC' });
 // Absolute URLs for canonical/OG — Astro.site comes from SITE_URL in astro.config.
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
 const ogImageUrl = new URL(ogImage ?? `${base}brand/og-card.png`, Astro.site).href;
-// The product mark (accent square + three horizon bars) as the favicon — same glyph
-// as ui/BrandMark.vue, inlined so the tab icon costs no extra request.
-const favicon =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 415 415'%3E"
-  + "%3Crect width='415' height='415' rx='41.5' fill='%2312857c'/%3E"
-  + "%3Crect x='88' y='120' width='239' height='44' rx='22' fill='%23fff'/%3E"
-  + "%3Crect x='88' y='186' width='172' height='44' rx='22' fill='%23fff' fill-opacity='.82'/%3E"
-  + "%3Crect x='88' y='252' width='105' height='44' rx='22' fill='%23fff' fill-opacity='.6'/%3E"
-  + "%3C/svg%3E";
 ---
 
 <html lang="en" data-theme="light">
@@ -52,7 +45,7 @@ const favicon =
     <meta name="twitter:title" content={title} />
     {description && <meta name="twitter:description" content={description} />}
     <meta name="twitter:image" content={ogImageUrl} />
-    <link rel="icon" href={favicon} />
+    <link rel="icon" href={ROADMAP_FAVICON} />
     <script is:inline>
       (() => {
         const theme = () => {
@@ -93,7 +86,9 @@ const favicon =
 
         document.addEventListener('keydown', (e) => {
           const tag = e.target && e.target.tagName;
-          if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+          if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+          if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return;
+          if (e.target?.closest?.('button, a, summary, [role=dialog], [role=alertdialog]')) return;
           const itemPage = document.querySelector('[data-item-page]');
           if (!itemPage) return;
           const href = e.key === 'ArrowLeft'
@@ -110,13 +105,25 @@ const favicon =
           const target = event.target instanceof Element ? event.target.closest('[data-copy-link]') : null;
           if (!target) return;
           event.preventDefault();
-          await navigator.clipboard?.writeText(location.href);
+          if (target.disabled) return;
           const label = target.querySelector('[data-copy-label]');
+          const status = document.querySelector('[data-copy-status]');
           if (!label) return;
-          const oldText = label.textContent;
-          label.textContent = 'Copied';
           clearTimeout(copyTimers.get(target));
-          copyTimers.set(target, setTimeout(() => (label.textContent = oldText), 1400));
+          target.disabled = true;
+          if (status) status.textContent = '';
+          try {
+            await navigator.clipboard.writeText(location.origin + location.pathname);
+            label.textContent = 'Copied';
+            if (status) status.textContent = 'Item link copied.';
+            copyTimers.set(target, setTimeout(() => {
+              label.textContent = 'Copy link';
+              if (status) status.textContent = '';
+            }, 2500));
+          } catch {
+            label.textContent = 'Copy link';
+            if (status) status.textContent = 'Couldn’t copy the link. Check your browser’s clipboard permission and try again.';
+          } finally { target.disabled = false; }
         });
 
         document.addEventListener('astro:before-swap', (event) => {
@@ -140,7 +147,7 @@ const favicon =
           set:html={`
         if (!window.canvasdrop) {
           const devShares = window.__devCanvasdropShares || (window.__devCanvasdropShares = []);
-          const devUser = { id: 'dev', email: 'you@example.com', name: 'Dev Member' };
+          const devUser = { id: 'dev', email: 'demo@example.com', name: 'Dev Member' };
           const delay = () => new Promise((r) => setTimeout(r, 400));
           const bytesOf = (bundle) => bundle
             ? (bundle.size != null ? bundle.size : bundle.byteLength)
@@ -184,10 +191,12 @@ const favicon =
                   url: location.origin + '/dev-share/' + id + '/ (mock - not published)',
                   title: opts.title,
                   tags: opts.tags || [],
-                  access: opts.access || 'public_link',
+                  access: opts.access === 'password' ? 'public_link' : (opts.access || 'private'),
+                  hasPassword: opts.access === 'password' && Boolean(opts.password),
                   createdAt: now,
                   updatedAt: now,
                   expiresAt: opts.expiresAt ?? null,
+                  galleryListed: false,
                   revokedAt: null,
                   createdBy: devUser.id,
                   version: 'dev-v1',
@@ -200,7 +209,7 @@ const favicon =
               update: async (id, opts) => {
                 const share = devShares.find((s) => s.id === id);
                 if (!share) throw Object.assign(new Error('Share not found.'), { code: 'NOT_FOUND', status: 404 });
-                if (share.revokedAt) throw Object.assign(new Error('Revoked shares cannot be updated.'), { code: 'SHARE_REVOKED', status: 409 });
+                if (share.revokedAt && !opts.bundle) throw Object.assign(new Error('This share is unpublished; include a bundle to publish it again.'), { code: 'SHARE_REVOKED', status: 409 });
                 console.log('[dev canvasdrop] update()', {
                   id, title: opts.title, access: opts.access, tags: opts.tags,
                   expiresAt: opts.expiresAt, metadata: opts.metadata, bundleBytes: bytesOf(opts.bundle),
@@ -209,10 +218,14 @@ const favicon =
                 const now = Date.now();
                 if ('title' in opts) share.title = opts.title;
                 if ('tags' in opts) share.tags = opts.tags || [];
-                if ('access' in opts) share.access = opts.access || share.access;
+                if ('access' in opts) share.access = opts.access === 'password' ? 'public_link' : (opts.access || share.access);
+                if ('password' in opts) share.hasPassword = opts.password === null ? false : Boolean(opts.password) || share.hasPassword;
                 if ('expiresAt' in opts) share.expiresAt = opts.expiresAt ?? null;
                 if ('metadata' in opts) share.metadata = opts.metadata || {};
-                if (opts.bundle) share.version = 'dev-v' + now;
+                if (opts.bundle) {
+                  share.version = 'dev-v' + now;
+                  share.revokedAt = null;
+                }
                 share.updatedAt = now;
                 share.bundleUpdatedAt = now;
                 return normalize(share);
@@ -236,17 +249,20 @@ const favicon =
     }
   </head>
   <body class="bg-background flex min-h-screen flex-col">
+    <a class="skip-link" href="#main-content">Skip to content</a>
     <Navbar client:load base={base} active={active} />
-    <div class="flex-1"><slot /></div>
+    <div id="main-content" tabindex="-1" class="flex-1"><slot /></div>
     <footer class="site-footer border-border-subtle-default mt-16 border-t">
       <div
         class="text-single-sm-medium text-text-subtle-default mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-2 px-4 py-6 sm:px-6"
       >
-        <span>Product Roadmap · Now / Next / Later</span>
-        <span class="flex items-center gap-3">
+        <span>Demo portfolio · Fictional roadmap data</span>
+        <span class="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <a href={`${base}docs`} class="hover:text-text-primary-default transition-colors">Source documents</a>
+          <span>·</span>
           <a href={`${base}themes`} class="hover:text-text-primary-default transition-colors">Themes</a>
           <span>·</span>
-          <a href={`${base}changelog`} class="hover:text-text-primary-default transition-colors">What changed</a>
+          <a href={`${base}changelog`} class="hover:text-text-primary-default transition-colors">Recent item updates</a>
           <span>·</span>
           <span>Published <time datetime={builtIso} data-local-date-time>{built}</time></span>
         </span>
