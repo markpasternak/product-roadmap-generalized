@@ -198,4 +198,58 @@ describe("account draft saving", () => {
     expect(sync.state.value).toBe("saved");
     expect(store.bodyValue("A")).toBe("Typed while connecting");
   });
+  it("removes the account draft after discard and survives reconnect", async () => {
+    const { store, sync } = setup();
+    const remote = { ...store.snapshot(), bodies: { A: "discard me" } };
+    request.mockResolvedValueOnce(response(1, remote));
+    await sync.start("alice");
+    store.clear();
+    request.mockResolvedValueOnce(response(2, null));
+    await sync.flush();
+    expect(JSON.parse(request.mock.calls.at(-1)![1].body).data).toBeNull();
+    request.mockResolvedValueOnce(response(2, null));
+    await sync.reconnect();
+    expect(store.dirtyCount.value).toBe(0);
+    expect(sync.state.value).toBe("saved");
+  });
+  it("adopts a deletion from another device without resurrecting unchanged work", async () => {
+    const { store, sync } = setup();
+    const remote = { ...store.snapshot(), bodies: { A: "old draft" } };
+    request.mockResolvedValueOnce(response(1, remote));
+    await sync.start("alice");
+    request.mockResolvedValueOnce(response(2, null));
+    await sync.reconnect();
+    expect(store.dirtyCount.value).toBe(0);
+    expect(sync.state.value).toBe("saved");
+  });
+  it("preserves concurrent local edits when the account draft was removed elsewhere", async () => {
+    const { store, sync } = setup();
+    const remote = { ...store.snapshot(), bodies: { A: "old draft" } };
+    request.mockResolvedValueOnce(response(1, remote));
+    await sync.start("alice");
+    store.setBody("A", "new local work");
+    request.mockResolvedValueOnce(response(2, null));
+    await sync.reconnect();
+    expect(sync.state.value).toBe("conflict");
+    expect(store.bodyValue("A")).toBe("new local work");
+    sync.resolve(false);
+    expect(store.dirtyCount.value).toBe(0);
+  });
+  it("removes a draft after an older save finishes, keeping its CAS revision", async () => {
+    const { store, sync } = setup();
+    request.mockResolvedValueOnce(response(0, null));
+    await sync.start("alice");
+    store.setBody("A", "first");
+    let finish!: (r: Response) => void;
+    request.mockImplementationOnce(() => new Promise(r => { finish = r; }));
+    const pending = sync.flush();
+    store.clear();
+    finish(response(1, null));
+    await pending;
+    request.mockResolvedValueOnce(response(2, null));
+    await vi.advanceTimersByTimeAsync(700);
+    expect(JSON.parse(request.mock.calls.at(-1)![1].body)).toEqual({ revision: 1, data: null });
+    expect(sync.state.value).toBe("saved");
+  });
+
 });

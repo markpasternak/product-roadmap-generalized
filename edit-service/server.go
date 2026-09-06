@@ -217,12 +217,21 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	// Live-version proof is independent of Actions visibility or retention.
+	commit, deployed := r.URL.Query().Get("commit"), r.URL.Query().Get("deployed")
+	if gitSHA.MatchString(commit) && gitSHA.MatchString(deployed) {
+		live := commit == deployed
+		if !live {
+			live, _ = s.gh.containsCommit(r.Context(), commit, deployed)
+		}
+		if live {
+			jsonResponse(w, 200, DeployRun{Status: "completed", Conclusion: "success", HeadSHA: deployed, IncludesCommit: true, Live: true})
+			return
+		}
+	}
 	run, err := s.gh.latestDeployRun(r.Context())
 	if err == nil && r.URL.Query().Get("commit") != "" {
 		run.IncludesCommit, err = s.gh.containsCommit(r.Context(), r.URL.Query().Get("commit"), run.HeadSHA)
-		if err == nil && r.URL.Query().Get("deployed") != "" {
-			run.Live, err = s.gh.containsCommit(r.Context(), r.URL.Query().Get("commit"), r.URL.Query().Get("deployed"))
-		}
 	}
 	if err != nil {
 		log.Printf("/api/status: latest deploy run failed: %v", err)

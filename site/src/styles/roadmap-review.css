@@ -45,8 +45,8 @@
 .board-view-options label { display: grid; gap: .5rem; flex: 1 1 170px; font-size: .75rem; font-weight: 500; color: var(--roadmap-ink-muted); }
 :root .board-root .roadmap-lane,
 :root .board-root .lane { border: 0; border-radius: 0; padding: 0; background: transparent; box-shadow: none; }
-:root .board-root .roadmap-lane > header { padding: 1.2rem .25rem 0; border-top: 2px solid var(--lane-accent, var(--roadmap-glass-border)); }
-:root .board-root .lane-head { padding: 1.2rem .25rem 0; border-top: 2px solid var(--lane-accent); }
+:root .board-root .roadmap-lane > header { padding: 1rem 1rem 0; border-top: 2px solid var(--lane-accent, var(--roadmap-glass-border)); }
+:root .board-root .lane-head { padding: 1rem 1rem 0; border-top: 2px solid var(--lane-accent); }
 :root .board-root .lane-bar { display: none; }
 :root .board-root .lane-count { background: transparent; border: 0; box-shadow: none; color: var(--roadmap-ink-muted); }
 :root .board-root .roadmap-lane > header h2,
@@ -57,9 +57,8 @@
 :root .board-root .lane-head p { max-width: none; margin-top: .6rem; font-size: .76rem; line-height: 1.5; }
 :root .board-root .roadmap-lane > header > div:last-child,
 :root .board-root .lane-rule { border: 0; }
-:root .board-root .roadmap-card.roadmap-action { padding: 1.1rem; border-radius: 8px; box-shadow: var(--roadmap-card-shadow); background: var(--color-card); border-color: var(--roadmap-glass-border); }
+:root .board-root .roadmap-card.roadmap-action { padding: 1rem; border-radius: 8px; box-shadow: var(--roadmap-card-shadow); background: var(--color-card); border-color: var(--roadmap-glass-border); }
 :root .board-root .roadmap-card.roadmap-action:hover { background: color-mix(in srgb, var(--color-card) 92%, var(--roadmap-ink) 8%); border-color: var(--color-border-subtle-hover); }
-:root .board-root .roadmap-card:has(~ .roadmap-drag-handle) { padding-left: 3rem; }
 :root .board-root .roadmap-card.roadmap-card-active,
 :root .board-root .roadmap-card.roadmap-card-pending { border-color: var(--color-accent-brand-default); box-shadow: inset 3px 0 0 var(--color-accent-brand-default); }
 :root .board-root .roadmap-card h3 { line-height: 1.4; letter-spacing: -.015em; text-wrap: pretty; }
@@ -97,3 +96,9 @@
 .item-facts dd { margin: .25rem 0 0; color: var(--color-text-primary-default); font-size: .9375rem; font-weight: 500; }
 .item-reading-section { min-width: 0; }
 .item-reading-section p, .item-reading-section .item-prose { max-width: 70ch; line-height: 1.7; }
+
+:root .board-root[data-editing='true'] .board-body {
+  padding: clamp(.75rem, 1.5vw, 1.25rem);
+  border: 1px solid var(--roadmap-glass-border);
+  border-radius: 12px;
+}

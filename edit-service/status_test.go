@@ -158,3 +158,29 @@ func TestHandleStatus_GitHubErrorReturns502(t *testing.T) {
 		t.Fatalf("want 502, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestStatusConfirmsExactLiveCommitWithoutActions(t *testing.T) {
+	s := testServer()
+	// Any GitHub request fails: exact deployed-version proof needs none.
+	s.gh = testGitHub(t, func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected GitHub request"); w.WriteHeader(403) })
+	s.routes()
+	sha := strings.Repeat("a", 40)
+	req := httptest.NewRequest("GET", "/api/status?commit="+sha+"&deployed="+sha, nil)
+	req.Header.Set("Authorization", "Bearer "+mintSession("s", "octocat", time.Now()))
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"live":true`) {
+		t.Fatalf("expected live proof, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestStatusRequiresSessionEvenWithLiveProof(t *testing.T) {
+	s := testServer()
+	s.routes()
+	sha := strings.Repeat("a", 40)
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, httptest.NewRequest("GET", "/api/status?commit="+sha+"&deployed="+sha, nil))
+	if rec.Code != 401 {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}

@@ -251,6 +251,15 @@ type DeployStage = 'building' | 'live' | 'failed' | 'superseded' | 'no_build';
 // the base-version refetch) drops the draft ops the rebuilt content already reflects once
 // that deploy lands; `stage` (above) tracks the deploy itself, driven by startDeployPoll.
 const publishing = ref<{ sha: string; stage?: DeployStage; htmlUrl?: string } | null>(null);
+const dismissedPublication = ref('');
+const publicationKey = () => publishing.value ? `${publishing.value.sha}:${publishing.value.stage ?? 'building'}` : '';
+const visiblePublication = computed(() => publicationKey() === dismissedPublication.value ? null : publishing.value);
+function dismissPublication() {
+  dismissedPublication.value = publicationKey();
+  try { sessionStorage.setItem(`${editStore.recoveryKey()}:publication-notice`, dismissedPublication.value); } catch {}
+}
+
+
 // U9: true once a rebuild carrying a newer commit than this bundle's is detected live.
 const newVersion = ref(false);
 let stopVersionWatch: (() => void) | null = null;
@@ -295,11 +304,6 @@ const DEPLOY_NO_RUN_TIMEOUT_MS = 2 * 60 * 1000;
 // A hard safety cap on total attempts regardless of state, so a stuck poll (e.g. a
 // `superseded` loop that never resolves) can't run forever in a long-lived tab.
 const DEPLOY_MAX_POLL_ATTEMPTS = 60;
-// On mount, only resume the build banner for a commit recorded within this window — the
-// deploy is ~1 min, so past a few minutes any not-yet-cleared committed sha belongs to a
-// past session whose build is long live, and must be dropped rather than resurrected.
-const DEPLOY_RESUME_MAX_AGE_MS = 5 * 60 * 1000;
-
 let deployPollTimer: ReturnType<typeof setTimeout> | null = null;
 let deployPollSha = '';
 let deployPollAttempt = 0;
@@ -358,6 +362,12 @@ async function pollDeployOnce(epoch: number) {
   if (epoch !== deployPollEpoch) return;
   if (!publishing.value || publishing.value.sha !== deployPollSha) return;
   const deployed = await fetchDeployedCommit();
+  if (epoch !== deployPollEpoch) return;
+  if (deployed === deployPollSha) {
+    applyDeployRun({ status: 'completed', conclusion: 'success', live: true } as DeployStatus);
+    stopDeployPoll();
+    return;
+  }
   const run = await deployStatus(deployPollSha, deployed);
   if (epoch !== deployPollEpoch) return;
   if (!publishing.value || publishing.value.sha !== deployPollSha) return;
@@ -367,7 +377,9 @@ async function pollDeployOnce(epoch: number) {
     // stop polling and leave the plain "Publishing…" copy rather than showing a progression
     // the backend can't actually give us right now.
     publishing.value = { ...publishing.value, stage: 'no_build' };
-    stopDeployPoll();
+    // A transient status failure must not strand a committed publication forever.
+    if (++deployPollAttempt < DEPLOY_MAX_POLL_ATTEMPTS)
+      deployPollTimer = setTimeout(() => void pollDeployOnce(epoch), 30000);
     return;
   }
   const hasRun = !!run.headSha;
@@ -598,7 +610,15 @@ function confirmDiscard() {
     syncError.value = 'Resolve the pending publication before discarding its draft.';
     return;
   }
+  if (resourceTransferCount.value || draftSync.conflict.value) return;
   editStore.clear();
+  syncError.value = null;
+  interruptKind.value = null;
+  conflictIds.value = [];
+  conflictsOpen.value = false;
+  editingId.value = null;
+  void draftSync.flush();
+  void nextTick(() => root.value?.querySelector<HTMLButtonElement>('[data-test="new-item"]')?.focus());
 }
 
 // Leaving editing keeps the automatically saved working copy.
@@ -1802,6 +1822,7 @@ onMounted(async () => {
   canEdit.value = meRes.editor;
   if (canEdit.value) {
     editStore.activate(meRes.login);
+    try { dismissedPublication.value = sessionStorage.getItem(`${editStore.recoveryKey()}:publication-notice`) ?? ''; } catch {}
     await draftSync.start(meRes.login);
   }
   // Reconcile the draft against the freshly-loaded (published) base BEFORE the auto-resume
@@ -1817,12 +1838,7 @@ onMounted(async () => {
   // though this is a fresh mount with no in-memory history of its own.
   if (canEdit.value) {
     const pendingSha = editStore.committedSha.value;
-    const committedAt = editStore.committedAt.value;
-    // Only resume the build banner for a commit still plausibly in its deploy window. A sha
-    // left over from a PAST session — whose ~1-min build has long since gone live, but which
-    // the poll never got to clear before that tab closed — must NOT resurrect a permanent
-    // "Publishing…" here (the exact "shows publishing even though everything is live" bug).
-    // Past the window the deploy is certainly done: drop it and show the normal clean state.
+    // Resume the receipt until live-version proof confirms it; age is not proof.
     if (pendingSha) {
       publishing.value = { sha: pendingSha };
       syncedJson.value = editStore.committedSnapshot.value;
@@ -2273,7 +2289,7 @@ const editActionBtn =
             </button>
             <button
               type="button"
-              class="roadmap-action inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-[color:var(--color-accent-brand-default)] px-3 text-single-sm-medium font-medium text-[color:var(--color-text-primary-inverted-default)] transition-opacity hover:opacity-90"
+              :class="[editActionBtn, 'create-primary']"
               aria-label="Add a new roadmap item"
               title="Add a new item"
               data-test="new-item"
@@ -2309,7 +2325,7 @@ const editActionBtn =
              warning. -->
           <p
             v-if="canEdit && editMode && !present"
-            class="text-single-sm-medium text-text-subtle-default -mt-2 mb-3"
+            class="text-single-sm-medium text-text-subtle-default mb-4"
             data-test="reorder-hint"
           >
             <template v-if="canReorder">Drag a card's ⠿ handle to set priority.</template>
@@ -2422,7 +2438,7 @@ const editActionBtn =
                     :active="selected?.id === it.id"
                     :client="present || IS_PUBLIC"
                     :editing="canEdit && editMode"
-                    :draggable="canEdit && editMode"
+                    :draggable="canEdit && editMode && (canReorder || filters.group === 'horizon')"
                     :pending="canEdit && editMode ? (it as any).pending : undefined"
                     :highlight-query="filters.q"
                     @select="select"
@@ -2544,12 +2560,16 @@ const editActionBtn =
       ><template #save-status
         ><SaveStatus
           :detail="resourceTransferCount ? 'Finish or cancel file uploads before publishing' : draftSync.detail.value"
-          :auth-expired="sessionExpired"
+          :auth-expired="sessionExpired || draftSync.authExpired.value"
           @signin="signIn"
           :dirty="editStore.dirtyCount.value"
           :pending="syncPending"
+          :save-state="draftSync.state.value"
+          :discard-blocked="!!editStore.snapshot().requestPayload || !!resourceTransferCount || !!draftSync.conflict.value"
+          @retry-save="draftSync.reconnect()"
           :error="syncError"
-          :publication="publishing"
+          :publication="visiblePublication"
+          @dismiss="dismissPublication"
           :summary="changeSummary"
           :blocked="!!draftSync.conflict.value || !baseVersionLoaded || !!resourceTransferCount || !!conflictIds.length"
           @publish="doSync"
@@ -2569,12 +2589,16 @@ const editActionBtn =
       v-if="canEdit && editMode && !editingItem && !shareOpen"
       class="board-save-status"
       :detail="resourceTransferCount ? 'Finish or cancel file uploads before publishing' : draftSync.detail.value"
-      :auth-expired="sessionExpired"
+      :auth-expired="sessionExpired || draftSync.authExpired.value"
       @signin="signIn"
       :dirty="editStore.dirtyCount.value"
       :pending="syncPending"
+          :save-state="draftSync.state.value"
+          :discard-blocked="!!editStore.snapshot().requestPayload || !!resourceTransferCount || !!draftSync.conflict.value"
+          @retry-save="draftSync.reconnect()"
       :error="syncError"
-      :publication="publishing"
+      :publication="visiblePublication"
+          @dismiss="dismissPublication"
       :summary="changeSummary"
       :blocked="!!draftSync.conflict.value || !baseVersionLoaded || !!resourceTransferCount || !!conflictIds.length"
       @publish="doSync"
@@ -2752,9 +2776,9 @@ const editActionBtn =
 
     <ConfirmAction
       v-if="discardConfirmation"
-      title="Discard unpublished changes?"
-      :message="`This discards ${editStore.dirtyCount.value} unpublished ${editStore.dirtyCount.value === 1 ? 'change' : 'changes'} from your working draft. A recovery copy is kept on this device.`"
-      confirm-label="Discard changes"
+      title="Discard your draft?"
+      :message="`This discards ${editStore.dirtyCount.value} unpublished ${editStore.dirtyCount.value === 1 ? 'change' : 'changes'} and resets your draft to the published roadmap. Published items and files stay unchanged. A recovery copy is kept on this device.`"
+      confirm-label="Discard draft"
       @cancel="discardConfirmation = null"
       @confirm="confirmDiscard"
     />
@@ -2803,24 +2827,25 @@ const editActionBtn =
   }
 }
 
-/* R1/R9: an unmistakable edit-mode cue on the board container itself (the banner above
-   announces it; this reinforces it while scrolling past the banner). */
+/* Give the editing surface a real inset, shared by controls and lane cards. */
 .board-root[data-editing='true'] .board-body {
-  position: relative;
-  background-color: color-mix(in srgb, var(--color-accent-brand-default) 2%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent-brand-default) 28%, transparent);
+  padding: clamp(.75rem, 1.5vw, 1.25rem);
+  border: 1px solid var(--color-border-subtle-default);
+  border-radius: 12px;
 }
-/* A solid accent stripe along the top edge of the editable board — a persistent "you are
-   editing" cue that still reads once the banner has scrolled out of view. */
-.board-root[data-editing='true'] .board-body::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 2px;
-  border-radius: 24px 24px 0 0;
+.edit-action-bar > button {
+  min-height: 40px;
+  height: 40px;
+  padding: 0 .85rem;
+  border-radius: 8px;
+  font-size: .8125rem;
+  line-height: 1;
+  gap: .5rem;
+}
+.edit-action-bar > .create-primary {
   background: var(--color-accent-brand-default);
-  pointer-events: none;
-  z-index: 1;
+  border-color: var(--color-accent-brand-default);
+  color: var(--color-text-primary-inverted-default);
 }
 
 /* Keep the drop target visible against the shared reading-surface styles. */

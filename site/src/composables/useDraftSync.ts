@@ -50,6 +50,7 @@ export function mergeDraftData(
 export function useDraftSync(store: Store) {
   const state = ref<DraftSaveState>("loading");
   const savedAt = ref("");
+  const authExpired = ref(false);
   const conflict = ref<{ remote: RemoteDraft; fields: string[] } | null>(null);
   let active = false,
     stopped = false,
@@ -59,13 +60,19 @@ export function useDraftSync(store: Store) {
     timer: ReturnType<typeof setTimeout> | undefined;
   let syncKey = "",
     suppress = false;
+  // No account draft exists once all work has been published or discarded.
+  // Keep publication receipts until the live build is confirmed.
+  const accountSnapshot = (): Draft | null => {
+    const data = store.snapshot();
+    return store.dirtyCount.value || data.committedSha || data.requestPayload ? data : null;
+  };
   const detail = computed(() =>
     store.persistFailed.value
       ? state.value === "saved"
-        ? "Draft saved to your account · device backup unavailable"
+        ? "Private draft saved · device backup unavailable"
         : "This device cannot save changes. Keep this page open until your draft is saved."
       : state.value === "saved"
-        ? "Draft saved to your account"
+        ? "Private draft saved"
         : state.value === "saving"
           ? "Saving your draft…"
           : state.value === "conflict"
@@ -84,25 +91,29 @@ export function useDraftSync(store: Store) {
       /* working copy has its own durability signal */
     }
   };
-  function adopt(data: Draft) {
+  function adopt(data: Draft | null) {
     suppress = true;
-    store.restore(data);
+    store.restore(data ?? {});
     suppress = false;
   }
   function schedule(delay = 700) {
     if (!active || stopped || conflict.value) return;
     clearTimeout(timer);
+    if (!sending && same(accountSnapshot(), acknowledged)) {
+      state.value = "saved";
+      return;
+    }
     state.value = "saving";
     timer = setTimeout(() => void flush(), delay);
   }
   async function flush() {
     if (!active || stopped || sending || conflict.value) return;
-    if (same(store.snapshot(), acknowledged)) {
+    if (same(accountSnapshot(), acknowledged)) {
       state.value = "saved";
       return;
     }
     sending = true;
-    const sent = store.snapshot();
+    const sent = accountSnapshot();
     try {
       const res = await authedRequest("/api/draft", {
         method: "PUT",
@@ -110,11 +121,12 @@ export function useDraftSync(store: Store) {
         body: JSON.stringify({ revision: serverRevision, data: sent }),
       });
       if (stopped) return;
+      authExpired.value = res.status === 401 || res.status === 403;
       const remote = (await res.json()) as RemoteDraft;
       if (res.status === 409) {
         const merged = mergeDraftData(
           acknowledged,
-          store.snapshot(),
+          accountSnapshot(),
           remote.data,
         );
         if (merged.conflicts.length) {
@@ -135,7 +147,7 @@ export function useDraftSync(store: Store) {
         acknowledged = sent;
         savedAt.value = remote.updatedAt ?? "";
         remember();
-        state.value = same(store.snapshot(), sent) ? "saved" : "saving";
+        state.value = same(accountSnapshot(), sent) ? "saved" : "saving";
       }
     } catch {
       state.value = "local";
@@ -147,6 +159,7 @@ export function useDraftSync(store: Store) {
   }
   function scheduleRetry() {
     clearTimeout(timer);
+    if (authExpired.value) return;
     timer = setTimeout(() => {
       if (!stopped && !document.hidden) void reconnect();
       else if (!stopped) scheduleRetry();
@@ -158,12 +171,13 @@ export function useDraftSync(store: Store) {
     try {
       const res = await authedRequest("/api/draft");
       if (stopped) return;
+      authExpired.value = res.status === 401 || res.status === 403;
       if (!res.ok) throw new Error("draft unavailable");
       const remote = (await res.json()) as RemoteDraft;
-      if (remote.data && remote.revision !== serverRevision) {
+      if (remote.revision !== serverRevision) {
         const merged = mergeDraftData(
           acknowledged,
-          store.snapshot(),
+          accountSnapshot(),
           remote.data,
         );
         if (merged.conflicts.length) {
@@ -182,6 +196,10 @@ export function useDraftSync(store: Store) {
       scheduleRetry();
     } finally {
       sending = false;
+      if (state.value === "saving" && same(accountSnapshot(), acknowledged)) {
+        clearTimeout(timer);
+        state.value = "saved";
+      }
     }
   }
   async function start(_login: string) {
@@ -200,6 +218,7 @@ export function useDraftSync(store: Store) {
     try {
       const res = await authedRequest("/api/draft");
       if (stopped) return;
+      authExpired.value = res.status === 401 || res.status === 403;
       if (!res.ok) throw new Error("unavailable");
       const remote = (await res.json()) as RemoteDraft;
       if (
@@ -211,13 +230,12 @@ export function useDraftSync(store: Store) {
       )
         adopt(remote.data);
       else if (
-        remote.data &&
         remote.revision !== serverRevision &&
-        !same(store.snapshot(), remote.data)
+        !same(accountSnapshot(), remote.data)
       ) {
         const merged = mergeDraftData(
           acknowledged,
-          store.snapshot(),
+          accountSnapshot(),
           remote.data,
         );
         if (merged.conflicts.length) {
@@ -236,6 +254,10 @@ export function useDraftSync(store: Store) {
       scheduleRetry();
     } finally {
       sending = false;
+      if (state.value === "saving" && same(accountSnapshot(), acknowledged)) {
+        clearTimeout(timer);
+        state.value = "saved";
+      }
     }
   }
   function resolve(keepLocal: boolean) {
@@ -250,7 +272,7 @@ export function useDraftSync(store: Store) {
     } catch {
       /* the server still has the remote draft */
     }
-    if (!keepLocal && remote.data) adopt(remote.data);
+    if (!keepLocal) adopt(remote.data);
     serverRevision = remote.revision;
     acknowledged = remote.data;
     conflict.value = null;
@@ -278,5 +300,5 @@ export function useDraftSync(store: Store) {
     window.removeEventListener("online", online);
     document.removeEventListener("visibilitychange", visible);
   });
-  return { state, detail, savedAt, conflict, start, flush, resolve, reconnect };
+  return { state, detail, savedAt, authExpired, conflict, start, flush, resolve, reconnect };
 }

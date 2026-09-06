@@ -153,7 +153,6 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
       active
         ? 'roadmap-card-active'
         : 'hover:border-[color:var(--color-accent-brand-default)]',
-      draggable ? 'pl-12' : '',
       pendingClass,
     ]"
     @click="emit('select', item)"
@@ -161,11 +160,12 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
     <span
       v-if="dirty"
       data-test="dirty-dot"
-      title="Unsynced changes"
-      aria-label="Unsynced changes"
+      title="Unpublished changes"
+      aria-label="Unpublished changes"
       class="absolute top-3 left-3 size-2 rounded-full bg-[color:var(--color-accent-brand-default)]"
     />
     <PhArrowUpRight
+      v-if="!draggable"
       :size="14"
       class="text-icons-subtle-default absolute top-3 right-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
       aria-hidden="true"
@@ -177,7 +177,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
         <h3
           v-if="!renaming"
           data-test="card-title"
-          class="text-[15px] font-semibold leading-snug text-text-primary-default pr-4"
+          class="text-[15px] font-semibold leading-snug text-text-primary-default pr-8"
           :class="pending === 'deleted' ? 'line-through opacity-70' : ''"
           @click="onTitleClick"
           @dblclick="onTitleDblClick"
@@ -258,7 +258,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
   <span
     v-if="draggable"
     data-test="drag-handle"
-    class="roadmap-drag-handle absolute left-1 top-1/2 z-10 grid size-10 -translate-y-1/2 touch-none place-items-center rounded-lg text-icons-subtle-default transition-colors"
+    class="roadmap-drag-handle absolute right-2 top-2 z-10 grid size-8 touch-none place-items-center rounded-lg text-icons-subtle-default transition-colors"
     role="button"
     tabindex="0"
     aria-label="Drag to reorder"

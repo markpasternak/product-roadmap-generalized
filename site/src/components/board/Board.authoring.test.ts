@@ -138,7 +138,10 @@ describe("account drafts and recoverable publication", () => {
   }
   it("shows one save status in editing and inside the item editor", async () => {
     const w = await editing();
-    expect(status(w).text()).toContain("draft");
+    expect(w.find('[data-test="save-status"]').exists()).toBe(false);
+    useEditStore().setBody("TALK-1", "Unpublished text");
+    await flushPromises();
+    expect(status(w).text()).toContain("1 unpublished change");
     expect(w.find('[data-test="editing-banner"]').exists()).toBe(false);
     (w.vm as any).openEditor("TALK-1");
     await flushPromises();
@@ -171,8 +174,8 @@ describe("account drafts and recoverable publication", () => {
     await send(w);
     await flushPromises();
     expect(useEditStore().dirtyCount.value).toBe(0);
-    expect(status(w).text()).toContain("Changes are in Git");
-    expect(status(w).text()).not.toContain("Latest publication is live");
+    expect(status(w).text()).toContain("Published to Git");
+    expect(status(w).text()).not.toContain("Your changes are live");
   });
   it("keeps typing during publication as a new unpublished change", async () => {
     const w = await editing();
@@ -245,7 +248,7 @@ describe("account drafts and recoverable publication", () => {
     syncMock.mockResolvedValueOnce({ ok: true, sha: "a".repeat(40) });
     await send(w);
     await flushPromises();
-    expect(status(w).text()).toContain("Waiting to confirm");
+    expect(status(w).text()).toContain("live update not confirmed");
     expect(status(w).text()).toContain("Check again");
   });
   it("requires deployed-version proof before reporting live", async () => {
@@ -260,7 +263,7 @@ describe("account drafts and recoverable publication", () => {
     });
     await send(w);
     await flushPromises();
-    expect(status(w).text()).not.toContain("Latest publication is live");
+    expect(status(w).text()).not.toContain("Your changes are live");
     deployStatusMock.mockResolvedValueOnce({
       status: "completed",
       conclusion: "success",
@@ -271,14 +274,14 @@ describe("account drafts and recoverable publication", () => {
     } as any);
     (w.vm as any).startDeployPoll("a".repeat(40));
     await flushPromises();
-    expect(status(w).text()).toContain("Latest publication is live");
+    expect(status(w).text()).toContain("Your changes are live");
     expect(useEditStore().committedSha.value).toBeNull();
   });
   it("retains old pending commits on reload for verification", async () => {
     useEditStore().recordCommit("a".repeat(40), "{}");
     const w = await editing();
     expect(deployStatusMock).toHaveBeenCalled();
-    expect(status(w).text()).toContain("Changes are in Git");
+    expect(status(w).text()).toContain("Published to Git");
   });
   it("does not build a no-op publication", async () => {
     const w = await editing();
@@ -297,4 +300,30 @@ describe("account drafts and recoverable publication", () => {
     expect(w.find('[data-test="reload-latest"]').exists()).toBe(true);
     expect(status(w).text()).toContain("owner");
   });
+  it("confirms an exact live version even when build status is unavailable", async () => {
+    const { fetchDeployedCommit } = await import("../../lib/edit/version");
+    const w = await editing();
+    useEditStore().setField("TALK-1", "title", "Mine");
+    vi.mocked(fetchDeployedCommit).mockResolvedValueOnce("a".repeat(40));
+    syncMock.mockResolvedValueOnce({ ok: true, sha: "a".repeat(40) });
+    await send(w);
+    await flushPromises();
+    expect(status(w).text()).toContain("Your changes are live");
+    expect(useEditStore().committedSha.value).toBeNull();
+  });
+  it("keeps a dismissed receipt hidden when changing editor surfaces", async () => {
+    const w = await editing();
+    useEditStore().setField("TALK-1", "title", "Mine");
+    syncMock.mockResolvedValueOnce({ ok: true, sha: "a".repeat(40) });
+    await send(w);
+    await flushPromises();
+    await w.get('[aria-label="Dismiss publication status"]').trigger('click');
+    expect((w.vm as any).visiblePublication).toBeNull();
+    expect(useEditStore().committedSha.value).toBe("a".repeat(40));
+    useEditStore().setField("TALK-1", "title", "Next edit");
+    await flushPromises();
+    expect(status(w).text()).toContain("1 unpublished change");
+    expect(status(w).text()).not.toContain("Published to Git");
+  });
+
 });
