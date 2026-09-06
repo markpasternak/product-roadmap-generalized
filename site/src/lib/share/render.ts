@@ -20,6 +20,8 @@ export interface ShareContext {
   /** Horizon lanes selected in the roadmap view, including intentionally empty lanes. */
   horizons?: readonly string[];
   generatedAt: string;
+  /** Resolved, fixed activity dates for this snapshot. */
+  activitySummary?: string;
   theme?: ShareTheme;
   /** Absolute app origin used for shared brand assets in minted Canvas Drop pages. */
   assetBase?: string;
@@ -1035,6 +1037,7 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
       <div class="stats" role="group" aria-label="Filter by horizon">${renderStats(items, visibleHorizons)}</div>
     </div>
   </section>
+  ${context.activitySummary ? `<p class="roadmap-muted" style="margin-bottom:1rem">${escapeHtml(context.activitySummary)}</p>` : ''}
   <div class="roadmap-glass board-shell"><div class="board-scroll">${lanes}</div></div>
   <footer>
     <span>Shared from the product roadmap</span>

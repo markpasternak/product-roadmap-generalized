@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount, type VueWrapper } from '@vue/test-utils';
 import SavedViews from './SavedViews.vue';
 import { emptyFilters } from '../../lib/filters';
-import { DEFAULT_VIEW, REVIEW_VIEW, SAVED_VIEWS_KEY, readSavedViews, snapshotView } from '../../lib/savedViews';
+import { DEFAULT_VIEW, SAVED_VIEWS_KEY, readSavedViews, snapshotView } from '../../lib/savedViews';
 
 const wrappers: VueWrapper[] = [];
 const weekly = () => snapshotView('Weekly review', { ...emptyFilters(), product: 'Podcasts & Audiobooks', owner: 'Axel', tags: ['foundation'] }, ['Now', 'Next'], 'updated');
@@ -31,13 +31,18 @@ beforeEach(() => localStorage.clear());
 afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()); vi.unstubAllGlobals(); localStorage.clear(); vi.restoreAllMocks(); });
 
 describe('saved view picker', () => {
-  it('keeps quick views compact and applies a preset with focus returned to the picker', async () => {
+  it('shows only personal saved views and returns focus after choosing one', async () => {
+    localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify([weekly()]));
     const w = mountViews();
-    expect(picker(w).text()).toBe('All priorities');
-    expect(w.find('section').exists()).toBe(false);
+    expect(picker(w).text()).toBe('Current view');
     await picker(w).trigger('click');
-    await w.findAll('button[aria-pressed]').find(el => el.text().startsWith('Now: early stage'))!.trigger('click');
-    expect(w.emitted('apply')?.[0]).toEqual([REVIEW_VIEW]);
+    expect(w.text()).toContain('Your saved views');
+    expect(w.text()).toContain('Saved in this browser');
+    expect(w.text()).not.toContain('Quick views');
+    expect(w.text()).not.toContain('All priorities');
+    expect(w.text()).not.toContain('Now: early stage');
+    await w.get('button[aria-pressed]').trigger('click');
+    expect(w.emitted('apply')?.[0]).toEqual([weekly()]);
     expect(picker(w).attributes('aria-expanded')).toBe('false');
     expect(document.activeElement).toBe(picker(w).element);
   });
@@ -101,7 +106,7 @@ describe('saved view picker', () => {
     expect(w.emitted('apply')).toBeUndefined();
   });
 
-  it.each(['weekly REVIEW', 'All priorities', '   '])('rejects ambiguous or empty names: %s', async name => {
+  it.each(['weekly REVIEW', '   '])('rejects ambiguous or empty names: %s', async name => {
     localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify([weekly()]));
     const w = mountViews();
     await create(w, name);

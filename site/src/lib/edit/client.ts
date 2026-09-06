@@ -58,6 +58,7 @@ export type ApiItem = {
   path?: string;
   sha?: string;
   git?: {
+    activityDates?: string[];
     created?: string;
     updated?: string;
     createdAt?: string;

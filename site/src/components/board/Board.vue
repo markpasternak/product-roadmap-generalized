@@ -2,6 +2,7 @@
 import { reactive, ref, computed, watch, nextTick, onMounted, onUnmounted, defineAsyncComponent } from 'vue';
 import Sortable from 'sortablejs';
 import FiltersSidebar from './FiltersSidebar.vue';
+import { activityFromParams, writeActivityParams, activityDate, activityRange, activityLabel } from '../../lib/activityFilter';
 import SavedViews from './SavedViews.vue';
 import ConfirmAction from '../ui/ConfirmAction.vue';
 import RoadmapCard from './RoadmapCard.vue';
@@ -87,7 +88,6 @@ import {
   emptyFilters,
   activeFilterCount,
   activeFilterChips,
-  assetOptionsForFilters,
   stageOptionsForItems,
   levelOptionsForItems,
   tagOptionsForFilters,
@@ -110,6 +110,20 @@ const props = defineProps<{ items: ItemVM[]; initialProduct?: string | null; bas
 const liveItems = ref<ItemVM[]>(props.items.slice());
 
 const filters = reactive<FilterState>(emptyFilters());
+let activityTimer: ReturnType<typeof setInterval> | undefined;
+let activityDay = '';
+function refreshActivityDay() {
+  if (filters.activity?.period !== 'relative') { activityDay = ''; return; }
+  const today = activityDate(new Date().toISOString(), filters.activity.timeZone);
+  if (activityDay && activityDay !== today) filters.activity = { ...filters.activity };
+  activityDay = today;
+}
+onMounted(() => {
+  activityTimer = setInterval(refreshActivityDay, 60000);
+  window.addEventListener('focus', refreshActivityDay);
+});
+onUnmounted(() => { clearInterval(activityTimer); window.removeEventListener('focus', refreshActivityDay); });
+watch(() => filters.activity, refreshActivityDay);
 // Horizon is a MULTI-select filter, deliberately kept OUTSIDE `filters` — `canReorder`
 // (below) reads `filters` only, so keeping horizon separate means selecting/deselecting
 // horizon chips never affects whether priority-reordering is allowed.
@@ -1213,7 +1227,6 @@ const stats = computed(() => {
 const searchContext = computed(() => createSearchContext(itemsForBoard.value, filters.q));
 const shown = computed(() => sortItems(filterItems(itemsForBoard.value, filters, searchContext.value), sort.value));
 
-const availableAssets = computed(() => assetOptionsForFilters(itemsForBoard.value, filters, searchContext.value));
 const availableOwners = computed(() =>
   IS_PUBLIC ? [] : [...new Set(itemsForBoard.value.map((item) => item.owner).filter(Boolean))],
 );
@@ -1269,6 +1282,9 @@ const lanes = computed(() => {
 
 function removeFilterChip(chip: ActiveFilterChip) {
   switch (chip.kind) {
+    case 'activity':
+      filters.activity = null;
+      break;
     case 'owner':
       filters.owner = null;
       break;
@@ -1566,6 +1582,7 @@ const shareContext = computed<ShareContext>(() => ({
   product: filters.product,
   horizons: [...horizons.value],
   generatedAt: formatDateTime(Date.now()),
+  activitySummary: filters.activity ? `${activityLabel({ field: filters.activity.field, timeZone: filters.activity.timeZone, period: 'range', ...activityRange(filters.activity) })} (${filters.activity.timeZone})` : undefined,
 }));
 const sortedAuthoredShares = computed(() =>
   authoredShares.value.filter(isVisibleRoadmapShare).sort((a, b) => b.updatedAt - a.updatedAt),
@@ -1804,7 +1821,8 @@ onMounted(async () => {
   filters.stage = p.getAll('stage');
   filters.impact = p.getAll('impact');
   filters.effort = p.getAll('effort');
-  filters.assets = p.getAll('asset');
+  filters.assets = [];
+  filters.activity = activityFromParams(p);
   filters.visibility = p.get('visibility');
   filters.tags = p.getAll('tag');
   if (p.get('group') === 'product') filters.group = 'product';
@@ -1929,7 +1947,7 @@ function syncState() {
   filters.stage.forEach((v) => p.append('stage', v));
   filters.impact.forEach((v) => p.append('impact', v));
   filters.effort.forEach((v) => p.append('effort', v));
-  filters.assets.forEach((v) => p.append('asset', v));
+  writeActivityParams(p, filters.activity);
   if (filters.visibility) p.set('visibility', filters.visibility);
   if (filters.hygiene) p.set('hygiene', filters.hygiene);
   filters.tags.forEach((t) => p.append('tag', t));
@@ -2175,7 +2193,6 @@ const editActionBtn =
           class="hidden lg:block"
           :filters="filters"
           :owners="availableOwners"
-          :assets="availableAssets"
           :stages="availableStages"
           :impact-options="availableImpact"
           :effort-options="availableEffort"
@@ -2538,7 +2555,6 @@ const editActionBtn =
             <FiltersSidebar
               :filters="filters"
               :owners="availableOwners"
-              :assets="availableAssets"
               :stages="availableStages"
               :impact-options="availableImpact"
               :effort-options="availableEffort"

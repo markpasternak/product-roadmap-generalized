@@ -29,16 +29,17 @@ type syncOutcome struct {
 }
 
 type ItemGitMetadata struct {
-	Created        string `json:"created"`
-	Updated        string `json:"updated"`
-	CreatedAt      string `json:"createdAt"`
-	UpdatedAt      string `json:"updatedAt"`
-	CreatedBy      string `json:"createdBy"`
-	UpdatedBy      string `json:"updatedBy"`
-	CreatedCommit  string `json:"createdCommit"`
-	UpdatedCommit  string `json:"updatedCommit"`
-	CreatedSubject string `json:"createdSubject"`
-	UpdatedSubject string `json:"updatedSubject"`
+	ActivityDates  []string `json:"activityDates"`
+	Created        string   `json:"created"`
+	Updated        string   `json:"updated"`
+	CreatedAt      string   `json:"createdAt"`
+	UpdatedAt      string   `json:"updatedAt"`
+	CreatedBy      string   `json:"createdBy"`
+	UpdatedBy      string   `json:"updatedBy"`
+	CreatedCommit  string   `json:"createdCommit"`
+	UpdatedCommit  string   `json:"updatedCommit"`
+	CreatedSubject string   `json:"createdSubject"`
+	UpdatedSubject string   `json:"updatedSubject"`
 }
 
 type itemGitRecord struct {
@@ -153,25 +154,55 @@ func isOnlyUpdatedFrontmatterPatch(patch []byte) bool {
 }
 
 func (g *GitHub) itemGitMetadata(ctx context.Context, token, wt, repoPath string) ItemGitMetadata {
-	out, err := g.runGit(ctx, token, wt, "log", "--follow", "--format=%H%x1f%cI%x1f%an%x1f%s", "--", repoPath)
+	out, err := g.runGit(ctx, token, wt, "log", "--follow", "--format=%x1e%H%x1f%cI%x1f%an%x1f%s", "--patch", "--unified=0", "--no-ext-diff", "--", repoPath)
 	if err != nil {
 		return ItemGitMetadata{}
 	}
-	records := parseItemGitLog(out)
+	return itemMetadataFromLog(out)
+}
+
+func itemMetadataFromLog(out []byte) ItemGitMetadata {
+	records := []itemGitRecord{}
+	meaningful := []itemGitRecord{}
+	activityDates := []string{}
+	seen := map[string]bool{}
+	for _, block := range strings.Split(string(out), "\x1e") {
+		lines := strings.SplitN(strings.TrimSpace(block), "\n", 2)
+		if len(lines) != 2 {
+			continue
+		}
+		parsed := parseItemGitLog([]byte(lines[0]))
+		if len(parsed) != 1 {
+			continue
+		}
+		record := parsed[0]
+		records = append(records, record)
+		patch := []byte(lines[1])
+		hasChanges := false
+		for _, line := range strings.Split(lines[1], "\n") {
+			if (strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-")) && !strings.HasPrefix(line, "+++") && !strings.HasPrefix(line, "---") {
+				hasChanges = true
+				break
+			}
+		}
+		if hasChanges && !isOnlyUpdatedFrontmatterPatch(patch) {
+			meaningful = append(meaningful, record)
+			if !seen[record.Date] {
+				activityDates = append(activityDates, record.Date)
+				seen[record.Date] = true
+			}
+		}
+	}
 	if len(records) == 0 {
 		return ItemGitMetadata{}
 	}
-
 	latest := records[0]
-	for _, record := range records {
-		patch, err := g.runGit(ctx, token, wt, "show", "--format=", "--unified=0", "--no-ext-diff", record.SHA, "--", repoPath)
-		if err != nil || !isOnlyUpdatedFrontmatterPatch(patch) {
-			latest = record
-			break
-		}
+	if len(meaningful) > 0 {
+		latest = meaningful[0]
 	}
 	created := records[len(records)-1]
 	return ItemGitMetadata{
+		ActivityDates:  activityDates,
 		Created:        dateOnly(created.Date),
 		Updated:        dateOnly(latest.Date),
 		CreatedAt:      created.Date,

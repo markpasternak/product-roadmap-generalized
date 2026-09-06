@@ -1,14 +1,16 @@
 import { z } from 'zod';
+import { activityFilterSchema } from './activityFilter';
 import { HORIZONS, PRODUCTS, STAGES, LEVELS, VISIBILITIES } from './schema';
 import { emptyFilters, type FilterState, type SortKey } from './filters';
 
 const viewSchema = z.object({
   name: z.string().trim().min(1).max(60),
   filters: z.object({
+    activity: activityFilterSchema.nullable().optional().catch(null),
     q: z.string(), owner: z.string().nullable().optional(),
     product: z.enum(PRODUCTS).nullable(), stage: z.array(z.enum(STAGES)),
     impact: z.array(z.enum(LEVELS)), effort: z.array(z.enum(LEVELS)),
-    assets: z.array(z.string()), visibility: z.enum(VISIBILITIES).nullable(),
+    assets: z.array(z.string()).default([]).transform(() => []), visibility: z.enum(VISIBILITIES).nullable(),
     hygiene: z.enum(['no-owner', 'now-early', 'stale-later']).nullable(),
     tags: z.array(z.string()), group: z.enum(['horizon', 'product']),
   }),
@@ -44,14 +46,11 @@ export function sameViewSelection(a: Pick<SavedView, 'filters' | 'horizons' | 's
   const set = (values: string[]) => [...new Set(values)].sort();
   const key = ({ filters: f, horizons, sort }: Pick<SavedView, 'filters' | 'horizons' | 'sort'>) => JSON.stringify([
     f.q, f.owner ?? null, f.product, set(f.stage), set(f.impact), set(f.effort),
-    set(f.assets), f.visibility, f.hygiene, set(f.tags), f.group, set(horizons), sort,
+    f.activity ?? null, f.visibility, f.hygiene, set(f.tags), f.group, set(horizons), sort,
   ]);
   return key(a) === key(b);
 }
 
 export const DEFAULT_VIEW: SavedView = {
   name: 'All priorities', filters: emptyFilters(), horizons: ['Now', 'Next', 'Later'], sort: 'manual',
-};
-export const REVIEW_VIEW: SavedView = {
-  name: 'Now: early stage', filters: { ...emptyFilters(), hygiene: 'now-early' }, horizons: ['Now'], sort: 'updated',
 };

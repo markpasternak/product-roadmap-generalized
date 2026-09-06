@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -86,5 +89,43 @@ func TestReadItemsFromDirMissingItemsDir(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("expected empty item map, got %+v", got)
+	}
+}
+
+func TestItemActivityFollowsRenamesAndSkipsMaintenance(t *testing.T) {
+	root := t.TempDir()
+	run := func(date string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=Tester", "GIT_AUTHOR_EMAIL=test@example.com", "GIT_COMMITTER_NAME=Tester", "GIT_COMMITTER_EMAIL=test@example.com", "GIT_AUTHOR_DATE="+date, "GIT_COMMITTER_DATE="+date)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git: %s %v", out, err)
+		}
+	}
+	run("2026-07-01T12:00:00Z", "init", "-q")
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, "old.md"), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	commit := func(date, message string) { run(date, "add", "-A"); run(date, "commit", "-qm", message) }
+	write("title: First\nupdated: 2026-07-01\n")
+	commit("2026-07-01T12:00:00Z", "Create")
+	write("title: Improved\nupdated: 2026-08-04\n")
+	commit("2026-08-04T12:00:00Z", "Improve")
+	write("title: Improved\nupdated: 2026-09-05\n")
+	commit("2026-09-05T12:00:00Z", "Date only")
+	run("2026-09-06T12:00:00Z", "mv", "old.md", "new.md")
+	commit("2026-09-06T12:00:00Z", "Rename")
+	g := &GitHub{cfg: Config{RepoCacheDir: root}}
+	history := g.itemGitMetadata(context.Background(), "", root, "new.md")
+	if history.Created != "2026-07-01" || history.Updated != "2026-08-04" {
+		t.Fatalf("bad history: %+v", history)
+	}
+	want := []string{"2026-08-04T12:00:00Z", "2026-07-01T12:00:00Z"}
+	if !reflect.DeepEqual(history.ActivityDates, want) {
+		t.Fatalf("activity = %v, want %v", history.ActivityDates, want)
 	}
 }

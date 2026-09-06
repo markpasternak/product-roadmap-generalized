@@ -1,22 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue';
 import { PhBookmarkSimple, PhCaretDown, PhCheck, PhPencilSimple, PhPlus, PhX } from '@phosphor-icons/vue';
+import { activityLabel } from '../../lib/activityFilter';
 import type { FilterState, SortKey } from '../../lib/filters';
-import { DEFAULT_VIEW, REVIEW_VIEW, SAVED_VIEWS_KEY, readSavedViews, sameViewSelection, snapshotView, type SavedView } from '../../lib/savedViews';
+import { SAVED_VIEWS_KEY, readSavedViews, sameViewSelection, snapshotView, type SavedView } from '../../lib/savedViews';
 
 const props = defineProps<{ filters: FilterState; horizons: string[]; sort: SortKey }>();
 const emit = defineEmits<{ (e: 'apply', view: SavedView): void }>();
-type ViewEntry = { key: string; view: SavedView; saved: boolean };
-const presets: ViewEntry[] = [
-  { key: 'preset:all', view: DEFAULT_VIEW, saved: false },
-  { key: 'preset:review', view: REVIEW_VIEW, saved: false },
-];
+type ViewEntry = { key: string; view: SavedView };
 const views = ref<SavedView[]>([]);
-const entries = computed<ViewEntry[]>(() => views.value.map(view => ({ key: `saved:${view.name}`, view, saved: true })));
-const allEntries = computed(() => [...entries.value, ...presets]);
+const entries = computed<ViewEntry[]>(() => views.value.map(view => ({ key: `saved:${view.name}`, view })));
 const selectedKey = ref<string | null>(null);
-const selected = computed(() => allEntries.value.find(entry => entry.key === selectedKey.value)
-  ?? allEntries.value.find(entry => sameViewSelection(entry.view, props)));
+const selected = computed(() => entries.value.find(entry => entry.key === selectedKey.value)
+  ?? entries.value.find(entry => sameViewSelection(entry.view, props)));
 const modified = computed(() => !!selected.value && !sameViewSelection(selected.value.view, props));
 const open = ref(false);
 const mode = ref<'list' | 'create' | 'rename'>('list');
@@ -43,6 +39,7 @@ watch(() => [props.filters, props.horizons, props.sort], () => {
 function summary(view: Pick<SavedView, 'filters' | 'horizons' | 'sort'>) {
   const { filters, horizons, sort } = view;
   const scope = [filters.product ?? 'All products', horizons.length ? horizons.join(', ') : 'No horizons'];
+  if (filters.activity) scope.push(activityLabel(filters.activity));
   if (filters.hygiene === 'now-early') scope.push('Early stage');
   const extra = [filters.q, filters.owner, ...filters.stage, ...filters.impact, ...filters.effort, ...filters.assets, filters.visibility, ...filters.tags,
     filters.hygiene && filters.hygiene !== 'now-early' ? filters.hygiene : null].filter(Boolean).length;
@@ -135,7 +132,7 @@ async function edit(view?: SavedView) {
 function save() {
   const nextName = name.value.trim();
   if (!nextName) { error.value = 'Give this view a name.'; nameInput.value?.focus(); return; }
-  if ([...presets.map(entry => entry.view), ...views.value.filter(view => view.name !== editingName.value)]
+  if (views.value.filter(view => view.name !== editingName.value)
     .some(view => view.name.toLowerCase() === nextName.toLowerCase())) {
     error.value = 'That name is already in use. Try another name.';
     nameInput.value?.focus();
@@ -157,7 +154,7 @@ function save() {
 }
 function update() {
   const entry = selected.value;
-  if (!entry?.saved || !modified.value) return;
+  if (!entry || !modified.value) return;
   let next: SavedView;
   try { next = snapshotView(entry.view.name, props.filters, props.horizons, props.sort); }
   catch { error.value = 'This view couldn’t be updated. Check the filters and try again.'; return; }
@@ -198,32 +195,27 @@ function undo() {
   <div ref="root" class="saved-views" aria-label="Roadmap views" @focusout="onFocusOut" @keydown.esc.stop.prevent="close()">
     <div class="view-toolbar">
       <button ref="trigger" type="button" class="view-trigger roadmap-action" :aria-expanded="open" :aria-controls="panelId"
-        :aria-label="`Choose view: ${selected?.view.name ?? 'Custom view'}${modified ? ', modified' : ''}`" @click="toggle">
+        :aria-label="`Choose view: ${selected?.view.name ?? 'Current view'}${modified ? ', modified' : ''}`" @click="toggle">
         <PhBookmarkSimple :size="16" aria-hidden="true" />
-        <span class="view-current-name">{{ selected?.view.name ?? 'Custom view' }}</span>
+        <span class="view-current-name">{{ selected?.view.name ?? 'Current view' }}</span>
         <PhCaretDown :size="12" aria-hidden="true" class="view-caret" :class="{ 'is-open': open }" />
       </button>
       <span v-if="modified" class="view-modified">Modified</span>
       <div class="view-actions">
         <button v-if="modified" type="button" class="view-text-action" @click="reset">Reset</button>
-        <button v-if="selected?.saved && modified" type="button" class="view-text-action view-save" @click="update">Save changes</button>
+        <button v-if="selected && modified" type="button" class="view-text-action view-save" @click="update">Save changes</button>
         <button v-else type="button" class="view-text-action view-save" @click="edit()"><PhPlus :size="14" aria-hidden="true" /> Save view</button>
       </div>
     </div>
 
     <section v-if="open" :id="panelId" ref="panel" class="view-popover" :class="{ 'opens-above': opensAbove }" :style="{ maxHeight: panelMaxHeight }" :aria-label="mode === 'list' ? 'Choose a view' : mode === 'create' ? 'Save view' : 'Rename view'">
       <div class="view-popover-heading">
-        <h2>{{ mode === 'list' ? 'Views' : mode === 'create' ? 'Save this view' : 'Edit saved view' }}</h2>
+        <h2>{{ mode === 'list' ? 'Your saved views' : mode === 'create' ? 'Save this view' : 'Edit saved view' }}</h2>
         <button type="button" class="view-icon-action" aria-label="Close views" @click="close()"><PhX :size="16" aria-hidden="true" /></button>
       </div>
       <template v-if="mode === 'list'">
         <div class="view-list">
-          <p class="view-section-label">Quick views</p>
-          <button v-for="entry in presets" :key="entry.key" type="button" class="view-option" :aria-pressed="selected?.key === entry.key" @click="apply(entry)">
-            <span class="view-option-copy"><span>{{ entry.view.name }}</span><small>{{ summary(entry.view) }}</small></span>
-            <PhCheck v-if="selected?.key === entry.key" :size="16" aria-hidden="true" />
-          </button>
-          <div class="view-section-label view-personal-heading"><span>Your views</span><span>On this browser</span></div>
+          <div class="view-section-label"><span>Saved in this browser</span></div>
           <p v-if="!views.length" class="view-empty">Save a combination of filters to come back to it.</p>
           <div v-for="entry in entries" :key="entry.key" class="view-saved-row">
             <button type="button" class="view-option" :aria-pressed="selected?.key === entry.key" @click="apply(entry)">
@@ -241,7 +233,7 @@ function undo() {
         <label :for="inputId">View name</label>
         <input :id="inputId" ref="nameInput" v-model="name" maxlength="60" autocomplete="off" :aria-invalid="!!error" :aria-describedby="error ? errorId : undefined" @input="error = ''" />
         <p v-if="editorView" class="view-scope">{{ summary(editorView) }}</p>
-        <p class="view-help">{{ mode === 'create' ? 'Keeps your filters, horizons, grouping and sort.' : 'Renaming keeps this view’s saved filters and layout.' }} Saved on this browser.</p>
+        <p class="view-help">{{ mode === 'create' ? 'Keeps your filters, horizons, grouping and sort.' : 'Renaming keeps this view’s saved filters and layout.' }} Saved in this browser; not synced across devices.</p>
         <p v-if="error" :id="errorId" role="alert" class="view-error">{{ error }}</p>
         <div class="view-form-actions">
           <button v-if="mode === 'rename'" type="button" class="view-text-action view-remove" @click="remove">Remove view</button>
@@ -278,8 +270,6 @@ function undo() {
 .view-icon-action { display: inline-grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 5px; color: var(--roadmap-ink-muted); cursor: pointer; }
 .view-list { min-height: 0; max-height: min(360px, 48dvh); overflow-y: auto; overscroll-behavior: contain; padding: 0 .5rem .5rem; scrollbar-width: thin; }
 .view-section-label { margin: .5rem .5rem .35rem; font-size: .68rem; font-weight: 500; color: var(--roadmap-ink-muted); }
-.view-personal-heading { display: flex; justify-content: space-between; gap: 1rem; padding-top: .7rem; border-top: 1px solid var(--roadmap-glass-border); margin-top: .7rem; }
-.view-personal-heading > span:last-child { font-weight: 400; }
 .view-option { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex: 1; width: 100%; min-width: 0; text-align: left; padding: .7rem .5rem; border-radius: 6px; cursor: pointer; }
 .view-option[aria-pressed='true'] { background: var(--color-surface-subtle-default); }
 .view-option > svg { color: var(--color-accent-brand-default); flex-shrink: 0; }

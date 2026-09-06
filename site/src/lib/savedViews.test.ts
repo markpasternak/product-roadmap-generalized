@@ -25,3 +25,12 @@ describe('saved views', () => {
     expect(sameViewSelection(saved, { ...current, sort: 'manual' })).toBe(false);
   });
 });
+
+it('migrates obsolete resource selections and preserves rolling activity filters', () => {
+  const activity = { field: 'updated' as const, period: 'relative' as const, days: 14, timeZone: 'Europe/Stockholm' };
+  const saved = snapshotView('Recent', { ...emptyFilters(), assets: ['asset:any'], activity }, ['Now'], 'updated');
+  expect(saved.filters.assets).toEqual([]);
+  expect(readSavedViews(JSON.stringify([saved]))[0].filters.activity).toEqual(activity);
+  expect(sameViewSelection(saved, { ...saved, filters: { ...saved.filters, activity: { ...activity, days: 30 } } })).toBe(false);
+  expect(readSavedViews(JSON.stringify([{ ...saved, filters: { ...saved.filters, activity: { ...activity, days: -1 } } }]))[0].filters.activity).toBeNull();
+});

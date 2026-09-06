@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import Select from '../ui/Select.vue';
+import ActivityFilter from './ActivityFilter.vue';
 import { cn } from '../../lib/utils';
 import { PRODUCTS, VISIBILITIES } from '../../lib/schema';
 import { IS_PUBLIC } from '../../lib/audience';
 import {
   activeFilterCount,
-  type AssetFilterOption,
   type FilterState,
   type LevelFilterOption,
   type StageFilterOption,
@@ -15,7 +15,6 @@ import {
 const props = defineProps<{
   filters: FilterState;
   owners?: string[];
-  assets: AssetFilterOption[];
   stages: StageFilterOption[];
   impactOptions: LevelFilterOption[];
   effortOptions: LevelFilterOption[];
@@ -47,13 +46,11 @@ const ownerModel = computed({
   set: (value: string) => (props.filters.owner = value || null),
 });
 
-type MultiKey = 'stage' | 'impact' | 'effort' | 'assets';
+type MultiKey = 'stage' | 'impact' | 'effort';
 
 const tagQuery = ref('');
 const showAllTags = ref(false);
 const showAllStages = ref(false);
-const showAllAssets = ref(false);
-const visibleAssets = computed(() => showAllAssets.value ? props.assets : props.assets.filter((asset, index) => index < 6 || props.filters.assets.includes(asset.key)));
 const filteredTokens = computed(() =>
   props.tagOptions.filter((t) => t.label.toLowerCase().includes(tagQuery.value.toLowerCase())),
 );
@@ -101,6 +98,7 @@ function toggleTag(token: string) {
     </div>
 
     <div class="space-y-5">
+      <ActivityFilter v-model="filters.activity" :id="idp" />
       <div>
         <label :for="idp + '-product'" :class="sectionTitle">Product</label>
         <Select :id="idp + '-product'" v-model="productModel" :options="productOptions" />
@@ -169,27 +167,6 @@ function toggleTag(token: string) {
             <span :class="countClass">{{ l.count }}</span>
           </label>
         </div>
-      </fieldset>
-
-      <fieldset class="min-w-0" v-if="assets.length">
-        <legend :class="sectionTitle">Linked resources</legend>
-        <div class="grid gap-1.5">
-          <label
-            v-for="asset in visibleAssets"
-            :key="asset.key"
-            :class="optionClass(checked('assets', asset.key))"
-          >
-            <input
-              type="checkbox"
-              :checked="checked('assets', asset.key)"
-              class="size-4 shrink-0 rounded accent-[color:var(--color-accent-brand-default)]"
-              @change="toggleMulti('assets', asset.key)"
-            />
-            <span class="min-w-0 flex-1 truncate">{{ asset.label }}</span>
-            <span :class="countClass">{{ asset.count }}</span>
-          </label>
-        </div>
-        <button v-if="assets.length > 6" type="button" class="mt-2 text-single-sm-medium text-text-subtle-default hover:text-text-primary-default" @click="showAllAssets = !showAllAssets">{{ showAllAssets ? 'Show fewer resources' : 'Show all resources' }}</button>
       </fieldset>
 
       <fieldset class="min-w-0" v-if="tagOptions.length || filters.tags.length">

@@ -106,10 +106,10 @@ describe('Board — product navigation and view options', () => {
     expect(filtered.findAll('button').some((button) => button.text() === 'Clear all filters')).toBe(true);
   });
 
-  it('recognizes a restored quick view after the URL filters are ready', async () => {
+  it('restores legacy filter links without reviving removed shortcuts', async () => {
     window.history.replaceState(null, '', '/?hygiene=now-early&horizon=Now&sort=updated');
     const w = await mountBoard([item({ stage: 'Shaping' })]);
-    expect(w.get('button[aria-label="Choose view: Now: early stage"]').text()).toBe('Now: early stage');
+    expect(w.get('button[aria-label="Choose view: Current view"]').text()).toBe('Current view');
     expect(w.get('[aria-label="Roadmap views"]').text()).not.toContain('Modified');
   });
 
@@ -132,6 +132,25 @@ describe('Board — product navigation and view options', () => {
     expect(new URLSearchParams(window.location.search).getAll('horizon')).toEqual(['Now']);
     await navigation.find('button').trigger('click');
     expect(w.findAllComponents({ name: 'RoadmapCard' })).toHaveLength(2);
+  });
+
+  it('restores historical activity from a link, ignores retired resource filters, and clears the activity chip', async () => {
+    localStorage.setItem('rm-sidebar', '1');
+    window.history.replaceState(null, '', '/?asset=missing&activity=updated&from=2026-08-01&to=2026-08-31&tz=UTC');
+    const w = await mountBoard([
+      item({ id: 'TALK-1', updated: '2026-09-06', activityDates: ['2026-08-04T12:00:00Z', '2026-09-06T12:00:00Z'] }),
+      item({ id: 'TALK-2', updated: '2026-09-06', activityDates: ['2026-09-06T12:00:00Z'] }),
+    ]);
+    expect(w.findAllComponents({ name: 'RoadmapCard' }).map(card => card.props('item').id)).toEqual(['TALK-1']);
+    expect(w.text()).not.toContain('Linked resources');
+    expect(window.location.search).not.toContain('asset=');
+    expect(w.get('[data-filter-kind="activity"]').text()).toContain('Aug 1, 2026');
+    (w.vm as unknown as { sheetOpen: boolean }).sheetOpen = true;
+    await flushPromises();
+    expect((w.get('#sheet-activity-from').element as HTMLInputElement).value).toBe('2026-08-01');
+    await w.get('[data-filter-kind="activity"] button').trigger('click');
+    expect(w.findAllComponents({ name: 'RoadmapCard' })).toHaveLength(2);
+    expect(window.location.search).not.toContain('activity=');
   });
 
   it('keeps visibility in Filters, separate from layout, with URL and chip recovery', async () => {

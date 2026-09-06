@@ -1,6 +1,7 @@
 // Pure filter / search / group logic for the board. No DOM, fully unit-tested.
 import Fuse, { type IFuseOptions } from 'fuse.js';
 import { LEVELS, STAGES } from './schema';
+import { matchesActivity, activityLabel, type ActivityFilter } from './activityFilter';
 import type { ItemHistory } from './itemHistory';
 
 export interface ItemLinkVM {
@@ -107,6 +108,7 @@ export function matchesHygiene(it: ItemVM, key: HygieneKey, staleCutoff: string)
 }
 
 export interface FilterState {
+  activity?: ActivityFilter | null;
   q: string;
   owner?: string | null;
   product: string | null;
@@ -121,6 +123,7 @@ export interface FilterState {
 }
 
 export type ActiveFilterChipKind =
+  | 'activity'
   | 'q'
   | 'owner'
   | 'product'
@@ -141,6 +144,7 @@ export interface ActiveFilterChip {
 
 export const emptyFilters = (): FilterState => ({
   q: '',
+  activity: null,
   owner: null,
   product: null,
   stage: [],
@@ -388,6 +392,7 @@ export function staleCutoff(days = 90, now = Date.now()): string {
 }
 
 export function matchesStructuredFilters(it: ItemVM, f: FilterState, cutoff = staleCutoff()): boolean {
+  if (!matchesActivity(it, f.activity)) return false;
   if (f.owner && it.owner !== f.owner) return false;
   if (f.product && it.product !== f.product) return false;
   if (f.stage.length && !f.stage.includes(it.stage)) return false;
@@ -511,6 +516,7 @@ export function groupItems(
 
 export function activeFilterCount(f: FilterState): number {
   return (
+    (f.activity ? 1 : 0) +
     (f.owner ? 1 : 0) +
     (f.q ? 1 : 0) +
     (f.product ? 1 : 0) +
@@ -526,6 +532,7 @@ export function activeFilterCount(f: FilterState): number {
 
 export function activeFilterChips(f: FilterState): ActiveFilterChip[] {
   const chips: ActiveFilterChip[] = [];
+  if (f.activity) chips.push({ key: "activity", kind: "activity", value: "activity", label: activityLabel(f.activity) });
   if (f.owner) chips.push({ key: `owner:${f.owner}`, kind: 'owner', value: f.owner, label: `Owner: ${f.owner}` });
   const q = f.q.trim();
   if (q) chips.push({ key: `q:${q}`, kind: 'q', value: q, label: `“${q}”` });

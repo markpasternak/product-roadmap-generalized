@@ -1,6 +1,8 @@
 import { isoDateOnly } from './dates';
 
 export interface ItemHistory {
+  /** Published content-change timestamps; includes creation. */
+  activityDates?: string[];
   created?: string;
   updated: string;
   createdAt?: string;
@@ -30,6 +32,7 @@ export function normalizeItemHistory(input: Partial<ItemHistory> | null | undefi
   const createdAt = input?.createdAt ?? '';
   const updatedAt = input?.updatedAt ?? '';
   return {
+    activityDates: input?.activityDates,
     created: input?.created ?? isoDateOnly(createdAt),
     updated: input?.updated ?? isoDateOnly(updatedAt),
     createdAt,

@@ -155,3 +155,9 @@ describe('escapeHtml', () => {
     expect(escapeHtml(`<>&"'`)).toBe('&lt;&gt;&amp;&quot;&#39;');
   });
 });
+
+
+it('keeps the resolved activity range visible in a shared snapshot', () => {
+  const html = renderShareHtml({ title: 'Review', product: null, generatedAt: 'Sep 6, 2026', activitySummary: 'Updated · Aug 1, 2026 – Aug 31, 2026 (Europe/Stockholm)' }, []);
+  expect(html).toContain('Updated · Aug 1, 2026 – Aug 31, 2026 (Europe/Stockholm)');
+});
