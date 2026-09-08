@@ -12,6 +12,9 @@ updates:
       # 7.5.0 breaks the tested typo-tolerant search behavior. Revisit newer releases.
       - dependency-name: fuse.js
         versions: ["7.5.0"]
+      # Astro checker currently supports TypeScript 5/6, not the 7.x compiler.
+      - dependency-name: typescript
+        versions: [">=7.0.0"]
   - package-ecosystem: gomod
     directory: /edit-service
     schedule:
