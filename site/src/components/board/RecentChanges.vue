@@ -19,6 +19,7 @@ const props = withDefaults(
     /** Whether to show the "View all →" link (hidden on the /changes page itself). */
     showSeeAll?: boolean;
     showEmpty?: boolean;
+    embedded?: boolean;
   }>(),
   { base: '/', showSeeAll: true, showEmpty: false },
 );
@@ -94,10 +95,10 @@ function what(e: ParsedActivity): string {
 <template>
   <section
     v-if="visible.length"
-    class="recent-changes roadmap-panel page-reveal rounded-2xl px-4 py-3.5 sm:px-5 sm:py-4"
+    :class="embedded ? 'recent-changes' : 'recent-changes roadmap-panel page-reveal rounded-2xl px-4 py-3.5 sm:px-5 sm:py-4'"
     aria-label="Recent changes"
   >
-    <header class="flex items-center justify-between gap-3">
+    <header v-if="!embedded" class="flex items-center justify-between gap-3">
       <h2 class="font-display roadmap-title flex min-w-0 items-center gap-2 text-[1.1rem] leading-none">
         <span class="h-5 w-1 shrink-0 rounded-full" style="background: var(--color-accent-brand-default)" />
         <PhClockCounterClockwise :size="18" class="shrink-0" style="color: var(--color-accent-brand-default)" />

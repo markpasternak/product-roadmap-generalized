@@ -1844,3 +1844,20 @@ it('restores timeline settings across remounts without losing the incoming layou
   expect(window.location.search).toContain('timelineGroup=owner');
   expect(window.location.search).toContain('at=2026-09-01');
 });
+
+it('keeps recent changes out of the roadmap until opened from More', async () => {
+  window.history.replaceState(null, '', '/?layout=timeline&scale=weeks');
+  const w = await mountBoard();
+  const before = window.location.search;
+  expect(w.findComponent({ name: 'RecentChangesDrawer' }).exists()).toBe(false);
+  await w.get('[aria-controls="board-more-actions"]').trigger('click');
+  const action = w.findAll('#board-more-actions button').find(button => button.text() === 'Recent changes')!;
+  await action.trigger('click');
+  await flushPromises();
+  expect(w.findComponent({ name: 'RecentChangesDrawer' }).exists()).toBe(true);
+  expect(window.location.search).toBe(before);
+  document.querySelector<HTMLButtonElement>('[aria-label="Close recent changes"]')!.click();
+  await flushPromises();
+  expect(w.findComponent({ name: 'RecentChangesDrawer' }).exists()).toBe(false);
+  expect(window.location.search).toBe(before);
+});

@@ -15,7 +15,7 @@ import SearchInput from '../ui/SearchInput.vue';
 import Select from '../ui/Select.vue';
 import BrandMark from '../ui/BrandMark.vue';
 import ShareDialog from '../share/ShareDialog.vue';
-import RecentChanges from './RecentChanges.vue';
+import RecentChangesDrawer from './RecentChangesDrawer.vue';
 import { cn } from '../../lib/utils';
 import { productSlug } from '../../lib/slugs';
 import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
@@ -1447,7 +1447,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return el.isContentEditable === true;
 }
 function onGlobalKey(e: KeyboardEvent) {
-  if (discardConfirmation.value) return;
+  if (discardConfirmation.value || recentChangesOpen.value) return;
   if (isTypingTarget(e.target)) return;
   // The full-screen item editor and the share dialog own their own keyboard handling
   // (Esc close, etc. — see ItemEditor/ShareDialog) — board-level shortcuts stay out of
@@ -1543,6 +1543,12 @@ function setPresent(on: boolean) {
     delete document.documentElement.dataset.present;
     nextTick(() => moreWrap.value?.querySelector<HTMLButtonElement>('button')?.focus());
   }
+}
+const recentChangesOpen = ref(false);
+async function openRecentChanges() {
+  closeMore(true);
+  await nextTick();
+  recentChangesOpen.value = true;
 }
 const moreOpen = ref(false);
 const moreWrap = ref<HTMLElement>();
@@ -2211,10 +2217,7 @@ const editActionBtn =
       <span>{{ focused.length }} items</span>
     </div>
 
-    <!-- R2: a compact "recent changes" peek — hidden entirely (no empty box) when the
-         feed is empty or the endpoint/token is unavailable (see RecentChanges.vue), and
-         out of the way in presentation mode like the rest of the board chrome. -->
-    <RecentChanges v-if="!present" :items="liveItems" :base="props.base ?? '/'" :limit="4" class="mb-4" />
+    <RecentChangesDrawer v-if="recentChangesOpen" :items="liveItems" :base="props.base ?? '/'" @close="recentChangesOpen = false" />
 
     <!-- Body -->
     <div class="roadmap-glass board-body rounded-[24px] p-3.5 sm:p-4">
@@ -2290,6 +2293,7 @@ const editActionBtn =
                 More<span class="disclosure-caret" aria-hidden="true"></span>
               </button>
               <div v-if="moreOpen" id="board-more-actions" class="control-popover board-more-panel">
+                <button type="button" @click="openRecentChanges">Recent changes</button>
                 <button type="button" aria-label="Start presentation" @click="startPresentation">
                   Start presentation
                 </button>
