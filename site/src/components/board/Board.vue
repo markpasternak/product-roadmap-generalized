@@ -1805,6 +1805,7 @@ function onFsChange() {
 }
 
 // URL state
+let urlStateRestored = false;
 onMounted(async () => {
   // Capture the GitHub sign-in token from the callback hash FIRST — before the
   // saved-state restore and syncState() below rewrite the URL via replaceState,
@@ -1839,7 +1840,7 @@ onMounted(async () => {
   filters.stage = p.getAll('stage');
   filters.impact = p.getAll('impact');
   filters.effort = p.getAll('effort');
-  filters.layout = p.get('view') === 'timeline' ? 'timeline' : 'board';
+  filters.layout = (p.get('layout') ?? p.get('view')) === 'timeline' ? 'timeline' : 'board';
   filters.timeline = timelineSettings({ group: p.get('timelineGroup') ?? 'product', scale: p.get('scale') ?? 'months', fit: p.get('fit') === '1', ...(dateDay(p.get('at')) !== null ? { anchor: p.get('at') } : {}) });
   filters.assets = [];
   filters.activity = activityFromParams(p);
@@ -1865,7 +1866,8 @@ onMounted(async () => {
   // point in onMounted) — the handler itself is a no-op for anyone without unsynced work or an
   // in-flight sync, which a non-editor can never have.
   window.addEventListener('beforeunload', onBeforeUnload);
-  // Normalize the URL and seed the saved state for this view.
+  // Normalize only after restoring every field; hydration can trigger watchers earlier.
+  urlStateRestored = true;
   syncState();
   // Let the resolved view paint, then reveal it (cascade defined in the scoped styles).
   await nextTick();
@@ -1963,8 +1965,9 @@ onUnmounted(() => {
 });
 
 function syncState() {
+  if (!urlStateRestored) return;
   const p = new URLSearchParams();
-  if (filters.layout === 'timeline') p.set('view', 'timeline');
+  if (filters.layout === 'timeline') p.set('layout', 'timeline');
   if (filters.timeline) {
     p.set('timelineGroup', filters.timeline.group); p.set('scale', filters.timeline.scale);
     if (filters.timeline.fit) p.set('fit', '1');

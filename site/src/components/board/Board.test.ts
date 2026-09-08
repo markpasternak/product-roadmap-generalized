@@ -1831,3 +1831,16 @@ describe('Board — search tuning', () => {
     expect(w.text()).toContain('Shipped launch');
   });
 });
+
+
+it('restores timeline settings across remounts without losing the incoming layout', async () => {
+  window.history.replaceState(null, '', '/?view=timeline&timelineGroup=owner&scale=weeks&at=2026-09-01');
+  const first = await mountBoard();
+  expect(first.find('[aria-label="Roadmap timeline"]').exists()).toBe(true);
+  expect(window.location.search).toContain('layout=timeline');
+  first.unmount(); wrappers = [];
+  const second = await mountBoard();
+  expect(second.find('[aria-label="Roadmap timeline"]').exists()).toBe(true);
+  expect(window.location.search).toContain('timelineGroup=owner');
+  expect(window.location.search).toContain('at=2026-09-01');
+});
