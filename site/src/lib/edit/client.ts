@@ -1,5 +1,5 @@
 // Browser client for the Go edit-service (GitHub-gated in-app editing).
-export const EDIT_API = import.meta.env.PUBLIC_EDIT_API as string;
+export const EDIT_API = (import.meta.env.PUBLIC_EDIT_API ?? '').trim();
 const KEY = 'rm-edit-token';
 const RETURN_KEY = 'rm-edit-return';
 // Once editing starts, this page must keep using the account it loaded. Another
@@ -71,6 +71,7 @@ async function authed(path: string, init: RequestInit = {}, tok = getToken()) {
 export const authedRequest = authed;
 
 export async function me(): Promise<{ editor: boolean; login: string }> {
+  if (!EDIT_API) return { editor: false, login: '' };
   try {
     const token = getToken();
     const r = await authed('/api/me', {}, token);

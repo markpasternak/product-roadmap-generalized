@@ -136,12 +136,12 @@ const ogImageUrl = new URL(ogImage ?? `${base}brand/og-card.png`, Astro.site).hr
     <ClientRouter fallback="swap" />
     <!-- canvas-drop browser SDK: defines window.canvasdrop when the canvas backend
          is enabled (no-op/404 otherwise). Powers "Share this view". -->
-    <script is:inline src="/sdk/v1.js"></script>
+    {import.meta.env.PUBLIC_CANVAS_BACKEND === 'true' && <script is:inline src="/sdk/v1.js"></script>}
     {
       /* DEV ONLY: the real SDK 404s locally, so stub window.canvasdrop to a signed-in
          member. Lets "Share this view" appear and the publish flow run end-to-end with
          a fake result. import.meta.env.DEV → tree-shaken out of production builds. */
-      import.meta.env.DEV && (
+      import.meta.env.DEV && import.meta.env.PUBLIC_MOCK_BACKEND === 'true' && (
         <script
           is:inline
           set:html={`

@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import Avatar from './Avatar.vue';
 import Select from './Select.vue';
 import { getCanvasdrop, type Me } from '../../lib/share/canvasdrop';
-import { me, loginUrl, readTokenFromHash, rememberSignInLocation } from '../../lib/edit/client';
+import { EDIT_API, me, loginUrl, readTokenFromHash, rememberSignInLocation } from '../../lib/edit/client';
 import { IS_PUBLIC } from '../../lib/audience';
 
 defineProps<{ base: string; active?: 'roadmap' | 'shares' | 'docs' | 'help' }>();
@@ -77,9 +77,9 @@ const navigation = [{ key: 'roadmap', label: 'Roadmap', path: '' }, { key: 'shar
           :aria-current="active === item.key ? 'page' : undefined" :class="[link, active === item.key ? activeCls : idleCls]">{{ item.label }}</a>
       </nav>
       <div ref="accountWrap" class="site-account" @keydown.esc.stop.prevent="closeAccount(true)" @focusout="onFocusOut">
-        <button type="button" class="account-trigger roadmap-action" :aria-label="IS_PUBLIC ? 'Appearance' : 'Account'" :aria-expanded="accountOpen" aria-controls="site-account-panel" @click="toggleAccount">
+        <button type="button" class="account-trigger roadmap-action" :aria-label="IS_PUBLIC || !EDIT_API ? 'Appearance' : 'Account'" :aria-expanded="accountOpen" aria-controls="site-account-panel" @click="toggleAccount">
           <Avatar v-if="author && !IS_PUBLIC" :name="authorName" :size="22" />
-          {{ IS_PUBLIC ? 'Appearance' : 'Account' }}<span class="disclosure-caret" aria-hidden="true"></span>
+          {{ IS_PUBLIC || !EDIT_API ? 'Appearance' : 'Account' }}<span class="disclosure-caret" aria-hidden="true"></span>
         </button>
         <div v-if="accountOpen" id="site-account-panel" class="control-popover account-panel">
           <div v-if="author && !IS_PUBLIC" class="account-section account-identity">
@@ -87,7 +87,7 @@ const navigation = [{ key: 'roadmap', label: 'Roadmap', path: '' }, { key: 'shar
             <span v-if="author.email && author.email !== authorName">{{ author.email }}</span>
             <span>Signed in for sharing</span>
           </div>
-          <div v-if="!IS_PUBLIC" class="account-section">
+          <div v-if="!IS_PUBLIC && EDIT_API" class="account-section">
             <span class="account-label">Roadmap editing</span>
             <p v-if="checkingEditor" role="status">Checking editing access…</p>
             <template v-else-if="editorError">

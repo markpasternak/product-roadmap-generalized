@@ -15,3 +15,15 @@ edit-service/secrets/
 
 # Authenticated deployment verification report
 deployment-verification.json
+
+# Local configuration and review artifacts
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+*.key
+*.p12
+*.pfx
+.playwright-cli/
+output/

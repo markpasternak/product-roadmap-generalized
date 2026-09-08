@@ -1,5 +1,6 @@
 import managedAssets from './scripts/managed-assets.mjs';
 import { defineConfig } from 'astro/config';
+import { unified } from '@astrojs/markdown-remark';
 import vue from '@astrojs/vue';
 import sitemap from '@astrojs/sitemap';
 import tailwindcss from '@tailwindcss/vite';
@@ -154,6 +155,8 @@ const strippedSections =
   audience === 'public' ? ['Links', 'One-liner', 'Open questions'] : ['Links', 'One-liner'];
 
 export default defineConfig({
+  // Preserve spacing between inline elements across the Astro 7 upgrade.
+  compressHTML: true,
   site: process.env.SITE_URL || 'https://roadmapdemo.canvas-drop.com',
   base,
   trailingSlash: 'ignore',
@@ -183,13 +186,16 @@ export default defineConfig({
     },
   },
   markdown: {
+    // Keep the resource-link and Mermaid rehype transformations.
+    processor: unified({
+      rehypePlugins: [
+        rehypeMermaid,
+        [rehypeLinks, base],
+        [rehypeStripSections, strippedSections],
+        rehypeStripPlaceholders,
+      ],
+    }),
     syntaxHighlight: { type: 'shiki', excludeLangs: ['mermaid'] },
     shikiConfig: { themes: { light: 'github-light', dark: 'github-dark' }, wrap: true },
-    rehypePlugins: [
-      rehypeMermaid,
-      [rehypeLinks, base],
-      [rehypeStripSections, strippedSections],
-      rehypeStripPlaceholders,
-    ],
   },
 });

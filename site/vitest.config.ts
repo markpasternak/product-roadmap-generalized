@@ -8,6 +8,14 @@ export default defineConfig({
   define: { __BUILD_COMMIT__: JSON.stringify('vitest-build-commit') },
   test: {
     environment: 'happy-dom',
+    setupFiles: ['./src/test-setup.ts'],
+    // Unit tests inspect embedded resources without fetching remote pages or styles.
+    environmentOptions: { happyDOM: { settings: {
+      disableIframePageLoading: true,
+      disableCSSFileLoading: true,
+      disableJavaScriptFileLoading: true,
+    } } },
+    env: { PUBLIC_EDIT_API: 'https://edit.example.test' },
     // Snapshot HTML embeds raw CSS; keep those imports real in renderer tests.
     css: { include: [/\.css\?raw$/] },
     globals: true,

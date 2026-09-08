@@ -7,7 +7,17 @@ beforeEach(() => {
   sessionStorage.clear();
   history.replaceState(null, '', '/');
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+
+it('keeps an unconfigured checkout read-only without contacting an editing service', async () => {
+  vi.stubEnv('PUBLIC_EDIT_API', '');
+  vi.resetModules();
+  const fetch = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+  const standaloneClient = await import('./client');
+  expect(await standaloneClient.me()).toEqual({ editor: false, login: '' });
+  expect(fetch).not.toHaveBeenCalled();
+});
 
 describe('edit token', () => {
   it('stores and clears', () => {

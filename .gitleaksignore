@@ -1,0 +1,3 @@
+# Reviewed CSS class strings, not credentials. Exact historical findings only.
+b7f0e6e09fae07e2b79ca3712c15cfd513428841:site/src/components/share/ShareLibrary.vue:generic-api-key:117
+b7f0e6e09fae07e2b79ca3712c15cfd513428841:site/src/components/share/ShareDialog.vue:generic-api-key:239

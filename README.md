@@ -1,79 +1,108 @@
-# Product Portfolio Roadmap
+# Product Roadmap
 
-A Git-backed roadmap with an interactive board, in-app editing, supporting files and shareable snapshots.
+**A roadmap you can read, plan and publish—with Git as the source of truth.**
 
-**Live demo:** [roadmapdemo.canvas-drop.com](https://roadmapdemo.canvas-drop.com)
+Move between a Now / Next / Later board and a grouped timeline. Write the story behind each item, attach the evidence, and share a focused snapshot with the people who need it.
 
-This is a demonstration instance. All 60 roadmap items, owner names and four supporting documents are fictional. Planned dates on 15 items are illustrative examples for the Timeline view. The five products—Music App, Podcasts & Audiobooks, Spotify for Artists, Ads Platform, and Core Platform & Data—illustrate a portfolio; they are not anyone's real plan. This project is not affiliated with or endorsed by Spotify.
+[Explore the showcase](https://roadmapdemo.canvas-drop.com/) · [Run locally](#run-locally) · [Configure editing](docs/self-hosting.md) · [Contribute](CONTRIBUTING.md)
 
-## What you can do
+![Dark roadmap board with softly colored product cards and compact search and view controls](docs/images/board-dark.png)
 
-- Browse Now / Next / Later, with Candidates for intake and Completed for shipped work.
-- Search and filter by product, horizon, stage, visibility and roadmap hygiene. Save, update, rename and remove named views.
-- Change layouts separately from filters; use the focused presentation view for a discussion.
-- Open an item to read its rationale, scope, evidence and supporting resources.
-- Edit fields or write in structured sections and a full Markdown editor with live preview.
-- Upload files, paste images, reuse resources, replace revisions, change labels, remove placements and delete unused originals.
-- Insert images from a thumbnail picker or an external URL using `![alt text](url)`.
-- Save drafts automatically, review changes and explicitly publish them to Git.
-- Share a read-only snapshot with selected files and links. New snapshots use the same typography, teal identity and graphite dark mode as the app.
+## A board for priorities. A timeline for planned work.
 
-Supporting documents remain accessible from relevant items and the footer's **Source documents** link.
+- **One portfolio, two views.** Switch between the board and timeline without losing your filters. Group the timeline by product, owner, tag or stage. Items without both planned dates stay on the board, with a clear count of what the timeline omits.
+- **Find the work that matters.** Search titles and descriptions; filter by product, stage, owner, tags and created/updated dates. Save named views in your browser.
+- **Keep the context with the item.** Structured sections, Markdown, image previews, supporting documents and versioned attachments sit alongside the work.
+- **Edit, review, then publish.** Recoverable drafts, conflict handling and a publication review separate work in progress from the committed roadmap. Publishing commits related items and uploaded files together.
+- **Share deliberately.** Publish a standalone snapshot with selected resources. It retains its own content and appearance until explicitly republished.
+- **Comfortable in either theme.** Product colors carry through cards, timelines and item details, with visible keyboard focus and layouts for desktop and mobile.
 
-## Saving and publishing
+![Light timeline grouped by product, with planned work bars and a count of items missing dates](docs/images/timeline.png)
 
-Markdown files and published attachments in Git are the source of truth. Drafts are working copies until you publish.
+<details>
+<summary>See the board in light mode</summary>
 
-1. Sign in with GitHub. Editing requires write access to this repository.
-2. Edit an item. The browser saves a recovery copy locally and synchronizes the draft to your account.
-3. Use **Review** to inspect unpublished changes.
-4. **Publish changes** commits the items, original files and resource metadata together.
-5. The status distinguishes a successful Git commit from the update actually being live after the site rebuild.
+![Light roadmap board with pale product-colored cards](docs/images/board-light.png)
 
-Independent field changes can merge. Overlapping edits have a comparison flow; interrupted requests can retry without duplicating a publication. Each tab keeps its own recovery state, and edits made during publication remain a draft.
+</details>
 
-Direct commits, pull requests and **Edit on GitHub** remain supported. A push to `main` rebuilds the demo through GitHub Actions.
+## About the showcase
 
-## Files and images
+The music portfolio is fictional: **60 items, five products, four supporting documents, and illustrative dates on 15 items**. Owner names, priorities and plans are demonstration content. Product names illustrate a music business; this project is not affiliated with or endorsed by Spotify.
 
-Use **Add resource** to upload a file, add a link or choose an existing file or source document. Uploaded images have thumbnail previews. The image button in either editor inserts a resource or external image at your cursor, with editable alt text.
+The hosted showcase is available for browsing. GitHub write access is required to edit it. To try editing your own roadmap, use your own repository and editing service.
+
+The screenshots above are actual application captures of the fictional dataset.
+
+## Run locally
+
+Requirements: **Node.js 22.12 or later**, npm, and Git. Go is only needed for the optional editing service.
+
+```sh
+git clone https://github.com/markpasternak/product-roadmap-generalized.git
+cd product-roadmap-generalized
+npm --prefix site ci
+npm --prefix site run dev
+```
+
+Open **http://localhost:4321**. No account, API key or backend is required to browse, filter, switch themes or save browser views. Content edits made in Markdown appear in the development server.
+
+For an optional local configuration, copy `site/.env.example` to `site/.env`. A blank `PUBLIC_EDIT_API` keeps in-app editing disabled. All `PUBLIC_` values are visible to the browser—never use them for secrets.
+
+## How it works
+
+```text
+content/items/*.md + content/assets/
+                 │
+              Astro build
+                 │
+          static roadmap site
+                 │
+       optional Go editing service
+                 │
+      review → Git commit → rebuild
+```
+
+The source files are portable. The frontend builds to static HTML, CSS and JavaScript. The optional Go service handles GitHub authentication, drafts, attachments and publication. Canvas Drop supplies optional hosted snapshot sharing, AI assistance and presence.
+
+| Available without a backend | Requires configured services |
+| --- | --- |
+| Board, timeline, search, filters, local views, item pages, light/dark themes | GitHub sign-in, account drafts, uploads and in-app publication: Go editing service |
+| Markdown-driven content and static hosting | Hosted snapshots, AI assistance and presence: Canvas Drop backend |
+
+GitHub sign-in does not give visitors permission to edit. The service checks repository write access, including at publication. Making the repository public does not make the hosted roadmap publicly editable.
+
+## Content and resources
+
+Each item is a Markdown file with validated frontmatter. [The schema](site/src/lib/schema.ts) defines the fields; files under `content/items/` provide complete examples. Products are defined in the schema and display mappings; changing the portfolio means updating those definitions as well as the content.
+
+Uploaded originals live in `content/assets/ast_<id>/rev_<id>/filename.ext`. Each asset has a manifest containing its identity, visibility, revisions, media type, size and checksum. Markdown pins a particular revision:
 
 ```markdown
-![A useful diagram](../../assets/ast_example/rev_example/diagram.png)
+![Architecture overview](../../assets/ast_example/rev_example/diagram.png)
 
 ## Resources
 
 - [Supporting notes](../../assets/ast_example/rev_example/notes.pdf)
 ```
 
-Original bytes are committed to `content/assets/ast_<id>/rev_<id>/filename.ext`. Each asset's `asset.json` records its stable identity, name, visibility, revisions, size, type and SHA-256. Replacing a file creates a new revision; other items retain the revisions they reference.
+Replacement creates a new revision. Removing a reference does not delete the file. Deleting a file from the current tree does **not** erase earlier Git commits or existing shared snapshots.
 
-Removing a placement keeps the file available. Deleting an unused file removes it from the current tree when published; earlier Git commits and existing snapshots can still contain it.
+An item's `Internal` / `Public` label controls site projections; it is **not an access boundary for a public Git repository**. Everything committed here must be suitable for public disclosure, regardless of its label.
 
-Limits: 25 MiB per file, 100 MiB of uploads per publication, 250 MiB staged per account, and 30 days of retention for unpublished uploads. Supported originals include common raster images, PDF, video, Office documents, ZIP and text formats. See [the editing service documentation](edit-service/README.md) for details. External image URLs remain hosted externally; uploading stores an original in this repository.
+## Project structure
 
-## Sharing
+| Path | Purpose |
+| --- | --- |
+| `content/items/` | Fictional roadmap items |
+| `content/prds/`, `content/technical-design/`, `content/research/` | Supporting documents |
+| `content/assets/` | Original attachments and revision manifests |
+| `site/` | Astro 7, Vue 3 and Tailwind CSS 4 frontend |
+| `edit-service/` | Optional Go service for GitHub-backed editing |
+| `templates/` | Content templates |
+| `tooling/` | Content validation |
 
-A shared roadmap is a frozen snapshot. Changes to the main board do not alter an existing share until you explicitly update it.
-
-- Review the selected items, scope and audience before publishing.
-- Files and links are included only when explicitly selected. Uploaded files must be published first.
-- Selected originals are copied and verified for the snapshot. Owner names and internal editing details are excluded.
-- Restricted access, organization access, public links, passwords and expiration are separate from whether an item is marked Internal or Public.
-- Existing deployment access settings remain unchanged by a code release.
-
-Canvas Drop's optional backend powers sharing, AI assistance and presence. GitHub controls permission to edit repository content.
-
-## Development
-
-Use Node.js 22+ and Go 1.26.4+.
-
-```sh
-npm --prefix site ci
-npm --prefix site run dev
-```
-
-The frontend's public API URL is configured in `site/.env`. The editing service is a separate process; its secrets and operational files are excluded from Git.
+## Check your changes
 
 ```sh
 npm --prefix site test
@@ -81,29 +110,22 @@ npm --prefix site run check
 npm --prefix site run build
 node site/scripts/check-demo.mjs
 python3 tooling/validate_items.py
+```
+
+For editing-service changes, also run:
+
+```sh
 (cd edit-service && go test -race ./... && go vet ./...)
 ```
 
-Set `SITE_AUDIENCE=public` for a build containing only Public items and documents, with owners and internal sections removed. The showcase uses the full fictional portfolio. `SITE_BASE` supports deployment under a path prefix.
+CI checks source history for secrets, validates the fictional dataset, and builds and tests the application. See [CONTRIBUTING.md](CONTRIBUTING.md) for the review workflow and [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
-## Repository layout
+## Deploy your own
 
-| Path | Purpose |
-| --- | --- |
-| `content/items/` | Fictional roadmap items, one Markdown file per item |
-| `content/prds/`, `content/technical-design/`, `content/research/` | Fictional supporting documents |
-| `content/assets/` | Published original files and version manifests |
-| `site/` | Astro/Vue application, tests and build scripts |
-| `edit-service/` | Go API for GitHub authentication, drafts, uploads and publication |
-| `tooling/` | Content validation and repository utilities |
-| `.github/workflows/` | Validation and showcase deployment |
+Build with `npm --prefix site run build` and serve `site/dist/` using a static host. Configure `SITE_URL` for canonical URLs and `SITE_BASE` for a path prefix.
 
-Item IDs use MUSIC, TALK, ARTISTS, ADS or PLATFORM followed by three digits. Required metadata: `id`, `title`, `product`, `horizon`, `stage`, `owner`. Optional fields include visibility, impact, effort, tags, order, commercial driver, target and confidence. The enforced schema is in `site/src/lib/schema.ts`.
+The included showcase workflow targets the maintained demo. Forks must configure their own deployment target and credentials; do not reuse the showcase's API or canvas. [The self-hosting guide](docs/self-hosting.md) covers static hosting, the GitHub App, the Go service, and optional Canvas Drop integration.
 
-## Deployment
+## Source and third-party software
 
-The existing workflow deploys to the demo's own Canvas Drop canvas. The existing `CANVAS_DROP_TOKEN` secret remains scoped to that canvas. The demo editor has its own GitHub App configuration, systemd service, repository cache and persistent state directory.
-
-Deploy the editor before the frontend when backend capabilities change. Preserve the prior binary for rollback. The frontend workflow scans source and output for non-demo references and verifies the deployed commit plus every file's size and hash through authenticated readback. Its `deployment-verification` artifact records the result.
-
-Do not merge corporate content or Git history into this repository. Application upgrades must retain the fictional portfolio, generic artwork and demo-specific endpoints.
+This repository is published as a source-available showcase. **No repository-wide open-source license is granted at present.** Dependency and font licenses continue to apply; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Public visibility is not a grant to relicense third-party material.

@@ -66,6 +66,9 @@ jobs:
 
       # Full internal build. Served at the canvas subdomain root, so base = "/".
       - name: Build the roadmap site
+        env:
+          PUBLIC_EDIT_API: https://roadmapdemoapi.canvas-drop.com
+          PUBLIC_CANVAS_BACKEND: "true"
         working-directory: site
         run: npm run build
 
