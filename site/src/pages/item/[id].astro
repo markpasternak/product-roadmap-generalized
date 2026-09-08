@@ -7,6 +7,7 @@ import PlannedDates from '../../components/board/PlannedDates.vue';
 import ProductMark from '../../components/ui/ProductMark.vue';
 import {
   horizonDot,
+  productColor,
   horizonTone,
   toneSurface,
   toneSurfaceStrong,
@@ -129,7 +130,7 @@ function tagFilterHref(token: string): string {
     data-prev-href={prev ? `${base}item/${prev.id}` : undefined}
     data-next-href={next ? `${base}item/${next.id}` : undefined}
   >
-    <section class="roadmap-masthead -mx-4 rounded-b-[22px] px-5 py-3 sm:mx-0 sm:mt-4 sm:rounded-[22px] sm:px-6 lg:px-7">
+    <section style={`--roadmap-product-accent:${productColor[d.product]}`} class="roadmap-masthead roadmap-product-detail -mx-4 rounded-b-[22px] px-5 py-3 sm:mx-0 sm:mt-4 sm:rounded-[22px] sm:px-6 lg:px-7">
       <div class="flex flex-wrap items-center justify-between gap-4">
         <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: d.id }]} />
         <div class="flex flex-wrap items-center gap-3">

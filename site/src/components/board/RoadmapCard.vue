@@ -11,6 +11,7 @@ import {
 } from '@phosphor-icons/vue';
 import {
   horizonDot,
+  productColor,
 } from '../../lib/display';
 import { useEditStore } from '../../lib/edit/store';
 import type { ItemVM } from '../../lib/filters';
@@ -150,13 +151,12 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
   <div class="relative roadmap-card-item" :data-item-id="item.id">
   <button
     type="button"
-    class="group roadmap-card roadmap-action relative block w-full rounded-2xl p-3.5 text-left transition duration-150 active:scale-[0.99]"
+    class="group roadmap-card roadmap-product-card roadmap-action relative block w-full rounded-2xl p-3.5 text-left transition duration-150"
     :class="[
-      active
-        ? 'roadmap-card-active'
-        : 'hover:border-[color:var(--color-accent-brand-default)]',
+      { 'roadmap-card-active': active },
       pendingClass,
     ]"
+    :style="{ '--roadmap-product-accent': productColor[item.product as keyof typeof productColor] ?? 'var(--color-icons-subtle-default)' }"
     @click="emit('select', item)"
   >
     <span

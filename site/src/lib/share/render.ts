@@ -115,7 +115,7 @@ function cssString(value: string): string {
 }
 
 function card(it: ProjectedItem, index: number): string {
-  return `<button type="button" class="roadmap-card roadmap-action share-card" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}">
+  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color ?? 'var(--color-icons-subtle-default)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}">
     <span class="card-open" aria-hidden="true">↗</span>
     <div class="card-main">
       ${productMark(it.product)}
@@ -151,7 +151,7 @@ function lane(name: string, laneItems: ProjectedItem[], allItems: ProjectedItem[
 function detailShell(): string {
   return `<div class="detail-shell" data-detail-shell hidden>
     <div class="drawer-scrim detail-scrim" data-detail-close></div>
-    <aside class="drawer-panel roadmap-field roadmap-drawer-field" data-detail-panel role="dialog" aria-modal="true" aria-labelledby="detail-title" tabindex="-1">
+    <aside class="drawer-panel roadmap-field roadmap-drawer-field roadmap-product-detail" data-detail-panel role="dialog" aria-modal="true" aria-labelledby="detail-title" tabindex="-1">
       <div class="drawer-top">
         <span class="drawer-eyebrow"><span class="drawer-accent"></span><span id="detail-product"></span></span>
         <div class="drawer-nav">
@@ -418,9 +418,6 @@ function css(context: ShareContext): string {
     padding: 14px;
     color: var(--color-text-primary-default);
     text-align: left;
-  }
-  .share-card:hover {
-    border-color: var(--color-accent-brand-default);
   }
   .share-card:focus-visible,
   .stat:focus-visible,
@@ -794,6 +791,7 @@ function js(): string {
     title.textContent = item.title;
     product.textContent = item.product;
     setMark(mark, item);
+    panel.style.setProperty('--roadmap-product-accent', productMeta[item.product]?.color || 'var(--color-icons-subtle-default)');
     meta.replaceChildren();
     if (item.planned) meta.append(el('span', '', 'Planned ' + item.planned));
     meta.append(el('span', '', item.stage));

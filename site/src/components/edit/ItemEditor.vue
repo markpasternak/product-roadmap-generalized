@@ -286,7 +286,8 @@ const historyRows = computed(() => [
     aria-modal="true"
     aria-labelledby="item-editor-title"
     tabindex="-1"
-    class="roadmap-field roadmap-drawer-field fixed inset-0 z-50 flex flex-col outline-none"
+    class="roadmap-field roadmap-drawer-field roadmap-product-detail fixed inset-0 z-50 flex flex-col outline-none"
+    :style="{ '--roadmap-product-accent': productColor[item.product as keyof typeof productColor] ?? 'var(--color-icons-subtle-default)' }"
     data-test="item-editor"
   >
     <div class="shrink-0 flex items-center justify-between gap-4 border-b border-border-subtle-default/60 px-4 py-3 sm:px-6">
@@ -332,7 +333,7 @@ const historyRows = computed(() => [
           <!-- Fix #6: a compact, non-interactive miniature of RoadmapCard — title, horizon
                dot, stage, and product — so the editor always shows how the card will look,
                live off the CURRENT (possibly-unsynced) `item` prop. -->
-          <div class="roadmap-card mb-4 rounded-2xl p-3" data-test="editor-preview">
+          <div class="roadmap-card roadmap-product-card mb-4 rounded-2xl p-3" data-test="editor-preview">
             <div class="flex items-center gap-1.5">
               <span class="h-3.5 w-1 shrink-0 rounded-full" :style="{ background: productColor[item.product as keyof typeof productColor] }" aria-hidden="true" />
               <span class="text-single-sm-medium text-text-subtle-default truncate font-semibold uppercase tracking-wide" data-test="preview-product">

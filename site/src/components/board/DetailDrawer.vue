@@ -27,6 +27,7 @@ import {
 } from '@phosphor-icons/vue';
 import {
   horizonDot,
+  productColor,
   toneSurface,
   toneSurfaceStrong,
   toneText,
@@ -534,7 +535,8 @@ watch(() => props.item?.id, () => {
         aria-modal="true"
         aria-labelledby="drawer-title"
         tabindex="-1"
-        class="drawer-panel roadmap-field roadmap-drawer-field relative flex max-h-[calc(100dvh-1.5rem)] min-h-[320px] w-full max-w-[900px] flex-col overflow-hidden rounded-[20px] outline-none sm:max-h-[calc(100dvh-3rem)]"
+        class="drawer-panel roadmap-field roadmap-drawer-field roadmap-product-detail relative flex max-h-[calc(100dvh-1.5rem)] min-h-[320px] w-full max-w-[900px] flex-col overflow-hidden rounded-[20px] outline-none sm:max-h-[calc(100dvh-3rem)]"
+        :style="{ '--roadmap-product-accent': productColor[item.product as keyof typeof productColor] ?? 'var(--color-icons-subtle-default)' }"
         @click.capture="onPanelClickCapture"
         @pointerdown="onPointerDown"
       >

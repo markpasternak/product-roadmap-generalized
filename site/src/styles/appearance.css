@@ -2,6 +2,7 @@
 :root:root {
   color-scheme: light;
   --roadmap-nav-height: 64px;
+  --roadmap-product-wash: 11%;
   --roadmap-brand-orange: #12857c;
   --roadmap-brand-coral: #66cbbc;
   --roadmap-brand-peach: #e6f5f1;
@@ -9,20 +10,20 @@
   --roadmap-brand-slate: #354a73;
   --roadmap-brand-violet: #2c2661;
   --roadmap-brand-teal: #1b7f72;
-  --roadmap-page-bg: #fafafa;
+  --roadmap-page-bg: #f4f4f2;
   --roadmap-ink: #202020;
-  --roadmap-ink-muted: #686868;
+  --roadmap-ink-muted: #626267;
   --roadmap-glass-bg: #f4f4f4;
   --roadmap-glass-strong: #ffffff;
   --roadmap-glass-border: #dedede;
   --roadmap-warm-shadow: 0 12px 32px rgb(44 38 26 / 6%);
   --roadmap-card-shadow: 0 2px 3px rgb(44 38 26 / 3%);
   --roadmap-lane-neutral-start: #f4f4f4;
-  --roadmap-product-music-app: #565f78;
-  --roadmap-product-podcasts-audiobooks: #765884;
-  --roadmap-product-spotify-for-artists: #b74121;
-  --roadmap-product-ads-platform: #956046;
-  --roadmap-product-core-platform-data: #367363;
+  --roadmap-product-music-app: #556aa7;
+  --roadmap-product-podcasts-audiobooks: #7c589e;
+  --roadmap-product-spotify-for-artists: #b94730;
+  --roadmap-product-ads-platform: #846246;
+  --roadmap-product-core-platform-data: #286a55;
   --roadmap-horizon-candidates: #887895;
   --roadmap-horizon-now: #3e7b5a;
   --roadmap-horizon-next: #96752b;
@@ -76,20 +77,21 @@
 
 :root:root[data-theme='dark'] {
   color-scheme: dark;
-  --roadmap-page-bg: #191919;
-  --roadmap-ink: #f3f3f3;
-  --roadmap-ink-muted: #adadad;
-  --roadmap-glass-bg: #242424;
-  --roadmap-glass-strong: #292929;
-  --roadmap-glass-border: #404040;
+  --roadmap-product-wash: 18%;
+  --roadmap-page-bg: #111214;
+  --roadmap-ink: #f1f0f2;
+  --roadmap-ink-muted: #adaeb5;
+  --roadmap-glass-bg: #1b1c1f;
+  --roadmap-glass-strong: #222326;
+  --roadmap-glass-border: #34363b;
   --roadmap-warm-shadow: 0 16px 40px rgb(0 0 0 / 14%);
   --roadmap-card-shadow: 0 2px 4px rgb(0 0 0 / 8%);
-  --roadmap-lane-neutral-start: #222222;
-  --color-card: #242424;
-  --color-surface-primary-hover: #303030;
-  --color-surface-primary-active: #3b3b3b;
-  --color-surface-subtle-default: #2c2c2c;
-  --color-surface-muted-default: #383838;
+  --roadmap-lane-neutral-start: #222326;
+  --color-card: #1b1c1f;
+  --color-surface-primary-hover: #282a2f;
+  --color-surface-primary-active: #34363b;
+  --color-surface-subtle-default: #222326;
+  --color-surface-muted-default: #303237;
   --color-border-subtle-hover: #777777;
   --color-border-muted-default: #525252;
   --color-border-primary-default: #818181;
@@ -106,11 +108,11 @@
   --color-icons-primary-inverted-hover: #22231e;
   --color-icons-primary-inverted-active: #22231e;
   --color-icons-primary-inverted-disabled: #76786c;
-  --roadmap-product-music-app: #adb6cc;
-  --roadmap-product-podcasts-audiobooks: #c3aecf;
-  --roadmap-product-spotify-for-artists: #ffab90;
-  --roadmap-product-ads-platform: #d8b28f;
-  --roadmap-product-core-platform-data: #a6c6b4;
+  --roadmap-product-music-app: #9aabe6;
+  --roadmap-product-podcasts-audiobooks: #ba9dd9;
+  --roadmap-product-spotify-for-artists: #e58d77;
+  --roadmap-product-ads-platform: #c7a387;
+  --roadmap-product-core-platform-data: #79bfa7;
   --roadmap-horizon-candidates: #b8a7c4;
   --roadmap-horizon-now: #a6c6a6;
   --roadmap-horizon-next: #d6bc82;
@@ -126,7 +128,12 @@
   --roadmap-action-ink: #202020;
 }
 
-:root:root body { background: var(--roadmap-page-bg); color: var(--roadmap-ink); }
+/* Ambient light stays behind the board; controls remain opaque and neutral. */
+:root:root body {
+  background: radial-gradient(ellipse 900px 500px at 4% 0%, color-mix(in srgb, var(--color-accent-brand-default) 3%, transparent), transparent 70%), var(--roadmap-page-bg);
+  background-repeat: no-repeat;
+  color: var(--roadmap-ink);
+}
 .roadmap-ink, .roadmap-title { color: var(--roadmap-ink); }
 .roadmap-muted { color: var(--roadmap-ink-muted); }
 .roadmap-accent { color: var(--color-accent-brand-default); }
@@ -189,6 +196,38 @@
 :root:root .roadmap-card-pending {
   border-color: var(--color-accent-brand-default);
   box-shadow: inset 3px 0 0 var(--color-accent-brand-default);
+}
+/* Balanced product treatment, shared by the working board and baked snapshots.
+   Product accents are application colors; brand and draft/status colors stay separate. */
+:root:root .roadmap-product-card {
+  background:
+    radial-gradient(ellipse at 80% 0%, color-mix(in srgb, var(--roadmap-product-accent) var(--roadmap-product-wash), transparent), transparent 72%),
+    linear-gradient(160deg, color-mix(in srgb, var(--roadmap-product-accent) 4%, transparent), transparent 55%),
+    var(--color-card);
+  border-color: color-mix(in srgb, var(--roadmap-product-accent) 24%, var(--roadmap-glass-border));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%), var(--roadmap-card-shadow);
+}
+:root:root .roadmap-product-card.roadmap-action:active { transform: none; scale: none; }
+@media (hover: hover) {
+  :root:root .roadmap-product-card:hover {
+    border-color: color-mix(in srgb, var(--roadmap-product-accent) 60%, var(--roadmap-glass-border));
+  }
+}
+:root:root .roadmap-product-card.roadmap-card-active {
+  border-color: var(--roadmap-product-accent);
+  box-shadow: inset 0 0 0 1px var(--roadmap-product-accent), var(--roadmap-card-shadow);
+}
+:root:root .roadmap-product-detail {
+  background: radial-gradient(ellipse 700px 230px at 80% 0%, color-mix(in srgb, var(--roadmap-product-accent) var(--roadmap-product-wash), transparent), transparent 80%), var(--color-card);
+}
+:root:root .roadmap-product-detail .resource-shelf,
+:root:root .roadmap-product-detail .shared-resources {
+  border-color: color-mix(in srgb, var(--roadmap-product-accent) 24%, var(--roadmap-glass-border));
+}
+/* Unpublished changes keep their explicit brand marker, even on a selected card. */
+:root:root .roadmap-product-card.roadmap-card-pending {
+  border-color: var(--color-accent-brand-default);
+  box-shadow: inset 3px 0 0 var(--color-accent-brand-default), var(--roadmap-card-shadow);
 }
 :root:root .roadmap-primary-action,
 :root:root .roadmap-count-badge {
