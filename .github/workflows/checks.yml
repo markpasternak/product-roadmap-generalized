@@ -21,7 +21,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: site/package-lock.json
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: edit-service/go.mod
           cache-dependency-path: edit-service/go.sum
