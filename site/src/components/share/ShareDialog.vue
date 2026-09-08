@@ -568,7 +568,7 @@ const primaryCls =
         </div>
 
         <p class="mb-5 text-single-sm-medium text-text-subtle-default">
-          Share a snapshot of the selected items. Recipients see products and stages, without owner names or Now / Next / Later. Choose any files and links to include below.
+          Review the selected text, including any internal items. Recipients see products and stages, without owner names or Now / Next / Later. Choose any files and links to include below.
         </p>
         <div class="space-y-6">
           <section v-for="l in lanes" :key="l.h">
@@ -624,7 +624,19 @@ const primaryCls =
               </li>
             </ul>
           </section>
-          <section v-if="resourceChoices.length" class="rounded-xl border border-border-subtle-default p-4"><h3 class="font-medium">Files and external links</h3><p class="mt-1 mb-3 text-sm text-text-subtle-default">Choose what recipients can open. Files are copied into this snapshot; later edits and deletions won’t change it.</p><label v-for="resource in resourceChoices" :key="resource.key" class="flex items-start gap-3 py-2"><input v-model="selectedResources" :value="resource.key" type="checkbox" class="mt-1" /><span class="text-sm">{{ resource.label }}<span class="block text-xs text-text-subtle-default">{{ items.find(i=>i.id===resource.itemId)?.title }} · {{ resource.repoPath?'File copy':'External link' }}</span></span></label></section>
+          <details v-if="resourceChoices.length" class="share-resource-picker">
+            <summary>
+              <span>Files and links</span>
+              <small>{{ includedResources.length ? `${includedResources.length} included` : 'None included' }}</small>
+            </summary>
+            <div class="share-resource-options">
+              <p>Choose what recipients can open. Files are copied into the snapshot; later changes won’t update those copies.</p>
+              <label v-for="resource in resourceChoices" :key="resource.key">
+                <input v-model="selectedResources" :value="resource.key" type="checkbox" />
+                <span>{{ resource.label }}<small>{{ items.find(i => i.id === resource.itemId)?.title }} · {{ resource.repoPath ? 'File copy' : 'External link' }}</small></span>
+              </label>
+            </div>
+          </details>
         </div>
       </div>
 
@@ -1115,6 +1127,18 @@ const primaryCls =
 </template>
 
 <style scoped>
+.share-resource-picker { margin-top: 1.25rem; border: 1px solid var(--color-border-subtle-default); border-radius: 10px; }
+.share-resource-picker summary { display: flex; align-items: center; gap: .6rem; min-height: 52px; padding: .8rem 1rem; cursor: pointer; font-size: .8125rem; font-weight: 500; list-style: none; }
+.share-resource-picker summary::-webkit-details-marker { display: none; }
+.share-resource-picker summary::before { content: ''; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); margin-right: .25rem; }
+.share-resource-picker[open] summary::before { transform: rotate(45deg); }
+.share-resource-picker summary small { margin-left: auto; color: var(--color-text-subtle-default); font-size: .75rem; font-weight: 400; }
+.share-resource-options { padding: 0 1rem 1rem; }
+.share-resource-options > p { font-size: .75rem; line-height: 1.6; color: var(--color-text-subtle-default); margin-bottom: .75rem; }
+.share-resource-options label { display: flex; gap: .7rem; padding: .6rem 0; font-size: .8125rem; cursor: pointer; }
+.share-resource-options input { flex-shrink: 0; width: 16px; height: 16px; margin-top: .15rem; accent-color: var(--color-accent-brand-default); }
+.share-resource-options label small { display: block; margin-top: .3rem; font-size: .7rem; line-height: 1.5; color: var(--color-text-subtle-default); }
+
 .share-scrim {
   animation: share-fade 0.18s ease;
 }
