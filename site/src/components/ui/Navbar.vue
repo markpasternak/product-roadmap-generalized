@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { PhGithubLogo } from '@phosphor-icons/vue';
 import Avatar from './Avatar.vue';
 import Select from './Select.vue';
 import { getCanvasdrop, type Me } from '../../lib/share/canvasdrop';
@@ -75,6 +76,11 @@ const navigation = [{ key: 'roadmap', label: 'Roadmap', path: '' }, { key: 'shar
       <nav class="flex h-full min-w-0 items-center px-1 sm:px-4" aria-label="Primary">
         <a v-for="item in navigation" :key="item.key" :href="base + item.path"
           :aria-current="active === item.key ? 'page' : undefined" :class="[link, active === item.key ? activeCls : idleCls]">{{ item.label }}</a>
+        <a href="https://github.com/markpasternak/product-roadmap-generalized"
+          target="_blank" rel="noopener noreferrer" :class="[link, idleCls, 'gap-1.5']"
+          aria-label="View source on GitHub (opens in a new tab)">
+          <PhGithubLogo :size="18" aria-hidden="true" />GitHub
+        </a>
       </nav>
       <div ref="accountWrap" class="site-account" @keydown.esc.stop.prevent="closeAccount(true)" @focusout="onFocusOut">
         <button type="button" class="account-trigger roadmap-action" :aria-label="IS_PUBLIC || !EDIT_API ? 'Appearance' : 'Account'" :aria-expanded="accountOpen" aria-controls="site-account-panel" @click="toggleAccount">
