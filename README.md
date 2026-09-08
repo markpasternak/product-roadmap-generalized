@@ -36,7 +36,7 @@ The screenshots above are actual application captures of the fictional dataset.
 
 ## Run locally
 
-Requirements: **Node.js 22.12 or later**, npm, and Git. Go is only needed for the optional editing service.
+Requirements: **Node.js 24.15 or later (or 22.22.2+)**, npm, and Git. Go is only needed for the optional editing service.
 
 ```sh
 git clone https://github.com/markpasternak/product-roadmap-generalized.git
