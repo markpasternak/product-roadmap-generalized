@@ -103,7 +103,7 @@ jobs:
         run: node site/scripts/verify-deploy.mjs
 
       - name: Record verified deployment
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deployment-verification
           path: deployment-verification.json
