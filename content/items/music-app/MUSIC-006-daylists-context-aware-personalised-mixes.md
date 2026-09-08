@@ -3,6 +3,8 @@ id: MUSIC-006
 title: "Daylists: context-aware personalised mixes"
 product: Music App
 horizon: Next
+startDate: 2026-10-12
+endDate: 2027-01-29
 stage: Committed
 owner: Nadia Rahman
 tags: personalisation, discovery, theme:ml-personalisation

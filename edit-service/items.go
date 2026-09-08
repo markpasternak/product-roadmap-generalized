@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var ProductFolder = map[string]string{"Spotify for Artists": "spotify-for-artists", "Ads Platform": "ads-platform", "Core Platform & Data": "core-platform-data", "Music App": "music-app", "Podcasts & Audiobooks": "podcasts-audiobooks"}
@@ -90,6 +91,16 @@ func ValidateFrontmatter(fm map[string]string, path string) []string {
 	}
 	if v := fm["visibility"]; v != "" && !Visibilities[v] {
 		errs = append(errs, "visibility not in allowed set: "+v)
+	}
+	for _, field := range []string{"startDate", "endDate"} {
+		if value := fm[field]; value != "" {
+			if parsed, err := time.Parse("2006-01-02", value); err != nil || parsed.Year() < 1 || parsed.Format("2006-01-02") != value {
+				errs = append(errs, field+" must be a valid date (YYYY-MM-DD)")
+			}
+		}
+	}
+	if fm["startDate"] != "" && fm["endDate"] != "" && fm["endDate"] < fm["startDate"] {
+		errs = append(errs, "endDate must be on or after startDate")
 	}
 	return errs
 }

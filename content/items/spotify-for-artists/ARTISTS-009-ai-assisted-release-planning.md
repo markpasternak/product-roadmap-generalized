@@ -3,6 +3,8 @@ id: ARTISTS-009
 title: AI-assisted release planning
 product: Spotify for Artists
 horizon: Later
+startDate: 2027-02-01
+endDate: 2027-05-28
 stage: Discovery
 owner: Unassigned
 tags: ai, releases, theme:ml-personalisation

@@ -3,6 +3,8 @@ id: PLATFORM-009
 title: On-device inference runtime
 product: Core Platform & Data
 horizon: Later
+startDate: 2027-02-01
+endDate: 2027-05-28
 stage: Discovery
 owner: Unassigned
 tags: ml, mobile, theme:ml-personalisation

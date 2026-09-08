@@ -13,6 +13,8 @@ import { resourceTransferCount } from '../../lib/edit/resourceClient';
 import TagInput from './TagInput.vue';
 import ConfirmAction from '../ui/ConfirmAction.vue';
 import OwnerInput from './OwnerInput.vue';
+import PlannedDates from '../board/PlannedDates.vue';
+import { scheduleIssue } from '../../lib/timeline';
 import { PhArrowCounterClockwise, PhX, PhTrendUp, PhSparkle } from '@phosphor-icons/vue';
 import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
 import { PRODUCTS, HORIZONS, STAGES, LEVELS, VISIBILITIES } from '../../lib/schema';
@@ -27,6 +29,8 @@ import { useBackend } from '../../composables/useBackend';
 const RewriteWithAi = defineAsyncComponent(() => import('./RewriteWithAi.vue'));
 
 export interface ItemEditorItem extends Partial<ItemHistory> {
+  startDate?: string | null;
+  endDate?: string | null;
   id: string;
   product: string;
   title: string;
@@ -101,7 +105,7 @@ const STAGE_OPTIONS = STAGES.map((v) => ({ value: v, label: v }));
 const LEVEL_OPTIONS = [{ value: '', label: 'Not scored' }, ...LEVELS.map((v) => ({ value: v, label: v }))];
 const VISIBILITY_OPTIONS = VISIBILITIES.map((v) => ({ value: v, label: v }));
 
-type FieldKey = 'title' | 'product' | 'horizon' | 'stage' | 'owner' | 'impact' | 'effort' | 'visibility';
+type FieldKey = 'title' | 'product' | 'horizon' | 'stage' | 'owner' | 'impact' | 'effort' | 'visibility' | 'startDate' | 'endDate';
 
 /** A two-way binding for one metadata field: reads straight from the prop, emits
  * `field` on every change. No local store — the parent owns persistence and feeds
@@ -118,6 +122,9 @@ function fieldModel(key: FieldKey) {
   });
 }
 
+const startDateModel = fieldModel('startDate');
+const endDateModel = fieldModel('endDate');
+const planIssue = computed(() => scheduleIssue(props.item));
 const titleModel = fieldModel('title');
 const productModel = fieldModel('product');
 const horizonModel = fieldModel('horizon');
@@ -545,6 +552,17 @@ const historyRows = computed(() => [
           </div>
 
           <div class="mt-3">
+            <div class="planned-editor">
+              <h3>Planned work window</h3>
+              <p>Optional dates for the timeline. They do not change the horizon or stage.</p>
+              <div class="planned-editor-fields">
+                <label for="item-planned-start">Planned start<input id="item-planned-start" v-model="startDateModel" type="date" /></label>
+                <label for="item-planned-end">Planned end<input id="item-planned-end" v-model="endDateModel" type="date" :aria-invalid="planIssue === 'End before start'" /></label>
+              </div>
+              <p v-if="planIssue === 'End before start'" role="alert">End must be on or after the start date.</p>
+              <PlannedDates :start-date="item.startDate" :end-date="item.endDate" />
+              <button v-if="item.startDate || item.endDate" type="button" @click="emitField('startDate', ''); emitField('endDate', '')">Clear dates</button>
+            </div>
             <div :class="labelRow">
               <label :class="label" for="item-editor-tags">Tags</label>
               <template v-if="changed.tags">
@@ -601,3 +619,7 @@ const historyRows = computed(() => [
     :message="confirmation === 'delete' ? `“${item.title}” will be marked for deletion. It stays published until you publish the changes.` : `This removes the unpublished changes to “${item.title || 'Untitled item'}” from this browser. This can’t be undone.`"
     :confirm-label="confirmation === 'delete' ? 'Mark for deletion' : 'Discard changes'" @cancel="confirmation = null" @confirm="confirmAction" />
 </template>
+
+<style scoped>
+.planned-editor{grid-column:1/-1;border-top:1px solid var(--color-border-subtle-default);padding-top:16px;margin-top:8px}.planned-editor h3{font-size:14px;font-weight:600}.planned-editor p{font-size:12px;color:var(--color-text-subtle-default);margin:5px 0 12px}.planned-editor-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.planned-editor-fields label{display:grid;gap:6px;font-size:12px}.planned-editor input{width:100%;min-width:0;min-height:40px;border:1px solid var(--color-border-subtle-default);border-radius:8px;background:var(--color-card);color:var(--color-text-primary-default);padding:8px;color-scheme:inherit}.planned-editor button{background:none;border:0;color:var(--color-text-link-default);text-decoration:underline;min-height:32px;cursor:pointer;font-size:12px}
+</style>

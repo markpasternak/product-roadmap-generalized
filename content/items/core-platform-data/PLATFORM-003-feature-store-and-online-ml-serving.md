@@ -3,6 +3,8 @@ id: PLATFORM-003
 title: Feature store and online ML serving
 product: Core Platform & Data
 horizon: Now
+startDate: 2026-08-17
+endDate: 2026-10-30
 stage: Building
 owner: Priya Venkatesan
 tags: ml, infrastructure, theme:ml-personalisation

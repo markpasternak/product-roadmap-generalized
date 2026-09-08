@@ -3,6 +3,7 @@ import { renderRichMarkdown } from '../../lib/richMarkdown';
 import Base from '../../layouts/Base.astro';
 import { getCollection } from 'astro:content';
 import Breadcrumb from '../../components/ui/Breadcrumb.vue';
+import PlannedDates from '../../components/board/PlannedDates.vue';
 import ProductMark from '../../components/ui/ProductMark.vue';
 import {
   horizonDot,
@@ -196,6 +197,7 @@ function tagFilterHref(token: string): string {
 
     <div class="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
       <article class="min-w-0">
+        <PlannedDates startDate={d.startDate} endDate={d.endDate} />
         <dl class="item-facts">
           <div><dt>Stage</dt><dd>{d.stage}</dd></div>
           <div><dt>Impact</dt><dd>{d.impact || 'Not scored'}</dd></div>

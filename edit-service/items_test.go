@@ -54,3 +54,21 @@ func TestValidate(t *testing.T) {
 		t.Fatalf("expected several errors, got %v", errs)
 	}
 }
+
+func TestPlannedDateValidation(t *testing.T) {
+	fm := map[string]string{"id": "TALK-001", "title": "Plan", "product": "Podcasts & Audiobooks", "horizon": "Next", "stage": "Discovery", "owner": "Alice"}
+	for _, dates := range []struct {
+		start, end string
+		valid      bool
+	}{
+		{"", "", true}, {"2026-09-01", "", true}, {"", "2026-09-01", true},
+		{"2026-09-01", "2026-09-01", true}, {"2026-09-02", "2026-09-01", false},
+		{"2026-02-29", "2026-03-01", false}, {"2028-02-29", "2028-03-01", true},
+	} {
+		fm["startDate"], fm["endDate"] = dates.start, dates.end
+		errs := ValidateFrontmatter(fm, "content/items/podcasts-audiobooks/TALK-001-plan.md")
+		if (len(errs) == 0) != dates.valid {
+			t.Fatalf("%+v: %v", dates, errs)
+		}
+	}
+}

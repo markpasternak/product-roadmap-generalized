@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PlannedDates from './PlannedDates.vue';
 import RichMarkdown from '../markdown/RichMarkdown.vue';
 import ImageThumbnail from '../markdown/ImageThumbnail.vue';
 import { isImageResource } from '../../lib/resources';
@@ -583,6 +584,7 @@ watch(() => props.item?.id, () => {
                 <h2 id="drawer-title" tabindex="-1" aria-live="polite" class="roadmap-display roadmap-title text-[1.5rem] sm:text-[1.8rem]">
                   {{ item.title }}
                 </h2>
+                <PlannedDates :start-date="item.startDate" :end-date="item.endDate" />
                 <p class="roadmap-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
                   <span v-if="!client" class="inline-flex items-center gap-2">
                     <PhSquaresFour :size="17" /> {{ item.product }}

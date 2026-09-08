@@ -15,6 +15,8 @@ export interface ItemLinkVM {
 }
 
 export interface ItemVM extends ItemHistory {
+  startDate?: string | null;
+  endDate?: string | null;
   id: string;
   title: string;
   product: string;
@@ -108,6 +110,8 @@ export function matchesHygiene(it: ItemVM, key: HygieneKey, staleCutoff: string)
 }
 
 export interface FilterState {
+  layout?: 'board' | 'timeline';
+  timeline?: import('./timeline').TimelineSettings;
   activity?: ActivityFilter | null;
   q: string;
   owner?: string | null;

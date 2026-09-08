@@ -3,6 +3,8 @@ id: TALK-009
 title: Branching and interactive audio formats
 product: Podcasts & Audiobooks
 horizon: Later
+startDate: 2027-02-01
+endDate: 2027-05-28
 stage: Discovery
 owner: Unassigned
 tags: formats, experimental

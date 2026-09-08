@@ -1,6 +1,8 @@
 // Serializes a projected board into a polished, standalone roadmap share app.
 // The bundle keeps its behavior inline and carries its own brand assets.
 // Lanes follow the roadmap horizon order.
+import { timelineModel, timelineSettings, scheduleLabel, scheduleIssue, formatPlanDate, type TimelineSettings, type TimelineRange } from '../timeline';
+import timelineCss from '../../styles/timeline.css?raw';
 import { zipSync, strToU8 } from 'fflate';
 import { ROADMAP_FAVICON } from '../brand';
 import { HORIZONS } from '../schema';
@@ -13,6 +15,7 @@ import type { ProjectedItem } from './project';
 export type ShareTheme = 'light' | 'dark';
 
 export interface ShareContext {
+  timeline?: TimelineSettings & { range: TimelineRange };
   title: string;
   /** Optional framing paragraph shown under the header. */
   intro?: string;
@@ -106,6 +109,7 @@ function productMark(product: string): string {
 
 function shareItemData(items: ProjectedItem[]) {
   return items.map((it) => ({
+    planned: scheduleLabel(it),
     id: it.id,
     title: it.title,
     oneliner: it.oneliner,
@@ -165,6 +169,7 @@ function card(it: ProjectedItem, index: number): string {
         ${escapeHtml(it.stage)}
       </span>
     </div>
+    ${scheduleLabel(it) ? `<p class="timeline-range-caption">Planned ${escapeHtml(scheduleLabel(it))}</p>` : ''}
   </button>`;
 }
 
@@ -826,6 +831,7 @@ function js(): string {
   const next = document.querySelector('[data-detail-next]');
   const cards = Array.from(document.querySelectorAll('[data-card-index]'));
   const lanes = Array.from(document.querySelectorAll('[data-lane]'));
+  const timelineRows = Array.from(document.querySelectorAll('[data-timeline-horizon]'));
   const filters = Array.from(document.querySelectorAll('[data-horizon-filter]'));
   const horizonColor = ${safeJson(Object.fromEntries(Object.entries(HORIZON_META).map(([key, value]) => [key, value.dot])))};
   const productMeta = ${safeJson(PRODUCT_META)};
@@ -860,6 +866,26 @@ function js(): string {
       filter.classList.toggle('horizon-selected-control', selected);
       filter.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
+    timelineRows.forEach(row => { row.hidden = activeHorizon !== 'All' && row.dataset.timelineHorizon !== activeHorizon; });
+    document.querySelectorAll('.timeline-group').forEach(group => {
+      const count = group.querySelectorAll('.timeline-row:not([hidden])').length;
+      group.hidden = count === 0;
+      const label = group.querySelector('summary small');
+      if (label) label.textContent = count + (count === 1 ? ' item' : ' items');
+    });
+    const countsNode = document.querySelector('[data-timeline-counts]');
+    if (countsNode) {
+      const counts = JSON.parse(countsNode.dataset.timelineCounts)[activeHorizon] || [0, 0, 0, 0];
+      countsNode.textContent = counts[0] + ' matching · ' + counts[1] + ' in this period · ' + counts[2] + ' outside this period';
+      const chart = document.querySelector('.timeline-chart');
+      if (chart) chart.hidden = counts[1] === 0;
+      const empty = document.querySelector('[data-timeline-empty]');
+      if (empty) empty.hidden = counts[1] > 0;
+      const outsideSummary = document.querySelector('[data-timeline-outside]');
+      if (outsideSummary) { outsideSummary.textContent = counts[2] + ' outside this period · Review'; outsideSummary.parentElement.hidden = counts[2] === 0; }
+      const missingSummary = document.querySelector('[data-timeline-missing]');
+      if (missingSummary) { missingSummary.textContent = counts[3] + ' missing or invalid dates · Review'; missingSummary.parentElement.hidden = counts[3] === 0; }
+    }
     lanes.forEach((lane) => {
       lane.hidden = activeHorizon !== 'All' && lane.dataset.lane !== activeHorizon;
     });
@@ -876,6 +902,7 @@ function js(): string {
     product.textContent = item.product;
     setMark(mark, item);
     meta.replaceChildren();
+    if (item.planned) meta.append(el('span', '', 'Planned ' + item.planned));
     const horizon = el('span');
     const dot = el('i');
     dot.className = 'dot';
@@ -986,6 +1013,25 @@ function js(): string {
 `;
 }
 
+
+function renderSharedTimeline(settings: TimelineSettings & { range: TimelineRange }, items: ProjectedItem[]): string {
+  // Owner names and internal tags are not part of the customer-facing projection.
+  const privateGrouping = settings.group === 'owner' || settings.group === 'tag';
+  const config = timelineSettings({ ...settings, group: privateGrouping ? 'product' : settings.group });
+  const model = timelineModel(items, config, settings.range);
+  const ticks = model.ticks.map(t => `<span class="timeline-tick" style="left:${t.left}%;width:${t.width}%">${escapeHtml(t.label)}</span>`).join('');
+  const grid = model.ticks.map(t => `<span aria-hidden="true" class="timeline-tick" style="left:${t.left}%;width:${t.width}%"></span>`).join('');
+  const groups = model.groups.map(group => `<details class="timeline-group" open><summary>${escapeHtml(group.name)}<small>${group.items.length} items</small></summary>${group.items.map(item => {
+    const pos = model.position(item), index = items.indexOf(item);
+    const color = PRODUCT_META[item.product]?.color ?? 'var(--color-accent-brand-default)';
+    return `<div class="timeline-row" data-timeline-horizon="${escapeHtml(item.horizon)}"><button type="button" class="timeline-label" data-card-index="${index}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.stage)} · ${escapeHtml(item.product)}</small></button><div class="timeline-track">${grid}<button type="button" class="timeline-bar" data-card-index="${index}" data-before="${pos.before}" data-after="${pos.after}" style="left:${pos.left}%;width:${pos.width}%;padding:${pos.width < 4 ? '0' : '0 10px'};font-size:${pos.width < 4 ? '0' : '12px'};--product:${color}" aria-label="${escapeHtml(item.title + '. Planned ' + scheduleLabel(item))}" title="${escapeHtml(scheduleLabel(item))}">${escapeHtml(item.title)}</button></div></div>`;
+  }).join('')}</details>`).join('');
+  const counts = Object.fromEntries(['All', ...new Set(items.map(i => i.horizon))].map(h => [h, [items, model.visible, model.outside, model.missing].map(rows => rows.filter(i => h === 'All' || i.horizon === h).length)]));
+  const missing = model.missing.length ? `<details class="timeline-missing-shared"><summary data-timeline-missing>${model.missing.length} missing or invalid dates · Review</summary>${model.missing.map(item => `<p data-timeline-horizon="${escapeHtml(item.horizon)}"><button type="button" data-card-index="${items.indexOf(item)}">${escapeHtml(item.title)} · ${escapeHtml(scheduleIssue(item) ?? '')}</button></p>`).join('')}</details>` : '';
+  const outside = model.outside.length ? `<details class="timeline-missing-shared"><summary data-timeline-outside>${model.outside.length} outside this period · Review</summary>${model.outside.map(item => `<p data-timeline-horizon="${escapeHtml(item.horizon)}"><button type="button" data-card-index="${items.indexOf(item)}">${escapeHtml(item.title)} · ${escapeHtml(scheduleLabel(item))}</button></p>`).join('')}</details>` : '';
+  return `<section aria-label="Shared roadmap timeline"><p class="timeline-range-caption">${escapeHtml(formatPlanDate(model.range.from))} — ${escapeHtml(formatPlanDate(model.range.to))} · Planned work windows · <span data-timeline-counts="${escapeHtml(JSON.stringify(counts))}">${items.length} matching · ${model.visible.length} in this period · ${model.outside.length} outside this period</span>${privateGrouping ? ' · Grouped by product for sharing' : ''}</p>${missing}${outside}<p data-timeline-empty${model.visible.length ? ' hidden' : ''}>No scheduled items in this period.</p>${model.visible.length ? `<div class="timeline-chart" tabindex="0" aria-label="Timeline chart"><div class="timeline-canvas"><div class="timeline-head"><div class="timeline-label">Roadmap item</div><div class="timeline-axis">${ticks}</div></div>${groups}</div></div>` : ''}</section>`;
+}
+
 export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): string {
   const theme = context.theme ?? 'light';
   const visibleHorizons = HORIZON_ORDER.filter((h) =>
@@ -1019,7 +1065,7 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
 <meta name="twitter:description" content="${description}">
 <meta name="twitter:image" content="${OG_IMAGE_FILENAME}">
 <link rel="icon" href="${ROADMAP_FAVICON}">
-<style>${css(context)}\n${appearanceCss}\n${reviewCss}</style></head>
+<style>${css(context)}\n${appearanceCss}\n${reviewCss}\n${timelineCss}</style></head>
 <body>
 <a class="skip-link" href="#main-content">Skip to roadmap</a>
 <header class="share-header"><div class="share-header-inner">
@@ -1038,11 +1084,11 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
     </div>
   </section>
   ${context.activitySummary ? `<p class="roadmap-muted" style="margin-bottom:1rem">${escapeHtml(context.activitySummary)}</p>` : ''}
-  <div class="roadmap-glass board-shell"><div class="board-scroll">${lanes}</div></div>
+  ${context.timeline ? renderSharedTimeline(context.timeline, items) : `<div class="roadmap-glass board-shell"><div class="board-scroll">${lanes}</div></div>`}
   <footer>
     <span>Shared from the product roadmap</span>
     <span>Shared ${escapeHtml(context.generatedAt)}</span>
-    <span>${itemCount} item${itemCount === 1 ? '' : 's'} across ${laneCount} lane${laneCount === 1 ? '' : 's'}</span>
+    <span>${itemCount} item${itemCount === 1 ? '' : 's'}${context.timeline ? ' · Timeline' : ` across ${laneCount} lane${laneCount === 1 ? '' : 's'}`}</span>
   </footer>
   ${detailShell()}
   <script type="application/json" id="roadmap-data">${safeJson(shareItemData(items))}</script>

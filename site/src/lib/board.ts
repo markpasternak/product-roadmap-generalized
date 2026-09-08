@@ -106,6 +106,8 @@ export async function buildBoardItems(base: string): Promise<ItemVM[]> {
       id: e.data.id,
       title,
       product: e.data.product,
+      startDate: e.data.startDate,
+      endDate: e.data.endDate,
       horizon: e.data.horizon,
       stage: e.data.stage,
       owner: IS_PUBLIC ? '' : e.data.owner,

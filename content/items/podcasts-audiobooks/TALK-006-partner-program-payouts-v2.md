@@ -3,6 +3,8 @@ id: TALK-006
 title: Partner Program payouts v2
 product: Podcasts & Audiobooks
 horizon: Next
+startDate: 2026-10-12
+endDate: 2027-01-29
 stage: Shaping
 owner: Sofia Bergström
 tags: creators, payouts, theme:creator-economy

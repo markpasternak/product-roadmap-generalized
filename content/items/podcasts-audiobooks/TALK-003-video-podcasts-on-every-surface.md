@@ -3,6 +3,8 @@ id: TALK-003
 title: Video podcasts on every surface
 product: Podcasts & Audiobooks
 horizon: Now
+startDate: 2026-08-17
+endDate: 2026-10-30
 stage: Building
 owner: Kwame Mensah
 tags: video, podcasts, theme:spoken-word

@@ -3,6 +3,8 @@ id: ARTISTS-003
 title: Self-serve promotion buying
 product: Spotify for Artists
 horizon: Now
+startDate: 2026-08-17
+endDate: 2026-10-30
 stage: Building
 owner: Rafael Duarte
 tags: promotion, monetisation, theme:creator-economy

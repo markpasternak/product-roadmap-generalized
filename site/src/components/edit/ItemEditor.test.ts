@@ -406,3 +406,12 @@ describe('ItemEditor', () => {
     opener.remove();
   });
 });
+
+it('edits planned dates through the existing draft field events and flags reversed dates', async () => {
+  const w=mount(ItemEditor,{props:{item:{...ITEM,startDate:'2026-09-01',endDate:'2026-09-30'},body:BODY,isNew:false}});
+  await w.get('#item-planned-start').setValue('2026-09-12');
+  expect(w.emitted('field')?.at(-1)).toEqual([{key:'startDate',value:'2026-09-12'}]);
+  await w.setProps({item:{...ITEM,startDate:'2026-10-01',endDate:'2026-09-30'}});
+  expect(w.text()).toContain('End must be on or after the start date');
+  w.unmount();
+});

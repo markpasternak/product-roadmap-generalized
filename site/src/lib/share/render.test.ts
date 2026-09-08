@@ -161,3 +161,22 @@ it('keeps the resolved activity range visible in a shared snapshot', () => {
   const html = renderShareHtml({ title: 'Review', product: null, generatedAt: 'Sep 6, 2026', activitySummary: 'Updated · Aug 1, 2026 – Aug 31, 2026 (Europe/Stockholm)' }, []);
   expect(html).toContain('Updated · Aug 1, 2026 – Aug 31, 2026 (Europe/Stockholm)');
 });
+
+it('shares the fixed timeline period with omitted counts and clickable items', () => {
+  const html=renderShareHtml({...ctx,timeline:{group:'product',scale:'months',fit:false,range:{from:'2026-09-01',to:'2026-09-30'}}},[
+    {...item,startDate:'2026-09-01',endDate:'2026-09-30'}, {...item,id:'no-dates',title:'Not scheduled'}, {...item,id:'outside',startDate:'2027-01-01',endDate:'2027-02-01'},
+  ]);
+  expect(html).toContain('Shared roadmap timeline');
+  expect(html).toContain('1 missing or invalid dates');
+  expect(html).toContain('1 outside this period');
+  expect(html).toContain('data-card-index="0"');
+  expect(html).toContain('30 Sept 2026');
+  expect(html).not.toContain('Public <Title>');
+});
+it('keeps private tags out of shared timeline grouping', () => {
+  const html=renderShareHtml({...ctx,timeline:{group:'tag',scale:'months',fit:true,range:{from:'2026-09-01',to:'2026-09-30'}}},[
+    {...item,tags:['secret-internal'],startDate:'2026-09-01',endDate:'2026-09-30'},
+  ]);
+  expect(html).not.toContain('secret-internal');
+  expect(html).toContain('Grouped by product for sharing');
+});

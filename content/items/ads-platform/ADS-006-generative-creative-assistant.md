@@ -3,6 +3,8 @@ id: ADS-006
 title: Generative creative assistant
 product: Ads Platform
 horizon: Next
+startDate: 2026-10-12
+endDate: 2027-01-29
 stage: Shaping
 owner: Tomás Iglesias
 tags: ai, creative, self-serve

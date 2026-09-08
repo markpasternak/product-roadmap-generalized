@@ -3,6 +3,8 @@ id: PLATFORM-006
 title: Experimentation platform v3
 product: Core Platform & Data
 horizon: Next
+startDate: 2026-10-12
+endDate: 2027-01-29
 stage: Committed
 owner: Unassigned
 tags: experimentation, tooling

@@ -4,6 +4,8 @@
 import type { ItemVM } from '../filters';
 
 export interface ProjectedItem {
+  startDate?: string | null;
+  endDate?: string | null;
   resources?: import('./resources').SharedResource[];
   id: string;
   title: string;
@@ -19,6 +21,8 @@ export interface ProjectedItem {
 
 export function projectForShare(item: ItemVM): ProjectedItem {
   return {
+    ...(item.startDate ? { startDate: item.startDate } : {}),
+    ...(item.endDate ? { endDate: item.endDate } : {}),
     id: item.id,
     title: item.title,
     oneliner: item.oneliner,

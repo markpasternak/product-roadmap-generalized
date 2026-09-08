@@ -300,7 +300,7 @@ export function createEditStore() {
   // here would never reconcile and would show as permanently "edited" even once the base
   // item's value catches up (e.g. a synced product move should clear the "edited" badge, not
   // leave it stuck forever).
-  const SCALAR_FIELDS = new Set(['product', 'title', 'horizon', 'stage', 'owner', 'impact', 'effort', 'visibility']);
+  const SCALAR_FIELDS = new Set(['product', 'title', 'horizon', 'stage', 'owner', 'impact', 'effort', 'visibility', 'startDate', 'endDate']);
   // Split a pending comma-separated tags string into a trimmed, non-empty, case-folded set.
   const tagSet = (csv: string): Set<string> =>
     new Set(

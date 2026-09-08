@@ -166,3 +166,14 @@ describe('projectBoard', () => {
     expect(out.find((it) => it.id === 'TALK-2')?.order).toBe(1);
   });
 });
+
+it('projects date changes and clearing into the timeline without changing horizons', () => {
+  const original=item({startDate:'2026-09-01',endDate:'2026-09-30'});
+  const cs=emptyChangeset();
+  cs.updated=[{id:original.id,body:'',frontmatter:{startDate:'2026-09-15',endDate:''}}];
+  const [changed]=projectBoard([original],cs);
+  expect(changed.startDate).toBe('2026-09-15');
+  expect(changed.endDate).toBe('');
+  expect(changed.horizon).toBe(original.horizon);
+  expect(original.endDate).toBe('2026-09-30');
+});

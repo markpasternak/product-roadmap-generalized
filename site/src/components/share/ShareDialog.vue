@@ -684,6 +684,7 @@ const primaryCls =
                 <input id="share-roadmap-title" v-model="roadmapTitle" data-test="roadmap-title" :class="inputCls" />
               </div>
               <div>
+                <p v-if="context.timeline && ['owner', 'tag'].includes(context.timeline.group)" class="text-sm text-text-subtle-default">This timeline will group by product. Owner names and internal tags stay private.</p>
                 <label :class="labelCls" for="share-roadmap-intro">
                   Intro
                   <span class="text-text-subtle-default font-normal">— optional</span>

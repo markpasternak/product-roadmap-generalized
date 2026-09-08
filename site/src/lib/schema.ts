@@ -1,5 +1,6 @@
 // Content-collection schemas + the canonical enum constants used across the site.
 import { z } from 'zod';
+import { plannedDateSchema } from './timeline';
 
 export const PRODUCTS = ['Music App', 'Podcasts & Audiobooks', 'Spotify for Artists', 'Ads Platform', 'Core Platform & Data'] as const;
 export const HORIZONS = ['Candidates', 'Now', 'Next', 'Later', 'Completed'] as const;
@@ -41,8 +42,10 @@ export const itemSchema = z.object({
   // Exec layer. Optional: only the funded items carry these today.
   commercial_driver: z.enum(COMMERCIAL_DRIVERS).optional(),
   target: z.string().optional(),
+  startDate: plannedDateSchema,
+  endDate: plannedDateSchema,
   confidence: z.enum(CONFIDENCES).optional(),
-});
+}).refine(v => !v.startDate || !v.endDate || v.endDate >= v.startDate, { message: 'Planned end must be on or after planned start', path: ['endDate'] });
 export type ItemFrontmatter = z.infer<typeof itemSchema>;
 
 // Docs (PRD / technical-design / research) carry a lighter, varied frontmatter.

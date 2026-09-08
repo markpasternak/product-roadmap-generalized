@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PlannedDates from './PlannedDates.vue';
 import { computed, nextTick, ref } from 'vue';
 import ProductMark from '../ui/ProductMark.vue';
 import HighlightedText from '../ui/HighlightedText.vue';
@@ -228,6 +229,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
         {{ item.owner || 'Unassigned' }}
       </span>
     </div>
+    <PlannedDates :start-date="item.startDate" :end-date="item.endDate" compact />
   </button>
   <div
     v-if="dirty || (editing && pending !== 'deleted')"

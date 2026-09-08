@@ -3,6 +3,8 @@ id: MUSIC-003
 title: Unified Home across music, podcasts and audiobooks
 product: Music App
 horizon: Now
+startDate: 2026-08-17
+endDate: 2026-10-30
 stage: Building
 owner: Nadia Rahman
 tags: discovery, home, theme:spoken-word, theme:ml-personalisation

@@ -4,6 +4,8 @@ import Sortable from 'sortablejs';
 import FiltersSidebar from './FiltersSidebar.vue';
 import { activityFromParams, writeActivityParams, activityDate, activityRange, activityLabel } from '../../lib/activityFilter';
 import SavedViews from './SavedViews.vue';
+import TimelineView from './TimelineView.vue';
+import { timelineSettings, timelineRange, dateDay } from '../../lib/timeline';
 import ConfirmAction from '../ui/ConfirmAction.vue';
 import RoadmapCard from './RoadmapCard.vue';
 import DetailDrawer from './DetailDrawer.vue';
@@ -532,6 +534,12 @@ async function doSync() {
   const existing = editStore.snapshot().requestPayload;
   const candidate = existing ?? editStore.changeset(baseShaMap.value);
   const errors = validateChangeset(candidate);
+  for (const item of existing ? [] : projected.value) {
+    if (candidate.updated.some((u: {id:string}) => u.id === item.id) || candidate.created.some((u: {id:string}) => u.id === item.id)) {
+      if (item.startDate && item.endDate && item.endDate < item.startDate)
+        errors.push({ id:item.id, field:'endDate', message:'Planned end must be on or after planned start' });
+    }
+  }
   if (errors.length) {
     interruptKind.value = 'validationBlocked';
     syncError.value = `Review these fields: ${formatValidationErrors(errors, candidate)}`;
@@ -1154,6 +1162,8 @@ function onCardDuplicate(id: string) {
       impact: src.impact ?? '',
       effort: src.effort ?? '',
       visibility: src.visibility,
+      startDate: src.startDate ?? '',
+      endDate: src.endDate ?? '',
       tags: (src.tags ?? []).join(', '),
     }),
   );
@@ -1589,6 +1599,7 @@ const shareContext = computed<ShareContext>(() => ({
   product: filters.product,
   horizons: [...horizons.value],
   generatedAt: formatDateTime(Date.now()),
+  timeline: filters.layout === 'timeline' ? { ...timelineSettings(filters.timeline), range: timelineRange(focused.value, timelineSettings(filters.timeline)) } : undefined,
   activitySummary: filters.activity ? `${activityLabel({ field: filters.activity.field, timeZone: filters.activity.timeZone, period: 'range', ...activityRange(filters.activity) })} (${filters.activity.timeZone})` : undefined,
 }));
 const sortedAuthoredShares = computed(() =>
@@ -1828,6 +1839,8 @@ onMounted(async () => {
   filters.stage = p.getAll('stage');
   filters.impact = p.getAll('impact');
   filters.effort = p.getAll('effort');
+  filters.layout = p.get('view') === 'timeline' ? 'timeline' : 'board';
+  filters.timeline = timelineSettings({ group: p.get('timelineGroup') ?? 'product', scale: p.get('scale') ?? 'months', fit: p.get('fit') === '1', ...(dateDay(p.get('at')) !== null ? { anchor: p.get('at') } : {}) });
   filters.assets = [];
   filters.activity = activityFromParams(p);
   filters.visibility = p.get('visibility');
@@ -1951,6 +1964,12 @@ onUnmounted(() => {
 
 function syncState() {
   const p = new URLSearchParams();
+  if (filters.layout === 'timeline') p.set('view', 'timeline');
+  if (filters.timeline) {
+    p.set('timelineGroup', filters.timeline.group); p.set('scale', filters.timeline.scale);
+    if (filters.timeline.fit) p.set('fit', '1');
+    if (filters.timeline.anchor) p.set('at', filters.timeline.anchor);
+  }
   if (filters.q) p.set('q', filters.q);
   if (filters.owner && !IS_PUBLIC) p.set('owner', filters.owner);
   filters.stage.forEach((v) => p.append('stage', v));
@@ -2210,6 +2229,10 @@ const editActionBtn =
         />
 
         <div class="min-w-0 flex-1">
+          <div class="roadmap-layout-switch" role="group" aria-label="Roadmap layout">
+            <button type="button" :aria-pressed="filters.layout !== 'timeline'" @click="filters.layout = 'board'">Board</button>
+            <button type="button" :aria-pressed="filters.layout === 'timeline'" @click="filters.layout = 'timeline'">Timeline</button>
+          </div>
           <SavedViews
             v-if="ready && !present && !IS_PUBLIC"
             :filters="filters"
@@ -2217,7 +2240,7 @@ const editActionBtn =
             :sort="sort"
             @apply="
               (view) => {
-                Object.assign(filters, view.filters);
+                Object.assign(filters, view.filters, { layout: view.filters.layout ?? 'board', timeline: timelineSettings(view.filters.timeline) });
                 horizons = [...view.horizons];
                 sort = view.sort;
                 selected = null;
@@ -2242,6 +2265,7 @@ const editActionBtn =
               type="button"
               :class="editActionBtn"
               :aria-expanded="viewOptionsOpen"
+              v-if="filters.layout !== 'timeline'"
               aria-controls="board-view-options"
               @click="viewOptionsOpen = !viewOptionsOpen"
             >
@@ -2314,7 +2338,7 @@ const editActionBtn =
             </div>
           </div>
 
-          <div v-if="!present" v-show="viewOptionsOpen" id="board-view-options" class="board-view-options">
+          <div v-if="!present && filters.layout !== 'timeline'" v-show="viewOptionsOpen" id="board-view-options" class="board-view-options">
             <label
               >Group by<Select v-model="filters.group" :options="groupOptions" name="group" aria-label="Group by"
             /></label>
@@ -2379,7 +2403,7 @@ const editActionBtn =
              the user thinks it does. Keep the hint quiet either way: it's guidance, not a
              warning. -->
           <p
-            v-if="canEdit && editMode && !present"
+            v-if="canEdit && editMode && !present && filters.layout !== 'timeline'"
             class="text-single-sm-medium text-text-subtle-default mb-4"
             data-test="reorder-hint"
           >
@@ -2406,9 +2430,10 @@ const editActionBtn =
             @clear="clear"
           />
 
+          <TimelineView v-if="filters.layout === 'timeline'" :items="focused" :settings="filters.timeline" :client="present || IS_PUBLIC" @select="select" @settings="filters.timeline = $event" @board="filters.layout = 'board'" />
           <!-- Empty -->
           <div
-            v-if="!focused.length"
+            v-else-if="!focused.length"
             class="roadmap-panel text-single-base-medium text-text-subtle-default rounded-2xl border border-dashed px-6 py-14 text-center"
           >
             <BrandMark class="mx-auto mb-4 size-12 opacity-90" />
@@ -3206,4 +3231,8 @@ const editActionBtn =
   box-shadow: 0 0 0 100vmax #0009;
   background: var(--color-card);
 }
+</style>
+
+<style scoped>
+.roadmap-layout-switch{display:flex;gap:3px;width:fit-content;padding:3px;border:1px solid var(--color-border-subtle-default);border-radius:10px;margin-bottom:16px;background:var(--color-card)}.roadmap-layout-switch button{border:0;border-radius:7px;background:transparent;color:var(--color-text-subtle-default);padding:8px 18px;min-height:38px;font-size:13px;font-weight:500;cursor:pointer}.roadmap-layout-switch button[aria-pressed=true]{background:var(--color-accent-brand-default);color:var(--color-text-primary-inverted-default)}.roadmap-layout-switch button:focus-visible{outline:2px solid var(--color-accent-brand-default);outline-offset:2px}
 </style>

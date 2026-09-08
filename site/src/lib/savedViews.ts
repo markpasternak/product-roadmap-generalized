@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { timelineSettingsSchema, timelineSettings } from './timeline';
 import { activityFilterSchema } from './activityFilter';
 import { HORIZONS, PRODUCTS, STAGES, LEVELS, VISIBILITIES } from './schema';
 import { emptyFilters, type FilterState, type SortKey } from './filters';
@@ -6,6 +7,8 @@ import { emptyFilters, type FilterState, type SortKey } from './filters';
 const viewSchema = z.object({
   name: z.string().trim().min(1).max(60),
   filters: z.object({
+    layout: z.enum(['board', 'timeline']).optional().catch('board'),
+    timeline: timelineSettingsSchema.optional().catch(undefined),
     activity: activityFilterSchema.nullable().optional().catch(null),
     q: z.string(), owner: z.string().nullable().optional(),
     product: z.enum(PRODUCTS).nullable(), stage: z.array(z.enum(STAGES)),
@@ -45,6 +48,7 @@ export function snapshotView(name: string, filters: FilterState, horizons: reado
 export function sameViewSelection(a: Pick<SavedView, 'filters' | 'horizons' | 'sort'>, b: Pick<SavedView, 'filters' | 'horizons' | 'sort'>): boolean {
   const set = (values: string[]) => [...new Set(values)].sort();
   const key = ({ filters: f, horizons, sort }: Pick<SavedView, 'filters' | 'horizons' | 'sort'>) => JSON.stringify([
+    f.layout ?? 'board', timelineSettings(f.timeline),
     f.q, f.owner ?? null, f.product, set(f.stage), set(f.impact), set(f.effort),
     f.activity ?? null, f.visibility, f.hygiene, set(f.tags), f.group, set(horizons), sort,
   ]);

@@ -69,6 +69,8 @@ export function itemsFromApi(apiItems: ApiItem[], base: string): ItemVM[] {
       id: item.id,
       title,
       product: fm.product ?? '',
+      startDate: fm.startDate,
+      endDate: fm.endDate,
       horizon: fm.horizon ?? '',
       stage: fm.stage ?? '',
       owner: IS_PUBLIC ? '' : (fm.owner ?? ''),

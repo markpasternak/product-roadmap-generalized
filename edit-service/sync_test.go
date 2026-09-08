@@ -365,3 +365,28 @@ func TestTreeEntries(t *testing.T) {
 		t.Fatalf("delete entry must not carry content: %s", d)
 	}
 }
+
+func TestBuildFiles_PlannedDatesRoundTripAndClear(t *testing.T) {
+	current := cur()
+	for _, fields := range []map[string]string{
+		{"startDate": "2026-09-01", "endDate": "2026-09-30"},
+		{"startDate": "2026-09-15"},
+		{"startDate": "", "endDate": ""},
+	} {
+		cs := Changeset{Updated: []ItemEdit{{ID: "TALK-001", Frontmatter: fields}}, BaseShas: baseShasFor(current, "TALK-001")}
+		write, _, _, _, errs := BuildFiles(cs, current)
+		if len(errs) > 0 || len(write) != 1 {
+			t.Fatalf("date update failed: %v, writes %d", errs, len(write))
+		}
+		fm := ParseDoc(write[0].Content).FM
+		for key, value := range fields {
+			if fm[key] != value {
+				t.Fatalf("%s: got %q want %q", key, fm[key], value)
+			}
+		}
+		if fm["horizon"] != "Now" || fm["stage"] != "Building" {
+			t.Fatal("dates changed prioritization")
+		}
+		current["TALK-001"] = RepoFile{Path: write[0].Path, Content: write[0].Content, Sha: gitBlobSha([]byte(write[0].Content))}
+	}
+}

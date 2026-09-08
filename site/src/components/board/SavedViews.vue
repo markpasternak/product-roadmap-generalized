@@ -38,14 +38,18 @@ watch(() => [props.filters, props.horizons, props.sort], () => {
 
 function summary(view: Pick<SavedView, 'filters' | 'horizons' | 'sort'>) {
   const { filters, horizons, sort } = view;
-  const scope = [filters.product ?? 'All products', horizons.length ? horizons.join(', ') : 'No horizons'];
+  const scope = [filters.layout === 'timeline' ? 'Timeline' : 'Board', filters.product ?? 'All products', horizons.length ? horizons.join(', ') : 'No horizons'];
   if (filters.activity) scope.push(activityLabel(filters.activity));
   if (filters.hygiene === 'now-early') scope.push('Early stage');
   const extra = [filters.q, filters.owner, ...filters.stage, ...filters.impact, ...filters.effort, ...filters.assets, filters.visibility, ...filters.tags,
     filters.hygiene && filters.hygiene !== 'now-early' ? filters.hygiene : null].filter(Boolean).length;
   if (extra) scope.push(`${extra} filter${extra === 1 ? '' : 's'}`);
-  if (filters.group === 'product') scope.push('Grouped by product');
-  scope.push(sortLabels[sort]);
+  if (filters.layout === 'timeline') {
+    scope.push(`Grouped by ${filters.timeline?.group ?? 'product'}`, filters.timeline?.fit ? 'Fit all dated items' : filters.timeline?.scale ?? 'months');
+  } else {
+    if (filters.group === 'product') scope.push('Grouped by product');
+    scope.push(sortLabels[sort]);
+  }
   return scope.join(' · ');
 }
 
@@ -122,7 +126,7 @@ function reset() {
 async function edit(view?: SavedView) {
   mode.value = view ? 'rename' : 'create';
   editingName.value = view?.name ?? null;
-  name.value = view?.name ?? [props.filters.product, props.horizons.join(', ')].filter(Boolean).join(' — ');
+  name.value = view?.name ?? [props.filters.layout === 'timeline' ? 'Timeline' : null, props.filters.product, props.horizons.join(', ')].filter(Boolean).join(' — ');
   error.value = '';
   open.value = true;
   await positionPanel();
@@ -233,7 +237,7 @@ function undo() {
         <label :for="inputId">View name</label>
         <input :id="inputId" ref="nameInput" v-model="name" maxlength="60" autocomplete="off" :aria-invalid="!!error" :aria-describedby="error ? errorId : undefined" @input="error = ''" />
         <p v-if="editorView" class="view-scope">{{ summary(editorView) }}</p>
-        <p class="view-help">{{ mode === 'create' ? 'Keeps your filters, horizons, grouping and sort.' : 'Renaming keeps this view’s saved filters and layout.' }} Saved in this browser; not synced across devices.</p>
+        <p class="view-help">{{ mode === 'create' ? 'Keeps your filters, layout, grouping and date window.' : 'Renaming keeps this view’s saved filters and layout.' }} Saved in this browser; not synced across devices.</p>
         <p v-if="error" :id="errorId" role="alert" class="view-error">{{ error }}</p>
         <div class="view-form-actions">
           <button v-if="mode === 'rename'" type="button" class="view-text-action view-remove" @click="remove">Remove view</button>

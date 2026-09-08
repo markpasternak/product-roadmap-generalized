@@ -11,6 +11,7 @@
 // Two rules below are NOT mirrors — `ValidateFrontmatter` (and the CI script) has no
 // equivalent check for either: tag format and YAML-safety. Both are authored fresh,
 // client-only.
+import { dateDay } from '../timeline';
 import { PRODUCTS, HORIZONS, STAGES, LEVELS, VISIBILITIES } from '../schema';
 
 export interface FieldError {
@@ -193,6 +194,13 @@ function validateItem(errors: FieldError[], id: string, isCreate: boolean, get: 
     const { value, present } = get(field);
     checkRequiredTextField(errors, id, field, value, present, isCreate);
   }
+  for (const field of ['startDate', 'endDate']) {
+    const { value, present } = get(field);
+    if (present && value && dateDay(value) === null) errors.push({ id, field, message: `${field} must be a valid date` });
+  }
+  const start = get('startDate').value, end = get('endDate').value;
+  if (start && end && dateDay(start) !== null && dateDay(end) !== null && end < start)
+    errors.push({ id, field: 'endDate', message: 'Planned end must be on or after planned start' });
   const tags = get('tags');
   if (tags.present) checkTagsFormat(errors, id, tags.value);
 

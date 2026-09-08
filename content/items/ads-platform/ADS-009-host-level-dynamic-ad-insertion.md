@@ -3,6 +3,8 @@ id: ADS-009
 title: Host-level dynamic ad insertion
 product: Ads Platform
 horizon: Later
+startDate: 2027-02-01
+endDate: 2027-05-28
 stage: Discovery
 owner: Unassigned
 tags: podcasts, delivery

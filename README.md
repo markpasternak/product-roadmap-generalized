@@ -4,7 +4,7 @@ A Git-backed roadmap with an interactive board, in-app editing, supporting files
 
 **Live demo:** [roadmapdemo.canvas-drop.com](https://roadmapdemo.canvas-drop.com)
 
-This is a demonstration instance. All 60 roadmap items, owner names and four supporting documents are fictional. The five products—Music App, Podcasts & Audiobooks, Spotify for Artists, Ads Platform, and Core Platform & Data—illustrate a portfolio; they are not anyone's real plan. This project is not affiliated with or endorsed by Spotify.
+This is a demonstration instance. All 60 roadmap items, owner names and four supporting documents are fictional. Planned dates on 15 items are illustrative examples for the Timeline view. The five products—Music App, Podcasts & Audiobooks, Spotify for Artists, Ads Platform, and Core Platform & Data—illustrate a portfolio; they are not anyone's real plan. This project is not affiliated with or endorsed by Spotify.
 
 ## What you can do
 

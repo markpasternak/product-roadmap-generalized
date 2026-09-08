@@ -6,6 +6,7 @@ Per file: id present, well-formed (PREFIX-NNN), and unique; title and owner
 present; product / horizon / stage from the allowed sets; id prefix matches the
 product; filename starts with the id; file lives in the product's folder.
 """
+from datetime import date
 import os
 import re
 import sys
@@ -142,6 +143,16 @@ def main():
             for lvl in ("impact", "effort"):
                 if fm.get(lvl) and fm[lvl] not in LEVELS:
                     err(f"invalid {lvl} '{fm[lvl]}' (want Low/Medium/High)")
+            for field in ("startDate", "endDate"):
+                value = fm.get(field, "")
+                if value:
+                    try:
+                        if date.fromisoformat(value).isoformat() != value:
+                            raise ValueError()
+                    except ValueError:
+                        err(f"{field} must be a valid date (YYYY-MM-DD)")
+            if fm.get("startDate") and fm.get("endDate") and fm["endDate"] < fm["startDate"]:
+                err("endDate must be on or after startDate")
             visibility = fm.get("visibility", "Internal")
             if visibility not in VISIBILITIES:
                 err(f"invalid visibility '{visibility}' (want Internal/Public)")

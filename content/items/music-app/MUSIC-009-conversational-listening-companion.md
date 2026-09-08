@@ -3,6 +3,8 @@ id: MUSIC-009
 title: Conversational listening companion
 product: Music App
 horizon: Later
+startDate: 2027-02-01
+endDate: 2027-05-28
 stage: Discovery
 owner: Nadia Rahman
 tags: ai, discovery, theme:ml-personalisation

@@ -34,3 +34,10 @@ it('migrates obsolete resource selections and preserves rolling activity filters
   expect(sameViewSelection(saved, { ...saved, filters: { ...saved.filters, activity: { ...activity, days: 30 } } })).toBe(false);
   expect(readSavedViews(JSON.stringify([{ ...saved, filters: { ...saved.filters, activity: { ...activity, days: -1 } } }]))[0].filters.activity).toBeNull();
 });
+
+it('preserves timeline layout, grouping and range without changing filters', () => {
+  const filters = { ...emptyFilters(), layout: 'timeline' as const, timeline: { group: 'tag' as const, scale: 'quarters' as const, anchor: '2026-09-01', fit: false } };
+  const saved = snapshotView('Planning', filters, ['Now','Next'], 'updated');
+  expect(readSavedViews(JSON.stringify([saved]))[0]).toEqual(saved);
+  expect(sameViewSelection(saved, { ...saved, filters: {...filters, layout:'board'} })).toBe(false);
+});

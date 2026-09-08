@@ -16,7 +16,7 @@ export type BoardChangeset = {
 
 // Frontmatter keys that affect board rendering, mapped onto their ItemVM field (same name
 // for all of these). `tags` and `order` need their own coercion (see below).
-const BOARD_FIELDS = ['horizon', 'stage', 'title', 'owner', 'impact', 'effort', 'visibility', 'product'] as const;
+const BOARD_FIELDS = ['horizon', 'stage', 'title', 'owner', 'impact', 'effort', 'visibility', 'product', 'startDate', 'endDate'] as const;
 
 // ItemEditor emits tags as a comma-joined string; split back into the array ItemVM expects.
 function splitTags(value: string | undefined): string[] {
@@ -58,6 +58,8 @@ function newItemDefaults(entry: BoardChangeset['created'][number]): ProjectedIte
     id: entry.id,
     title: entry.title,
     product: entry.product,
+    startDate: fm.startDate,
+    endDate: fm.endDate,
     horizon: fm.horizon ?? 'Next',
     stage: fm.stage ?? 'Discovery',
     owner: fm.owner ?? '',

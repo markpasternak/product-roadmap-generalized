@@ -1,0 +1,32 @@
+.timeline-chart{--timeline-label:260px; border:1px solid var(--color-border-subtle-default);border-radius:14px;overflow:auto;background:var(--color-card);max-height:72vh;scrollbar-width:thin;position:relative;isolation:isolate}
+.timeline-canvas{min-width:920px;position:relative}
+.timeline-head,.timeline-row{display:grid;grid-template-columns:var(--timeline-label) minmax(660px,1fr)}
+.timeline-head{position:sticky;top:0;z-index:5;background:var(--color-card);height:48px;border-bottom:1px solid var(--color-border-subtle-default)}
+.timeline-label{position:sticky;left:0;z-index:2;background:var(--color-card);padding:12px 16px;border-right:1px solid var(--color-border-subtle-default);text-align:left;min-width:0}
+.timeline-head>.timeline-label{z-index:6;font-size:12px;font-weight:600;color:var(--color-text-subtle-default)}
+.timeline-axis,.timeline-track{position:relative;min-width:0}
+.timeline-tick{position:absolute;top:0;bottom:0;border-left:1px solid var(--color-border-subtle-default);padding:14px 8px;font-size:12px;color:var(--color-text-subtle-default);overflow:hidden;white-space:nowrap}
+.timeline-group{border-bottom:1px solid var(--color-border-subtle-default)}
+.timeline-group>summary{list-style:none;position:sticky;left:0;width:fit-content;max-width:100%;padding:12px 16px;cursor:pointer;font-size:13px;font-weight:600;min-height:42px}
+.timeline-group>summary::before{content:'▸';display:inline-block;margin-right:8px;color:var(--color-text-subtle-default)}
+.timeline-group[open]>summary::before{content:'▾'}
+.timeline-group>summary small{margin-left:10px;color:var(--color-text-subtle-default);font-weight:400}
+.timeline-row{min-height:64px;border-top:1px solid color-mix(in srgb,var(--color-border-subtle-default) 50%,transparent)}
+.timeline-row>.timeline-label{border-top:0;border-bottom:0;border-left:0;color:var(--color-text-primary-default);cursor:pointer;font-size:13px;line-height:1.4}
+.timeline-label strong{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.timeline-label small{display:block;color:var(--color-text-subtle-default);font-size:11px;margin-top:4px}
+.timeline-track .timeline-tick{pointer-events:none;padding:0;opacity:.55}
+.timeline-bar{position:absolute;top:14px;height:36px;border:1px solid color-mix(in srgb,var(--product) 55%,transparent);border-left:3px solid var(--product);border-radius:7px;background:color-mix(in srgb,var(--product) 15%,var(--color-card));color:var(--color-text-primary-default);text-align:left;padding:0 10px;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:12px;min-width:6px}
+.timeline-bar:hover,.timeline-row>.timeline-label:hover{background:var(--color-surface-primary-hover,var(--color-card));box-shadow:inset 0 0 0 1px var(--product,var(--color-border-subtle-default))}
+.timeline-bar[data-before=true]{border-top-left-radius:0;border-bottom-left-radius:0;border-left-style:dashed}
+.timeline-bar[data-after=true]{border-top-right-radius:0;border-bottom-right-radius:0;border-right:2px dashed var(--product)}
+.timeline-today{position:absolute;top:0;bottom:0;width:1px;background:var(--color-accent-brand-default);z-index:1;pointer-events:none}
+.timeline-chart button:focus-visible,.timeline-chart summary:focus-visible{outline:2px solid var(--color-accent-brand-default);outline-offset:-2px}
+.timeline-range-caption{font-size:12px;color:var(--color-text-subtle-default);line-height:1.6}
+@media(max-width:640px){.timeline-chart{--timeline-label:170px;max-height:65vh}.timeline-label{padding:10px}.timeline-canvas{min-width:830px}}
+@media print{.timeline-chart{max-height:none;overflow:visible}.timeline-canvas{min-width:0}.timeline-head,.timeline-row{grid-template-columns:180px minmax(0,1fr)}}
+
+.timeline-row[hidden],.timeline-group[hidden],.timeline-missing-shared[hidden]{display:none}
+.timeline-missing-shared{border:1px solid var(--color-border-subtle-default);border-radius:12px;padding:12px 16px;margin:12px 0}.timeline-missing-shared summary{cursor:pointer;font-size:13px}.timeline-missing-shared button{background:none;border:0;text-align:left;color:var(--color-text-primary-default);cursor:pointer;text-decoration:underline;text-underline-offset:3px;padding:8px 0}
+
+.timeline-chart[hidden],[data-timeline-empty][hidden]{display:none}

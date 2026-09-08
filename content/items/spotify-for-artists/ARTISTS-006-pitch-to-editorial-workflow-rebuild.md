@@ -3,6 +3,8 @@ id: ARTISTS-006
 title: Pitch-to-editorial workflow rebuild
 product: Spotify for Artists
 horizon: Next
+startDate: 2026-10-12
+endDate: 2027-01-29
 stage: Committed
 owner: Hanna Virtanen
 tags: editorial, releases
