@@ -9,12 +9,17 @@ const viewers = (n: number): RealtimeUser[] =>
 describe('PresenceIndicator — pill', () => {
   it('renders "N viewing" with avatars (capped at 5) when realtime is available and viewers are present', () => {
     const w = mount(PresenceIndicator, {
-      props: { viewers: viewers(7), realtimeAvailable: true },
+      props: { viewers: viewers(7), realtimeAvailable: true, selfId: 'u0' },
     });
 
-    expect(w.get('[data-test="presence-indicator"]').text()).toContain('7 viewing');
+    expect(w.get('[data-test="presence-indicator"]').text()).toContain('6 others viewing');
     // Avatar.vue renders a `.ring-2` span per viewer — capped at 5 even though there are 7 viewers.
     expect(w.findAll('.ring-2')).toHaveLength(5);
+  });
+
+  it('hides self-only presence', () => {
+    const w = mount(PresenceIndicator, { props: { viewers: viewers(1), selfId: 'u0', realtimeAvailable: true } });
+    expect(w.find('[data-test="presence-indicator"]').exists()).toBe(false);
   });
 
   it('hides the pill when there are no viewers', () => {

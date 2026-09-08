@@ -102,3 +102,35 @@
   border: 1px solid var(--roadmap-glass-border);
   border-radius: 12px;
 }
+
+/* Keep the working surface ahead of its controls. */
+.compact-toolbar { padding-block: .65rem; gap: .5rem; }
+.board-product { display: flex; align-items: center; gap: .65rem; margin-right: .35rem; }
+.board-product > span { white-space: nowrap; color: var(--roadmap-ink-muted); font-size: .72rem; font-variant-numeric: tabular-nums; }
+.board-product select { max-width: 190px; }
+.compact-toolbar .roadmap-layout-switch { margin: 0; padding: 2px; border-radius: 7px; }
+.compact-toolbar .roadmap-layout-switch button { min-height: 34px; padding: 6px 10px; border-radius: 5px; font-size: .75rem; }
+.compact-toolbar .roadmap-layout-switch button[aria-pressed='true'] { background: var(--color-surface-subtle-default); color: var(--roadmap-ink); box-shadow: 0 1px 3px rgb(0 0 0 / 10%); }
+.compact-toolbar .board-search { flex: 1 1 150px; min-width: 140px; }
+.compact-toolbar .board-more > button { border-color: transparent; background: transparent; }
+.compact-view-settings { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; padding: .5rem 1rem 1rem; border-bottom: 1px solid var(--roadmap-glass-border); }
+.compact-view-settings label { display: grid; gap: .4rem; min-width: 0; font-size: .75rem; color: var(--roadmap-ink-muted); }
+.filter-horizons { border: 0; padding: 0 0 1.25rem; margin: 0 0 1.25rem; border-bottom: 1px solid var(--roadmap-glass-border); }
+.filter-horizons legend { margin-bottom: .65rem; font-size: .8rem; font-weight: 600; }
+.filter-horizons label { display: flex; align-items: center; gap: .65rem; min-height: 38px; font-size: .8125rem; cursor: pointer; }
+.filter-horizons input { width: 16px; height: 16px; accent-color: var(--color-accent-brand-default); }
+.filter-horizons small { margin-left: auto; color: var(--roadmap-ink-muted); font-variant-numeric: tabular-nums; }
+.horizon-filter-summary { display: flex; margin-bottom: .75rem; }
+.horizon-filter-summary button { display: flex; align-items: center; gap: .6rem; padding: .4rem .6rem; border: 1px solid var(--roadmap-glass-border); border-radius: 6px; font-size: .75rem; }
+@media (max-width: 760px) {
+  .compact-toolbar .board-product { flex: 1 1 150px; min-width: 0; margin-right: 0; }
+  .compact-toolbar .board-product > span { display: none; }
+  .compact-toolbar .board-product > div { width: 100%; }
+  .compact-toolbar .board-product select { max-width: none; }
+  .compact-toolbar .board-search { flex-basis: 100%; }
+  .compact-toolbar .board-primary-actions { margin-left: auto; }
+}
+
+.board-shell .lane:only-child .lane-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: .75rem; }
+
+.board-shell .lane:only-child .share-card { display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; }

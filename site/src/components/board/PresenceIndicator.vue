@@ -16,6 +16,7 @@ const props = withDefaults(
   defineProps<{
     /** Everyone currently viewing (from usePresence().viewers). Drives the pill. */
     viewers?: RealtimeUser[];
+    selfId?: string;
     /** Whether the realtime backend is available — gates the pill (R14). */
     realtimeAvailable?: boolean;
     /** Other clients currently in edit mode (from usePresence().othersEditing). Drives the nudge. */
@@ -47,7 +48,7 @@ function capList(names: string[], max = 3): string {
 // Names for the "N viewing" indicator's tooltip — capList (above) caps the list
 // and appends "+N more" so a large team never blows out the title attribute.
 function viewerNames(): string[] {
-  return props.viewers.map((v) => v.name || 'Viewer');
+  return otherViewers.value.map((v) => v.name || 'Viewer');
 }
 
 // A soft, advisory nudge — never used for locking/merge (R13/scope boundary).
@@ -58,7 +59,8 @@ const othersEditingLabel = computed(() => {
   return `${capList(names)} ${verb} also editing`;
 });
 
-const showPill = computed(() => props.realtimeAvailable && props.viewers.length > 0);
+const otherViewers = computed(() => props.selfId ? props.viewers.filter(v => v.id !== props.selfId) : []);
+const showPill = computed(() => props.realtimeAvailable && otherViewers.value.length > 0);
 const showNudge = computed(() => props.canEdit && props.editMode && !props.present && !!othersEditingLabel.value);
 </script>
 
@@ -68,20 +70,20 @@ const showNudge = computed(() => props.canEdit && props.editMode && !props.prese
        avatar row to just the count (see max-sm:hidden below). -->
   <div
     v-if="showPill"
-    class="roadmap-action chrome-reveal border-border-subtle-default bg-card text-single-sm-medium text-text-subtle-default inline-flex h-10 shrink-0 items-center gap-2 rounded-lg border px-2.5"
+    class="inline-flex shrink-0 items-center px-1"
     data-test="presence-indicator"
-    :title="capList(viewerNames())"
+    :title="`${capList(viewerNames())} also viewing`"
   >
-    <div class="flex -space-x-2 max-sm:hidden">
+    <div class="flex -space-x-2">
       <Avatar
-        v-for="v in viewers.slice(0, 5)"
+        v-for="v in otherViewers.slice(0, 5)"
         :key="v.id"
         :name="v.name || 'Viewer'"
         :size="22"
         class="ring-2 ring-card"
       />
     </div>
-    <span>{{ viewers.length }} viewing</span>
+    <span class="sr-only">{{ otherViewers.length }} others viewing</span>
   </div>
 
   <!-- R13: a soft, advisory-only "also editing" nudge — never a lock/merge signal,

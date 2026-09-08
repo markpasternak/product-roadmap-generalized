@@ -110,7 +110,7 @@ describe('Board — product navigation and view options', () => {
   it('restores legacy filter links without reviving removed shortcuts', async () => {
     window.history.replaceState(null, '', '/?hygiene=now-early&horizon=Now&sort=updated');
     const w = await mountBoard([item({ stage: 'Shaping' })]);
-    expect(w.get('button[aria-label="Choose view: Current view"]').text()).toBe('Current view');
+    expect(w.get('button[aria-label="View options and saved views"]').text()).toBe('View');
     expect(w.get('[aria-label="Roadmap views"]').text()).not.toContain('Modified');
   });
 
@@ -125,13 +125,13 @@ describe('Board — product navigation and view options', () => {
     window.history.replaceState(null, '', '/?horizon=Now');
     const w = await mountBoard([item(), item({ id: 'MUSIC-1', product: 'Music App' }), item({ id: 'MUSIC-2', product: 'Music App', horizon: 'Next' })]);
     const navigation = w.find('[aria-label="Filter by product"]');
-    const studio = navigation.findAll('button').find((button) => button.text() === 'Music App')!;
-    await studio.trigger('click');
-    expect(studio.attributes('aria-pressed')).toBe('true');
+    await navigation.setValue('Music App');
+    expect((navigation.element as HTMLSelectElement).value).toBe('Music App');
+    expect(w.find('[data-filter-kind="product"]').exists()).toBe(false);
     expect(w.findAllComponents({ name: 'RoadmapCard' }).map((card) => card.props('item').id)).toEqual(['MUSIC-1']);
     expect(window.location.pathname).toBe('/music-app/');
     expect(new URLSearchParams(window.location.search).getAll('horizon')).toEqual(['Now']);
-    await navigation.find('button').trigger('click');
+    await navigation.setValue('');
     expect(w.findAllComponents({ name: 'RoadmapCard' })).toHaveLength(2);
   });
 
@@ -157,8 +157,11 @@ describe('Board — product navigation and view options', () => {
   it('keeps visibility in Filters, separate from layout, with URL and chip recovery', async () => {
     localStorage.setItem('rm-sidebar', '1');
     const w = await mountBoard([item(), item({ id: 'TALK-2', visibility: 'Public' })]);
-    expect(w.get('#board-view-options').text()).not.toContain('Visibility');
-    await w.get('#side-visibility').setValue('Public');
+    await w.get('[aria-label="View options and saved views"]').trigger('click');
+    expect(w.get('.compact-view-settings').text()).not.toContain('Visibility');
+    await w.get('[aria-label="Close views"]').trigger('click');
+    await w.get('button[aria-label="Filters"]').trigger('click');
+    await w.get('#sheet-visibility').setValue('Public');
     expect(w.findAllComponents({ name: 'RoadmapCard' }).map((card) => card.props('item').id)).toEqual(['TALK-2']);
     expect(window.location.search).toContain('visibility=Public');
     expect(w.get('[data-filter-kind="visibility"]').text()).toContain('Public');
@@ -166,7 +169,7 @@ describe('Board — product navigation and view options', () => {
     await flushPromises();
     expect((w.get('#sheet-visibility').element as HTMLSelectElement).value).toBe('Public');
     await w.get('#sheet-visibility').setValue('Internal');
-    expect((w.get('#side-visibility').element as HTMLSelectElement).value).toBe('Internal');
+    expect((w.get('#sheet-visibility').element as HTMLSelectElement).value).toBe('Internal');
     expect(w.findAllComponents({ name: 'RoadmapCard' }).map((card) => card.props('item').id)).toEqual(['TALK-1']);
     await w.get('[data-test="active-filter-clear"]').trigger('click');
     expect(w.findAllComponents({ name: 'RoadmapCard' })).toHaveLength(2);
@@ -181,15 +184,35 @@ describe('Board — product navigation and view options', () => {
     expect(w.get('[aria-controls="board-more-actions"]').text()).toContain('More');
   });
 
+  it('keeps the layout and product when clearing additional filters', async () => {
+    const w = await mountBoard();
+    const vm = w.vm as unknown as { filters: ReturnType<typeof import('../../lib/filters').emptyFilters>; horizons: string[] };
+    const product = item().product;
+    Object.assign(vm.filters, { product, layout: 'timeline', owner: 'Someone' });
+    vm.horizons = ['Now'];
+    await flushPromises();
+    await w.get('button[aria-label="Filters"]').trigger('click');
+    const sheet = w.get('[role="dialog"][aria-label="Filters"]');
+    await sheet.findAll('button').find(button => button.text() === 'Clear all')!.trigger('click');
+    expect(vm.filters.product).toBe(product);
+    expect(vm.filters.layout).toBe('timeline');
+    expect(vm.filters.owner).toBeNull();
+    expect(vm.horizons).toEqual(['Now', 'Next', 'Later']);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await flushPromises();
+    expect(w.get('button[aria-label="Filters"]').attributes('aria-expanded')).toBe('false');
+  });
+
   it('discloses view settings without clearing them when closed', async () => {
     const w = await mountBoard();
-    const toggle = w.find('[aria-controls="board-view-options"]');
+    const toggle = w.find('[aria-label="View options and saved views"]');
     expect(toggle.attributes('aria-expanded')).toBe('false');
     await toggle.trigger('click');
     expect(toggle.attributes('aria-expanded')).toBe('true');
     await w.find('select[name="sort"]').setValue('title');
     await toggle.trigger('click');
     expect(toggle.attributes('aria-expanded')).toBe('false');
+    await toggle.trigger('click');
     expect((w.find('select[name="sort"]').element as HTMLSelectElement).value).toBe('title');
     expect(new URLSearchParams(window.location.search).get('sort')).toBe('title');
   });
@@ -918,10 +941,11 @@ describe('Board — multi-select horizon filter', () => {
 
   it('clicking a horizon chip in the template toggles it', async () => {
     const w = await mountBoard([item({ id: 'TALK-1', horizon: 'Now' })]);
+    await w.get('button[aria-label="Filters"]').trigger('click');
     const nowChip = w.find('[data-test="horizon-chip"][data-horizon="Now"]');
     expect(nowChip.attributes('aria-pressed')).toBe('true');
 
-    await nowChip.trigger('click');
+    await nowChip.setValue(false);
 
     const vm = w.vm as unknown as HorizonVM;
     expect(vm.horizons).not.toContain('Now');
@@ -1733,7 +1757,8 @@ describe('Board — IA/UX improvement pass', () => {
     const copied = new URL(writeText.mock.calls[0]![0]);
     expect(copied.searchParams.get('present')).toBe('1');
     expect(copied.searchParams.get('sort')).toBe('updated');
-    expect(copied.searchParams.get('horizon')).toBe('Now');
+    expect(copied.searchParams.has('horizon')).toBe(false);
+    expect(new URLSearchParams(window.location.search).get('horizon')).toBe('Now');
     expect(copied.searchParams.has('item')).toBe(false);
     expect((w.vm as unknown as { present: boolean }).present).toBe(false);
     expect(window.location.search).not.toContain('present=1');

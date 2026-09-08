@@ -74,8 +74,8 @@ describe('renderShareHtml', () => {
 
   it('renders projected copy and the lane', () => {
     expect(html).toContain('A safe line');
-    expect(html).toContain('Now');
-    expect(html).toContain('Current priorities');
+    expect(html).toContain('data-lane="Podcasts &amp; Audiobooks"');
+    expect(html).not.toContain('data-horizon-filter="Now"');
     expect(html).toContain('product roadmap');
     expect(html).toContain('Podcasts &amp; Audiobooks — partner view');
   });
@@ -92,32 +92,21 @@ describe('renderShareHtml', () => {
     expect(html).not.toContain('Nothing shipped yet. Completed work lands here.');
   });
 
-  it('preserves selected empty horizon lanes from the roadmap view', () => {
-    const selectedLanes = renderShareHtml({ ...ctx, horizons: ['Now', 'Next', 'Later'] }, [item]);
-
-    expect(selectedLanes).toContain('data-lane="Now"');
-    expect(selectedLanes).toContain('data-lane="Next"');
-    expect(selectedLanes).toContain('data-lane="Later"');
-    expect(selectedLanes).not.toContain('data-lane="Completed"');
-    expect(selectedLanes).toContain('data-horizon-filter="Next"');
-    expect(selectedLanes).not.toContain('data-horizon-filter="Completed"');
-    expect(selectedLanes).toContain('1 item across 3 lanes');
+  it('keeps horizon controls and empty lanes out of recipient views', () => {
+    const shared = renderShareHtml({ ...ctx, horizons: ['Now', 'Next', 'Later'] }, [item]);
+    expect(shared).toContain('data-lane="Podcasts &amp; Audiobooks"');
+    expect(shared).not.toMatch(/data-lane="(Now|Next|Later|Completed)"/);
+    expect(shared).not.toMatch(/data-horizon-filter="/);
+    expect(shared).toContain('1 item');
+    expect(shared).not.toContain('across 3 lanes');
   });
 
-  it('renders public horizon filters and lanes in canonical roadmap order', () => {
+  it('includes all selected work, regardless of horizon, grouped by product', () => {
     const horizons = ['Candidates', 'Now', 'Next', 'Later', 'Completed'] as const;
-    const items = horizons.map((horizon, index) => ({
-      ...item,
-      id: `TALK-${index + 1}`,
-      horizon,
-    }));
-    const allHorizons = renderShareHtml({ ...ctx, horizons }, items);
-
-    expect([...allHorizons.matchAll(/data-horizon-filter="([^"]+)"/g)].map((match) => match[1])).toEqual([
-      'All',
-      ...horizons,
-    ]);
-    expect([...allHorizons.matchAll(/data-lane="([^"]+)"/g)].map((match) => match[1])).toEqual([...horizons]);
+    const items = horizons.map((horizon, index) => ({ ...item, id: `TALK-${index + 1}`, horizon }));
+    const shared = renderShareHtml({ ...ctx, horizons }, items);
+    expect([...shared.matchAll(/data-lane="([^"]+)"/g)].map(match => match[1])).toEqual(['Podcasts &amp; Audiobooks']);
+    for (let index = 0; index < items.length; index++) expect(shared).toContain(`data-card-index="${index}"`);
   });
 
   it('renders presentation-style card actions and public detail copy', () => {

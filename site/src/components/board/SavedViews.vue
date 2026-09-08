@@ -5,7 +5,7 @@ import { activityLabel } from '../../lib/activityFilter';
 import type { FilterState, SortKey } from '../../lib/filters';
 import { SAVED_VIEWS_KEY, readSavedViews, sameViewSelection, snapshotView, type SavedView } from '../../lib/savedViews';
 
-const props = defineProps<{ filters: FilterState; horizons: string[]; sort: SortKey }>();
+const props = defineProps<{ filters: FilterState; horizons: string[]; sort: SortKey; compact?: boolean }>();
 const emit = defineEmits<{ (e: 'apply', view: SavedView): void }>();
 type ViewEntry = { key: string; view: SavedView };
 const views = ref<SavedView[]>([]);
@@ -25,6 +25,7 @@ const root = ref<HTMLElement>();
 const panel = ref<HTMLElement>();
 const opensAbove = ref(false);
 const panelMaxHeight = ref('');
+const panelOffset = ref(0);
 const trigger = ref<HTMLButtonElement>();
 const nameInput = ref<HTMLInputElement>();
 const panelId = useId();
@@ -101,6 +102,11 @@ async function positionPanel() {
   await nextTick();
   if (!open.value || !root.value || !panel.value) return;
   const anchor = root.value.getBoundingClientRect();
+  if (props.compact) {
+    const width = panel.value.getBoundingClientRect().width;
+    const left = anchor.right - width;
+    panelOffset.value = Math.min(Math.max(left, 16), Math.max(16, window.innerWidth - width - 16)) - left;
+  }
   const below = window.innerHeight - anchor.bottom - 12;
   const navigationBottom = document.querySelector('.site-navbar')?.getBoundingClientRect().bottom ?? 0;
   const above = anchor.top - Math.max(12, navigationBottom + 12);
@@ -196,28 +202,34 @@ function undo() {
 </script>
 
 <template>
-  <div ref="root" class="saved-views" aria-label="Roadmap views" @focusout="onFocusOut" @keydown.esc.stop.prevent="close()">
+  <div ref="root" class="saved-views" :class="{ compact }" aria-label="Roadmap views" @focusout="onFocusOut" @keydown.esc.stop.prevent="close()">
     <div class="view-toolbar">
       <button ref="trigger" type="button" class="view-trigger roadmap-action" :aria-expanded="open" :aria-controls="panelId"
-        :aria-label="`Choose view: ${selected?.view.name ?? 'Current view'}${modified ? ', modified' : ''}`" @click="toggle">
-        <PhBookmarkSimple :size="16" aria-hidden="true" />
-        <span class="view-current-name">{{ selected?.view.name ?? 'Current view' }}</span>
+        :aria-label="compact ? 'View options and saved views' : `Choose view: ${selected?.view.name ?? 'Current view'}${modified ? ', modified' : ''}`" @click="toggle">
+        <PhBookmarkSimple v-if="!compact" :size="16" aria-hidden="true" />
+        <span class="view-current-name">{{ compact ? 'View' : selected?.view.name ?? 'Current view' }}</span>
         <PhCaretDown :size="12" aria-hidden="true" class="view-caret" :class="{ 'is-open': open }" />
       </button>
-      <span v-if="modified" class="view-modified">Modified</span>
-      <div class="view-actions">
+      <span v-if="modified && !compact" class="view-modified">Modified</span>
+      <div v-if="!compact" class="view-actions">
         <button v-if="modified" type="button" class="view-text-action" @click="reset">Reset</button>
         <button v-if="selected && modified" type="button" class="view-text-action view-save" @click="update">Save changes</button>
         <button v-else type="button" class="view-text-action view-save" @click="edit()"><PhPlus :size="14" aria-hidden="true" /> Save view</button>
       </div>
     </div>
 
-    <section v-if="open" :id="panelId" ref="panel" class="view-popover" :class="{ 'opens-above': opensAbove }" :style="{ maxHeight: panelMaxHeight }" :aria-label="mode === 'list' ? 'Choose a view' : mode === 'create' ? 'Save view' : 'Rename view'">
+    <section v-if="open" :id="panelId" ref="panel" class="view-popover" :class="{ 'opens-above': opensAbove }" :style="{ maxHeight: panelMaxHeight, transform: compact ? `translateX(${panelOffset}px)` : undefined }" :aria-label="mode === 'list' ? 'Choose a view' : mode === 'create' ? 'Save view' : 'Rename view'">
       <div class="view-popover-heading">
-        <h2>{{ mode === 'list' ? 'Your saved views' : mode === 'create' ? 'Save this view' : 'Edit saved view' }}</h2>
+        <h2>{{ mode === 'list' ? (compact ? 'View options' : 'Your saved views') : mode === 'create' ? 'Save this view' : 'Edit saved view' }}</h2>
         <button type="button" class="view-icon-action" aria-label="Close views" @click="close()"><PhX :size="16" aria-hidden="true" /></button>
       </div>
       <template v-if="mode === 'list'">
+        <slot name="settings" />
+        <div v-if="compact && modified" class="view-current-status">
+          <span>{{ selected?.view.name }} · Modified</span>
+          <button type="button" class="view-text-action" @click="reset">Reset</button>
+          <button type="button" class="view-text-action view-save" @click="update">Save changes</button>
+        </div>
         <div class="view-list">
           <div class="view-section-label"><span>Saved in this browser</span></div>
           <p v-if="!views.length" class="view-empty">Save a combination of filters to come back to it.</p>
@@ -256,6 +268,11 @@ function undo() {
 </template>
 
 <style scoped>
+.saved-views.compact { margin-bottom: 0; flex-shrink: 0; }
+.compact .view-popover { width: min(380px, calc(100vw - 32px)); left: auto; right: 0; }
+.compact .view-feedback { position: absolute; right: 0; top: 100%; width: 260px; padding: .5rem; background: var(--color-card); z-index: 31; }
+.view-current-status { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .5rem 1rem; }
+.view-current-status > span { flex-basis: 100%; color: var(--roadmap-ink-muted); }
 .saved-views { position: relative; margin-bottom: 1rem; font-size: .8125rem; color: var(--roadmap-ink); }
 .view-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; min-height: 40px; }
 .view-trigger { display: inline-flex; align-items: center; gap: .65rem; min-width: 0; max-width: min(320px, 100%); min-height: 40px; padding: .5rem .75rem; border: 1px solid var(--roadmap-glass-border); border-radius: 6px; background: var(--color-card); font-weight: 500; cursor: pointer; }

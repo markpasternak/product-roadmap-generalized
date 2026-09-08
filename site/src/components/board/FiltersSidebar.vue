@@ -3,7 +3,7 @@ import { ref, computed } from 'vue';
 import Select from '../ui/Select.vue';
 import ActivityFilter from './ActivityFilter.vue';
 import { cn } from '../../lib/utils';
-import { PRODUCTS, VISIBILITIES } from '../../lib/schema';
+import { VISIBILITIES } from '../../lib/schema';
 import { IS_PUBLIC } from '../../lib/audience';
 import {
   activeFilterCount,
@@ -26,11 +26,6 @@ const emit = defineEmits<{ (e: 'clear'): void }>();
 // The sidebar renders twice (inline + mobile sheet); keep field ids unique.
 const idp = props.hideHeader ? 'sheet' : 'side';
 
-const productOptions = [{ value: '', label: 'All products' }, ...PRODUCTS.map((p) => ({ value: p, label: p }))];
-const productModel = computed({
-  get: () => props.filters.product ?? '',
-  set: (v: string) => (props.filters.product = v || null),
-});
 const visibilityOptions = [{ value: '', label: 'All items' }, ...VISIBILITIES.map((value) => ({ value, label: value }))];
 const visibilityModel = computed({
   get: () => props.filters.visibility ?? '',
@@ -99,10 +94,6 @@ function toggleTag(token: string) {
 
     <div class="space-y-5">
       <ActivityFilter v-model="filters.activity" :id="idp" />
-      <div>
-        <label :for="idp + '-product'" :class="sectionTitle">Product</label>
-        <Select :id="idp + '-product'" v-model="productModel" :options="productOptions" />
-      </div>
       <div v-if="!IS_PUBLIC">
         <label :for="idp + '-owner'" :class="sectionTitle">Owner</label>
         <Select :id="idp + '-owner'" v-model="ownerModel" :options="ownerOptions" />

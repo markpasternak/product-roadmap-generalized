@@ -135,19 +135,15 @@ const horizons = ref<string[]>([...DEFAULT_HORIZONS]);
 function toggleHorizon(h: string) {
   horizons.value = horizons.value.includes(h) ? horizons.value.filter((x) => x !== h) : [...horizons.value, h];
 }
-const activeChips = computed(() => activeFilterChips(filters));
+const activeChips = computed(() => activeFilterChips(filters).filter(chip => chip.kind !== 'product'));
+const customHorizons = computed(() => horizons.value.length !== DEFAULT_HORIZONS.length || !DEFAULT_HORIZONS.every(h => horizons.value.includes(h)));
+const toolbarFilterCount = computed(() => activeFilterCount({ ...filters, product: null }) + Number(customHorizons.value));
+function clearAdditionalFilters() {
+  const { product, layout, group, timeline } = filters;
+  clear();
+  Object.assign(filters, { product, layout, group, timeline });
+}
 const sort = ref<SortKey>('manual');
-// Desktop filter sidebar visibility is a sticky preference (like the theme).
-const sidebarOpen = ref(false);
-const desktopFilters = ref(false);
-const viewOptionsOpen = ref(false);
-watch(sidebarOpen, (v) => {
-  try {
-    localStorage.setItem('rm-sidebar', v ? '1' : '0');
-  } catch {
-    /* ignore */
-  }
-});
 const sheetOpen = ref(false);
 // Fix #9: the "?" cheat-sheet overlay (global keyboard shortcuts). See onGlobalKey below.
 const shortcutsOpen = ref(false);
@@ -1447,7 +1443,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return el.isContentEditable === true;
 }
 function onGlobalKey(e: KeyboardEvent) {
-  if (discardConfirmation.value || recentChangesOpen.value) return;
+  if (discardConfirmation.value || recentChangesOpen.value || sheetOpen.value) return;
   if (isTypingTarget(e.target)) return;
   // The full-screen item editor and the share dialog own their own keyboard handling
   // (Esc close, etc. — see ItemEditor/ShareDialog) — board-level shortcuts stay out of
@@ -1495,24 +1491,7 @@ function onGlobalKey(e: KeyboardEvent) {
   e.preventDefault();
   searchWrap.value?.querySelector('input')?.focus();
 }
-// Below lg the filters live in a slide-over sheet; on desktop they toggle inline.
-let filterViewport: MediaQueryList | undefined;
-function syncFilterViewport() {
-  desktopFilters.value = filterViewport?.matches ?? false;
-}
-onMounted(() => {
-  filterViewport = window.matchMedia('(min-width: 1024px)');
-  syncFilterViewport();
-  filterViewport.addEventListener('change', syncFilterViewport);
-});
-onUnmounted(() => filterViewport?.removeEventListener('change', syncFilterViewport));
-function toggleFilters() {
-  if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
-    sidebarOpen.value = !sidebarOpen.value;
-  } else {
-    sheetOpen.value = true;
-  }
-}
+function toggleFilters() { sheetOpen.value = !sheetOpen.value; }
 function onSheetKey(e: KeyboardEvent) {
   if (!isTopFocusTrap(sheetPanel.value)) return;
   if (e.key === 'Escape') sheetOpen.value = false;
@@ -1577,6 +1556,7 @@ async function copyPresentationLink() {
   const p = new URLSearchParams(location.search);
   p.set('present', '1');
   p.delete('item');
+  p.delete('horizon');
   const url = `${location.origin}${location.pathname}?${p.toString()}`;
   try {
     await navigator.clipboard.writeText(url);
@@ -1706,9 +1686,10 @@ async function onShareSubmit(p: {
       roadmapTitle: p.roadmapTitle,
       roadmapIntro: p.roadmapIntro,
       itemCount: p.items.length,
-      laneCount: shareContext.value.horizons?.length ?? new Set(p.items.map((item) => item.horizon)).size,
+      productCount: new Set(p.items.map(item => item.product)).size,
+      laneCount: undefined,
       product: shareContext.value.product,
-      horizons: shareContext.value.horizons,
+      horizons: undefined,
       generatedAt: Date.now(),
     };
     const baseOptions = {
@@ -1817,11 +1798,6 @@ onMounted(async () => {
   // saved-state restore and syncState() below rewrite the URL via replaceState,
   // which would strip the #roadmap_edit_token fragment before we ever read it.
   readTokenFromHash();
-  try {
-    sidebarOpen.value = localStorage.getItem('rm-sidebar') === '1';
-  } catch {
-    /* ignore */
-  }
   // Arriving via a plain link (no params) restores the last board state for this
   // tab — filters, sort, presentation — so navigating away and back doesn't lose
   // your place. A URL that carries params always wins (shared links).
@@ -2106,7 +2082,8 @@ const editActionBtn =
       </div>
     </div>
 
-    <section
+    <h1 v-if="!present" class="sr-only">Product roadmap</h1>
+    <section v-if="present"
       class="roadmap-masthead reveal mb-4 rounded-[20px] px-4 py-3 sm:px-6 sm:py-3.5 lg:px-7 lg:py-4"
       aria-label="Roadmap overview"
     >
@@ -2143,104 +2120,42 @@ const editActionBtn =
           </p>
         </div>
 
-        <div
-          class="horizon-stats-container roadmap-glass rounded-xl p-1.5 max-sm:overflow-x-auto"
-          role="group"
-          aria-label="Horizons"
-        >
-          <div class="horizon-stats-grid grid grid-cols-2 gap-1.5 max-sm:flex max-sm:w-max">
-            <button
-              v-for="s in stats"
-              :key="s.key"
-              type="button"
-              :aria-pressed="s.active"
-              data-test="horizon-chip"
-              :data-horizon="s.key"
-              :class="
-                cn(
-                  'roadmap-action rounded-lg border px-2.5 py-2 text-left max-sm:flex max-sm:min-h-10 max-sm:min-w-[116px] max-sm:items-center max-sm:gap-2 max-sm:py-1.5',
-                  s.active
-                    ? 'roadmap-selected-control horizon-selected-control'
-                    : 'border-border-subtle-default/70 bg-[color:var(--roadmap-glass-bg)] hover:bg-[color:var(--roadmap-glass-strong)]',
-                )
-              "
-              :style="{ '--horizon-accent': s.dot }"
-              @click="toggleHorizon(s.key)"
-            >
-              <span
-                class="horizon-stat-label text-single-sm-medium text-text-primary-default flex min-w-0 items-center gap-2"
-              >
-                <span v-if="s.dot" class="h-3.5 w-1 shrink-0 rounded-full" :style="{ background: s.dot }" />
-                {{ s.label }}
-                <PhCheck v-if="s.active" class="horizon-selected-mark" :size="12" aria-hidden="true" />
-              </span>
-              <span
-                class="font-display roadmap-title mt-0.5 block text-[1.3rem] leading-none tabular-nums max-sm:mt-0 sm:text-[1.45rem]"
-              >
-                {{ s.value }}
-              </span>
-              <span
-                class="horizon-stat-sub text-single-sm-medium mt-0.5 block max-sm:hidden"
-                :style="{ color: toneText[s.tone] }"
-              >
-                {{ s.sub }}
-              </span>
-            </button>
-          </div>
-        </div>
       </div>
     </section>
-
-    <div v-if="!present" class="product-navigation" role="group" aria-label="Filter by product">
-      <button type="button" :aria-pressed="!filters.product" @click="filters.product = null">All products</button>
-      <button
-        v-for="product in PRODUCTS"
-        :key="product"
-        type="button"
-        :aria-pressed="filters.product === product"
-        @click="filters.product = product"
-      >
-        {{ product }}
-      </button>
-      <span class="product-navigation-count" role="status" aria-live="polite">{{ focused.length }} items in view</span>
-    </div>
-    <div v-if="!present" class="product-mobile">
-      <Select
-        :model-value="filters.product ?? ''"
-        @update:model-value="filters.product = $event || null"
-        :options="[
-          { value: '', label: 'All products' },
-          ...PRODUCTS.map((product) => ({ value: product, label: product })),
-        ]"
-        aria-label="Filter by product"
-      />
-      <span>{{ focused.length }} items</span>
-    </div>
 
     <RecentChangesDrawer v-if="recentChangesOpen" :items="liveItems" :base="props.base ?? '/'" @close="recentChangesOpen = false" />
 
     <!-- Body -->
     <div class="roadmap-glass board-body rounded-[24px] p-3.5 sm:p-4">
       <div class="flex gap-5">
-        <FiltersSidebar
-          v-if="sidebarOpen && !present"
-          class="hidden lg:block"
-          :filters="filters"
-          :owners="availableOwners"
-          :stages="availableStages"
-          :impact-options="availableImpact"
-          :effort-options="availableEffort"
-          :tag-options="availableTags"
-          @clear="clear"
-        />
-
         <div class="min-w-0 flex-1">
-          <div class="roadmap-layout-switch" role="group" aria-label="Roadmap layout">
-            <button type="button" :aria-pressed="filters.layout !== 'timeline'" @click="filters.layout = 'board'">Board</button>
-            <button type="button" :aria-pressed="filters.layout === 'timeline'" @click="filters.layout = 'timeline'">Timeline</button>
-          </div>
+          <div v-if="!present" class="board-toolbar compact-toolbar mb-3 flex flex-wrap items-center">
+            <div class="board-product">
+              <Select :model-value="filters.product ?? ''" @update:model-value="filters.product = $event || null"
+                :options="[{ value: '', label: 'All products' }, ...PRODUCTS.map(product => ({ value: product, label: product }))]"
+                aria-label="Filter by product" />
+              <span role="status" aria-live="polite">{{ focused.length }} items</span>
+            </div>
+            <div class="roadmap-layout-switch" role="group" aria-label="Roadmap layout">
+              <button type="button" :aria-pressed="filters.layout !== 'timeline'" @click="filters.layout = 'board'">Board</button>
+              <button type="button" :aria-pressed="filters.layout === 'timeline'" @click="filters.layout = 'timeline'">Timeline</button>
+            </div>
+            <div ref="searchWrap" class="board-search">
+              <SearchInput v-model="filters.q" name="q" placeholder="Search roadmap items..." :debounce="150" />
+            </div>
+            <button
+              type="button"
+              :class="editActionBtn"
+              aria-label="Filters"
+              :aria-expanded="sheetOpen"
+              @click="toggleFilters"
+            >
+              Filters
+              <span v-if="toolbarFilterCount" class="board-filter-count">{{ toolbarFilterCount }}</span>
+            </button>
           <SavedViews
-            v-if="ready && !present && !IS_PUBLIC"
+            v-if="ready && !present"
+            compact
             :filters="filters"
             :horizons="horizons"
             :sort="sort"
@@ -2252,31 +2167,14 @@ const editActionBtn =
                 selected = null;
               }
             "
-          />
-          <div v-if="!present" class="board-toolbar mb-3 flex flex-wrap items-center">
-            <div ref="searchWrap" class="board-search">
-              <SearchInput v-model="filters.q" name="q" placeholder="Search roadmap items..." :debounce="150" />
-            </div>
-            <button
-              type="button"
-              :class="editActionBtn"
-              aria-label="Filters"
-              :aria-expanded="desktopFilters ? sidebarOpen : sheetOpen"
-              @click="toggleFilters"
-            >
-              Filters
-              <span v-if="activeFilterCount(filters)" class="board-filter-count">{{ activeFilterCount(filters) }}</span>
-            </button>
-            <button
-              type="button"
-              :class="editActionBtn"
-              :aria-expanded="viewOptionsOpen"
-              v-if="filters.layout !== 'timeline'"
-              aria-controls="board-view-options"
-              @click="viewOptionsOpen = !viewOptionsOpen"
-            >
-              Layout
-            </button>
+          >
+            <template #settings>
+              <div v-if="filters.layout !== 'timeline'" class="compact-view-settings">
+                <label>Group by<Select v-model="filters.group" :options="groupOptions" name="group" aria-label="Group by" /></label>
+                <label>Sort by<Select v-model="sort" :options="sortOptions" name="sort" aria-label="Sort" /></label>
+              </div>
+            </template>
+          </SavedViews>
             <div
               ref="moreWrap"
               class="board-more"
@@ -2311,7 +2209,7 @@ const editActionBtn =
                 </button>
               </div>
             </div>
-            <PresenceIndicator :viewers="viewers" :realtime-available="realtimeAvailable" />
+            <PresenceIndicator :viewers="viewers" :self-id="shareAuthor?.id" :realtime-available="realtimeAvailable" />
             <div v-if="canShare || canEdit" class="board-primary-actions ml-auto flex shrink-0 items-center gap-2">
               <button
                 v-if="canShare"
@@ -2343,13 +2241,6 @@ const editActionBtn =
                 {{ editMode ? 'Done' : 'Edit' }}
               </button>
             </div>
-          </div>
-
-          <div v-if="!present && filters.layout !== 'timeline'" v-show="viewOptionsOpen" id="board-view-options" class="board-view-options">
-            <label
-              >Group by<Select v-model="filters.group" :options="groupOptions" name="group" aria-label="Group by"
-            /></label>
-            <label>Sort by<Select v-model="sort" :options="sortOptions" name="sort" aria-label="Sort" /></label>
           </div>
 
           <!-- Edit action bar: the create actions get their own row, appearing/disappearing
@@ -2430,11 +2321,14 @@ const editActionBtn =
             :present="present"
           />
 
+          <div v-if="customHorizons && !present" class="horizon-filter-summary">
+            <button type="button" @click="horizons = [...DEFAULT_HORIZONS]" aria-label="Reset horizon filter">Horizons: {{ horizons.length ? horizons.join(', ') : 'None' }} <PhX :size="12" /></button>
+          </div>
           <ActiveFilterChips
             v-if="activeChips.length && !present"
             :chips="activeChips"
             @remove="removeFilterChip"
-            @clear="clear"
+            @clear="clearAdditionalFilters"
           />
 
           <TimelineView v-if="filters.layout === 'timeline'" :items="focused" :settings="filters.timeline" :client="present || IS_PUBLIC" @select="select" @settings="filters.timeline = $event" @board="filters.layout = 'board'" />
@@ -2460,7 +2354,7 @@ const editActionBtn =
                     ? 'There are no public roadmap items to show yet.'
                     : 'Items will appear here when they are added to the roadmap.'
                   : horizons.length === 0
-                    ? 'Pick at least one horizon above to see items.'
+                    ? 'Choose a horizon in Filters, or reset your filters.'
                     : 'Try a different search, filter, or horizon.'
               }}
             </p>
@@ -2508,12 +2402,6 @@ const editActionBtn =
                       {{ lane.items.length }}
                     </span>
                   </div>
-                  <p
-                    v-if="lane.desc"
-                    class="lane-description text-single-sm-medium text-text-subtle-default mt-1.5 leading-snug"
-                  >
-                    {{ lane.desc }}
-                  </p>
                   <div class="border-border-subtle-default mt-2.5 border-t" />
                 </header>
                 <div class="mt-3 flex flex-col gap-2" :ref="(el) => registerLaneListEl(lane.key, el as Element | null)">
@@ -2557,9 +2445,9 @@ const editActionBtn =
       </div>
     </div>
 
-    <!-- Mobile filter sheet (below lg the sidebar lives here) -->
+    <!-- Filters stay out of the board until requested, at every viewport size. -->
     <Transition name="sheet">
-      <div v-if="sheetOpen" class="fixed inset-0 z-50 lg:hidden">
+      <div v-if="sheetOpen" class="fixed inset-0 z-50">
         <div class="sheet-scrim bg-surface-transparent-black-50 absolute inset-0" @click="sheetOpen = false" />
         <div
           ref="sheetPanel"
@@ -2567,7 +2455,7 @@ const editActionBtn =
           aria-modal="true"
           aria-label="Filters"
           tabindex="-1"
-          class="sheet-panel bg-background absolute top-0 left-0 flex h-full w-[300px] max-w-[85vw] flex-col shadow-xl outline-none"
+          class="sheet-panel bg-background absolute top-0 right-0 flex h-full w-[360px] max-w-full flex-col shadow-xl outline-none"
         >
           <div class="border-border-subtle-default flex items-center justify-between border-b px-5 py-3">
             <span class="text-single-sm-medium text-text-subtle-default font-semibold tracking-wide uppercase"
@@ -2575,10 +2463,10 @@ const editActionBtn =
             >
             <div class="flex items-center gap-2">
               <button
-                v-if="activeFilterCount(filters)"
+                v-if="toolbarFilterCount"
                 type="button"
                 class="text-single-sm-medium text-text-link-default hover:underline"
-                @click="clear"
+                @click="clearAdditionalFilters"
               >
                 Clear all
               </button>
@@ -2593,6 +2481,13 @@ const editActionBtn =
             </div>
           </div>
           <div class="flex-1 overflow-y-auto p-5">
+            <fieldset class="filter-horizons">
+              <legend>Horizon</legend>
+              <label v-for="s in stats" :key="s.key">
+                <input type="checkbox" :checked="s.active" data-test="horizon-chip" :data-horizon="s.key" :aria-pressed="s.active" @change="toggleHorizon(s.key)" />
+                <span>{{ s.label }}</span><small>{{ s.value }}</small>
+              </label>
+            </fieldset>
             <FiltersSidebar
               :filters="filters"
               :owners="availableOwners"
@@ -3010,7 +2905,7 @@ const editActionBtn =
 }
 @keyframes progression-sheen {
   0% {
-    transform: translateX(-100%);
+    transform: translateX(100%);
   }
   100% {
     transform: translateX(220%);
@@ -3109,6 +3004,7 @@ const editActionBtn =
   letter-spacing: 0;
 }
 
+.sheet-panel { background: var(--color-card); border-left: 1px solid var(--roadmap-glass-border); }
 .sheet-enter-active,
 .sheet-leave-active {
   transition: opacity 0.2s ease;
@@ -3123,7 +3019,7 @@ const editActionBtn =
 }
 .sheet-enter-from .sheet-panel,
 .sheet-leave-to .sheet-panel {
-  transform: translateX(-100%);
+  transform: translateX(100%);
 }
 @media (prefers-reduced-motion: reduce) {
   .sheet-enter-active,
@@ -3241,5 +3137,8 @@ const editActionBtn =
 </style>
 
 <style scoped>
-.roadmap-layout-switch{display:flex;gap:3px;width:fit-content;padding:3px;border:1px solid var(--color-border-subtle-default);border-radius:10px;margin-bottom:16px;background:var(--color-card)}.roadmap-layout-switch button{border:0;border-radius:7px;background:transparent;color:var(--color-text-subtle-default);padding:8px 18px;min-height:38px;font-size:13px;font-weight:500;cursor:pointer}.roadmap-layout-switch button[aria-pressed=true]{background:var(--color-accent-brand-default);color:var(--color-text-primary-inverted-default)}.roadmap-layout-switch button:focus-visible{outline:2px solid var(--color-accent-brand-default);outline-offset:2px}
+.roadmap-layout-switch { display: flex; flex-shrink: 0; align-items: center; gap: 2px; width: fit-content; height: 40px; padding: 2px; margin: 0; border: 1px solid var(--color-border-subtle-default); border-radius: 8px; background: var(--color-card); box-sizing: border-box; }
+.roadmap-layout-switch button { display: flex; align-items: center; justify-content: center; height: 34px; min-height: 0; padding: 0 12px; border: 0; border-radius: 5px; background: transparent; color: var(--color-text-subtle-default); font-size: 13px; font-weight: 500; line-height: 1; cursor: pointer; }
+.roadmap-layout-switch button[aria-pressed='true'] { background: var(--color-surface-subtle-default); color: var(--roadmap-ink); box-shadow: 0 1px 3px rgb(0 0 0 / 10%); }
+.roadmap-layout-switch button:focus-visible { outline: 2px solid var(--color-accent-brand-default); outline-offset: 2px; }
 </style>

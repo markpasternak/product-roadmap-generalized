@@ -1,12 +1,10 @@
 // Serializes a projected board into a polished, standalone roadmap share app.
 // The bundle keeps its behavior inline and carries its own brand assets.
-// Lanes follow the roadmap horizon order.
+// Recipients see product groups; internal horizon choices stay in the working board.
 import { timelineModel, timelineSettings, scheduleLabel, scheduleIssue, formatPlanDate, type TimelineSettings, type TimelineRange } from '../timeline';
 import timelineCss from '../../styles/timeline.css?raw';
 import { zipSync, strToU8 } from 'fflate';
 import { ROADMAP_FAVICON } from '../brand';
-import { HORIZONS } from '../schema';
-import { horizonDescription, horizonStatLabel } from '../display';
 import reviewCss from '../../styles/roadmap-review.css?raw';
 import appearanceCss from '../../styles/appearance.css?raw';
 import { SHARE_ASSET_PATHS, type ShareAssetUrls } from './assets';
@@ -32,34 +30,6 @@ export interface ShareContext {
   assets?: ShareAssetUrls;
 }
 
-const HORIZON_ORDER = HORIZONS;
-const HORIZON_META: Record<string, { dot: string; desc: string; stat: string; tone: string }> = {
-  Now: { dot: 'var(--roadmap-horizon-now)', desc: horizonDescription.Now, stat: horizonStatLabel.Now, tone: 'green' },
-  Next: {
-    dot: 'var(--roadmap-horizon-next)',
-    desc: 'Queued behind Now. Direction set, details still forming.',
-    stat: 'Planned next',
-    tone: 'yellow',
-  },
-  Later: {
-    dot: 'var(--roadmap-horizon-later)',
-    desc: 'Directional bets. Understood broadly, not yet scoped.',
-    stat: 'Future bets',
-    tone: 'gray',
-  },
-  Completed: {
-    dot: 'var(--roadmap-horizon-completed)',
-    desc: 'Shipped and live.',
-    stat: 'Recently shipped',
-    tone: 'blue',
-  },
-  Candidates: {
-    dot: 'var(--roadmap-horizon-candidates)',
-    desc: 'Ideas in intake. Not on the roadmap yet.',
-    stat: 'In intake',
-    tone: 'violet',
-  },
-};
 const PRODUCT_META: Record<string, { short: string; color: string }> = {
   'Spotify for Artists': { short: 'SA', color: 'var(--roadmap-product-spotify-for-artists)' },
   'Ads Platform': { short: 'AP', color: 'var(--roadmap-product-ads-platform)' },
@@ -68,15 +38,6 @@ const PRODUCT_META: Record<string, { short: string; color: string }> = {
   'Podcasts & Audiobooks': { short: 'PA', color: 'var(--roadmap-product-podcasts-audiobooks)' },
 };
 const CLIENT_SECTIONS = new Set(['Why it matters', 'What ships', 'What shipped']);
-const TONE_TEXT: Record<string, string> = {
-  gray: 'var(--color-text-subtle-default)',
-  blue: 'var(--color-data-blue-border-primary-default)',
-  violet: 'var(--color-data-violet-border-primary-default)',
-  green: 'var(--color-data-green-border-primary-default)',
-  orange: 'var(--color-data-orange-border-primary-default)',
-  red: 'var(--color-data-red-border-primary-default)',
-  yellow: 'var(--color-data-yellow-border-primary-default)',
-};
 
 export function escapeHtml(s: string): string {
   return s
@@ -115,7 +76,6 @@ function shareItemData(items: ProjectedItem[]) {
     oneliner: it.oneliner,
     outcome: it.outcome,
     product: it.product,
-    horizon: it.horizon,
     stage: it.stage,
     themes: [...it.themes],
     resources: (it.resources ?? [])
@@ -174,44 +134,18 @@ function card(it: ProjectedItem, index: number): string {
 }
 
 function lane(name: string, laneItems: ProjectedItem[], allItems: ProjectedItem[]): string {
-  const meta = HORIZON_META[name] ?? { dot: 'var(--roadmap-brand-orange)', desc: '', stat: '', tone: 'orange' };
-  const empty =
-    name === 'Completed' && !laneItems.length
-      ? '<p class="lane-empty">Nothing shipped yet. Completed work lands here.</p>'
-      : '';
-  return `<section class="lane" data-lane="${escapeHtml(name)}" style="--lane-accent:${meta.dot}">
+  const accent = PRODUCT_META[name]?.color ?? 'var(--color-accent-brand-default)';
+  return `<section class="lane" data-lane="${escapeHtml(name)}" style="--lane-accent:${accent}">
     <header class="lane-head">
       <div class="lane-title-row">
         <span class="lane-bar" aria-hidden="true"></span>
         <h2>${escapeHtml(name)}</h2>
         <span class="lane-count">${laneItems.length}</span>
       </div>
-      ${meta.desc ? `<p>${escapeHtml(meta.desc)}</p>` : ''}
       <div class="lane-rule"></div>
     </header>
-    <div class="lane-cards">${laneItems.map((it) => card(it, allItems.indexOf(it))).join('')}${empty}</div>
+    <div class="lane-cards">${laneItems.map((it) => card(it, allItems.indexOf(it))).join('')}</div>
   </section>`;
-}
-
-function stat(key: string, label: string, value: number, dot: string | null, tone: string, sub: string): string {
-  const selected = key === 'All' ? ' roadmap-selected-control horizon-selected-control' : '';
-  const accent = dot ?? 'var(--color-accent-brand-default)';
-  const dotHtml = dot ? `<span class="stat-dot" style="background:${dot}"></span>` : '';
-  return `<button type="button" class="roadmap-action stat${selected}" aria-pressed="${key === 'All'}" data-horizon-filter="${escapeHtml(key)}" style="--horizon-accent:${accent}">
-    <span class="stat-label">${dotHtml}${escapeHtml(label)}</span>
-    <span class="stat-value">${value}</span>
-    <span class="stat-sub" style="color:${TONE_TEXT[tone] ?? TONE_TEXT.gray}">${escapeHtml(sub)}</span>
-  </button>`;
-}
-
-function renderStats(items: ProjectedItem[], visibleHorizons: readonly string[]): string {
-  return ['All', ...HORIZON_ORDER.filter((h) => visibleHorizons.includes(h))]
-    .map((h) => {
-      if (h === 'All') return stat(h, 'Total items', items.length, null, 'orange', 'Across all stages');
-      const meta = HORIZON_META[h];
-      return stat(h, h, items.filter((i) => i.horizon === h).length, meta.dot, meta.tone, meta.stat);
-    })
-    .join('');
 }
 
 function detailShell(): string {
@@ -830,13 +764,8 @@ function js(): string {
   const prev = document.querySelector('[data-detail-prev]');
   const next = document.querySelector('[data-detail-next]');
   const cards = Array.from(document.querySelectorAll('[data-card-index]'));
-  const lanes = Array.from(document.querySelectorAll('[data-lane]'));
-  const timelineRows = Array.from(document.querySelectorAll('[data-timeline-horizon]'));
-  const filters = Array.from(document.querySelectorAll('[data-horizon-filter]'));
-  const horizonColor = ${safeJson(Object.fromEntries(Object.entries(HORIZON_META).map(([key, value]) => [key, value.dot])))};
   const productMeta = ${safeJson(PRODUCT_META)};
   let index = -1;
-  let activeHorizon = 'All';
   let lastFocus = null;
 
   function el(tag, className, text) {
@@ -853,43 +782,7 @@ function js(): string {
     node.textContent = info.short;
   }
 
-  function visibleIndexes() {
-    if (activeHorizon === 'All') return items.map((_, i) => i);
-    return items.map((item, i) => item.horizon === activeHorizon ? i : -1).filter((i) => i >= 0);
-  }
-
-  function setFilter(nextHorizon) {
-    activeHorizon = nextHorizon || 'All';
-    filters.forEach((filter) => {
-      const selected = filter.dataset.horizonFilter === activeHorizon;
-      filter.classList.toggle('roadmap-selected-control', selected);
-      filter.classList.toggle('horizon-selected-control', selected);
-      filter.setAttribute('aria-pressed', selected ? 'true' : 'false');
-    });
-    timelineRows.forEach(row => { row.hidden = activeHorizon !== 'All' && row.dataset.timelineHorizon !== activeHorizon; });
-    document.querySelectorAll('.timeline-group').forEach(group => {
-      const count = group.querySelectorAll('.timeline-row:not([hidden])').length;
-      group.hidden = count === 0;
-      const label = group.querySelector('summary small');
-      if (label) label.textContent = count + (count === 1 ? ' item' : ' items');
-    });
-    const countsNode = document.querySelector('[data-timeline-counts]');
-    if (countsNode) {
-      const counts = JSON.parse(countsNode.dataset.timelineCounts)[activeHorizon] || [0, 0, 0, 0];
-      countsNode.textContent = counts[0] + ' matching · ' + counts[1] + ' in this period · ' + counts[2] + ' outside this period';
-      const chart = document.querySelector('.timeline-chart');
-      if (chart) chart.hidden = counts[1] === 0;
-      const empty = document.querySelector('[data-timeline-empty]');
-      if (empty) empty.hidden = counts[1] > 0;
-      const outsideSummary = document.querySelector('[data-timeline-outside]');
-      if (outsideSummary) { outsideSummary.textContent = counts[2] + ' outside this period · Review'; outsideSummary.parentElement.hidden = counts[2] === 0; }
-      const missingSummary = document.querySelector('[data-timeline-missing]');
-      if (missingSummary) { missingSummary.textContent = counts[3] + ' missing or invalid dates · Review'; missingSummary.parentElement.hidden = counts[3] === 0; }
-    }
-    lanes.forEach((lane) => {
-      lane.hidden = activeHorizon !== 'All' && lane.dataset.lane !== activeHorizon;
-    });
-  }
+  function visibleIndexes() { return items.map((_, i) => i); }
 
   function render(i) {
     if (!items.length || !shell || !panel) return;
@@ -903,12 +796,7 @@ function js(): string {
     setMark(mark, item);
     meta.replaceChildren();
     if (item.planned) meta.append(el('span', '', 'Planned ' + item.planned));
-    const horizon = el('span');
-    const dot = el('i');
-    dot.className = 'dot';
-    dot.style.background = horizonColor[item.horizon] || '#12857c';
-    horizon.append(dot, document.createTextNode(item.horizon));
-    meta.append(horizon, el('span', '', item.stage));
+    meta.append(el('span', '', item.stage));
     lede.hidden = !item.oneliner;
     lede.textContent = item.oneliner || '';
 
@@ -961,8 +849,6 @@ function js(): string {
   document.addEventListener('click', (event) => {
     const card = event.target.closest('[data-card-index]');
     if (card) open(Number(card.dataset.cardIndex));
-    const filter = event.target.closest('[data-horizon-filter]');
-    if (filter) setFilter(filter.dataset.horizonFilter || 'All');
     if (event.target.closest('[data-detail-close]')) close();
     if (event.target.closest('[data-detail-prev]')) {
       const visible = visibleIndexes();
@@ -1008,7 +894,6 @@ function js(): string {
   document.addEventListener('focusin', (event) => {
     if (!shell.hidden && !panel.contains(event.target)) title.focus();
   });
-  setFilter('All');
 })();
 `;
 }
@@ -1024,23 +909,18 @@ function renderSharedTimeline(settings: TimelineSettings & { range: TimelineRang
   const groups = model.groups.map(group => `<details class="timeline-group" open><summary>${escapeHtml(group.name)}<small>${group.items.length} items</small></summary>${group.items.map(item => {
     const pos = model.position(item), index = items.indexOf(item);
     const color = PRODUCT_META[item.product]?.color ?? 'var(--color-accent-brand-default)';
-    return `<div class="timeline-row" data-timeline-horizon="${escapeHtml(item.horizon)}"><button type="button" class="timeline-label" data-card-index="${index}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.stage)} · ${escapeHtml(item.product)}</small></button><div class="timeline-track">${grid}<button type="button" class="timeline-bar" data-card-index="${index}" data-before="${pos.before}" data-after="${pos.after}" style="left:${pos.left}%;width:${pos.width}%;padding:${pos.width < 4 ? '0' : '0 10px'};font-size:${pos.width < 4 ? '0' : '12px'};--product:${color}" aria-label="${escapeHtml(item.title + '. Planned ' + scheduleLabel(item))}" title="${escapeHtml(scheduleLabel(item))}">${escapeHtml(item.title)}</button></div></div>`;
+    return `<div class="timeline-row"><button type="button" class="timeline-label" data-card-index="${index}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.stage)} · ${escapeHtml(item.product)}</small></button><div class="timeline-track">${grid}<button type="button" class="timeline-bar" data-card-index="${index}" data-before="${pos.before}" data-after="${pos.after}" style="left:${pos.left}%;width:${pos.width}%;padding:${pos.width < 4 ? '0' : '0 10px'};font-size:${pos.width < 4 ? '0' : '12px'};--product:${color}" aria-label="${escapeHtml(item.title + '. Planned ' + scheduleLabel(item))}" title="${escapeHtml(scheduleLabel(item))}">${escapeHtml(item.title)}</button></div></div>`;
   }).join('')}</details>`).join('');
-  const counts = Object.fromEntries(['All', ...new Set(items.map(i => i.horizon))].map(h => [h, [items, model.visible, model.outside, model.missing].map(rows => rows.filter(i => h === 'All' || i.horizon === h).length)]));
-  const missing = model.missing.length ? `<details class="timeline-missing-shared"><summary data-timeline-missing>${model.missing.length} missing or invalid dates · Review</summary>${model.missing.map(item => `<p data-timeline-horizon="${escapeHtml(item.horizon)}"><button type="button" data-card-index="${items.indexOf(item)}">${escapeHtml(item.title)} · ${escapeHtml(scheduleIssue(item) ?? '')}</button></p>`).join('')}</details>` : '';
-  const outside = model.outside.length ? `<details class="timeline-missing-shared"><summary data-timeline-outside>${model.outside.length} outside this period · Review</summary>${model.outside.map(item => `<p data-timeline-horizon="${escapeHtml(item.horizon)}"><button type="button" data-card-index="${items.indexOf(item)}">${escapeHtml(item.title)} · ${escapeHtml(scheduleLabel(item))}</button></p>`).join('')}</details>` : '';
-  return `<section aria-label="Shared roadmap timeline"><p class="timeline-range-caption">${escapeHtml(formatPlanDate(model.range.from))} — ${escapeHtml(formatPlanDate(model.range.to))} · Planned work windows · <span data-timeline-counts="${escapeHtml(JSON.stringify(counts))}">${items.length} matching · ${model.visible.length} in this period · ${model.outside.length} outside this period</span>${privateGrouping ? ' · Grouped by product for sharing' : ''}</p>${missing}${outside}<p data-timeline-empty${model.visible.length ? ' hidden' : ''}>No scheduled items in this period.</p>${model.visible.length ? `<div class="timeline-chart" tabindex="0" aria-label="Timeline chart"><div class="timeline-canvas"><div class="timeline-head"><div class="timeline-label">Roadmap item</div><div class="timeline-axis">${ticks}</div></div>${groups}</div></div>` : ''}</section>`;
+  const missing = model.missing.length ? `<details class="timeline-missing-shared"><summary data-timeline-missing>${model.missing.length} missing or invalid dates · Review</summary>${model.missing.map(item => `<p><button type="button" data-card-index="${items.indexOf(item)}">${escapeHtml(item.title)} · ${escapeHtml(scheduleIssue(item) ?? '')}</button></p>`).join('')}</details>` : '';
+  const outside = model.outside.length ? `<details class="timeline-missing-shared"><summary data-timeline-outside>${model.outside.length} outside this period · Review</summary>${model.outside.map(item => `<p><button type="button" data-card-index="${items.indexOf(item)}">${escapeHtml(item.title)} · ${escapeHtml(scheduleLabel(item))}</button></p>`).join('')}</details>` : '';
+  return `<section aria-label="Shared roadmap timeline"><p class="timeline-range-caption">${escapeHtml(formatPlanDate(model.range.from))} — ${escapeHtml(formatPlanDate(model.range.to))} · Planned work windows · <span data-timeline-counts>${items.length} matching · ${model.visible.length} in this period · ${model.outside.length} outside this period</span>${privateGrouping ? ' · Grouped by product for sharing' : ''}</p>${missing}${outside}<p data-timeline-empty${model.visible.length ? ' hidden' : ''}>No scheduled items in this period.</p>${model.visible.length ? `<div class="timeline-chart" tabindex="0" aria-label="Timeline chart"><div class="timeline-canvas"><div class="timeline-head"><div class="timeline-label">Roadmap item</div><div class="timeline-axis">${ticks}</div></div>${groups}</div></div>` : ''}</section>`;
 }
 
 export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): string {
   const theme = context.theme ?? 'light';
-  const visibleHorizons = HORIZON_ORDER.filter((h) =>
-    context.horizons ? context.horizons.includes(h) : items.some((item) => item.horizon === h),
-  );
-  const lanes = HORIZON_ORDER.map((h) => ({ h, items: items.filter((i) => i.horizon === h) }))
-    .filter((l) => visibleHorizons.includes(l.h))
-    .map((l) => lane(l.h, l.items, items))
-    .join('');
+  // Recipient views organize selected work by product, without internal horizon framing.
+  const products = [...new Set(items.map(item => item.product))];
+  const lanes = products.map(product => lane(product, items.filter(item => item.product === product), items)).join('');
   const title = escapeHtml(context.title);
   const description = shareDescription(context);
   const logo = escapeHtml(
@@ -1048,7 +928,7 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
       (context.assetBase ? assetUrl(context, '/brand/roadmap-logo.svg') : SHARE_ASSET_PATHS.logo),
   );
   const itemCount = items.length;
-  const laneCount = visibleHorizons.length;
+
   return `<!doctype html>
 <html lang="en" data-theme="${theme}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1080,7 +960,7 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
         <h1 class="roadmap-display roadmap-title">${title}</h1>
         ${context.intro ? `<p class="roadmap-muted intro">${textWithBreaks(context.intro)}</p>` : `<p class="roadmap-muted intro">${DEFAULT_SHARE_DESCRIPTION}</p>`}
       </div>
-      <div class="stats" role="group" aria-label="Filter by horizon">${renderStats(items, visibleHorizons)}</div>
+
     </div>
   </section>
   ${context.activitySummary ? `<p class="roadmap-muted" style="margin-bottom:1rem">${escapeHtml(context.activitySummary)}</p>` : ''}
@@ -1088,7 +968,7 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
   <footer>
     <span>Shared from the product roadmap</span>
     <span>Shared ${escapeHtml(context.generatedAt)}</span>
-    <span>${itemCount} item${itemCount === 1 ? '' : 's'}${context.timeline ? ' · Timeline' : ` across ${laneCount} lane${laneCount === 1 ? '' : 's'}`}</span>
+    <span>${itemCount} item${itemCount === 1 ? '' : 's'}${context.timeline ? ' · Timeline' : ''}</span>
   </footer>
   ${detailShell()}
   <script type="application/json" id="roadmap-data">${safeJson(shareItemData(items))}</script>

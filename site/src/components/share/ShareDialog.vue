@@ -129,7 +129,7 @@ const lanes = computed(() =>
 );
 const total = computed(() => props.items.length);
 const effectiveItems = computed(() => props.items.filter((i) => selected.value.has(i.id)));
-const laneCountInShare = computed(() => props.context.horizons?.length ?? new Set(effectiveItems.value.map((i) => i.horizon)).size);
+
 const selectedResources = ref<string[]>([]);
 const resourceChoices = computed(() => (props.resources??[]).filter(r=>selected.value.has(r.itemId)));
 const includedResources = computed(() => resourceChoices.value.filter(r=>selectedResources.value.includes(r.key)));
@@ -528,7 +528,7 @@ const primaryCls =
           <h2 data-share-heading tabindex="-1" class="roadmap-label">{{ result ? resultHeader : step === 1 ? "Choose what to share" : "Share settings" }}</h2>
           <p v-if="!result" class="text-single-sm-medium text-text-subtle-default mt-1">
             Step {{ step }} of 2 —
-            {{ step === 1 ? 'Choose what to share' : 'Share settings' }}
+            {{ step === 1 ? 'Content' : 'Access and appearance' }}
           </p>
         </div>
         <button
@@ -568,7 +568,7 @@ const primaryCls =
         </div>
 
         <p class="mb-5 text-single-sm-medium text-text-subtle-default">
-          Review the selected text before publishing. Internal items can be included; owner names are omitted. Files and links stay excluded unless you select them below.
+          Share a snapshot of the selected items. Recipients see products and stages, without owner names or Now / Next / Later. Choose any files and links to include below.
         </p>
         <div class="space-y-6">
           <section v-for="l in lanes" :key="l.h">
@@ -817,8 +817,7 @@ const primaryCls =
             <div class="border-border-subtle-default bg-card/50 rounded-xl border px-4 py-3.5">
               <p class="text-single-sm-medium text-text-primary-default">
                 Sharing
-                <b class="tabular-nums">{{ effectiveItems.length }}</b> item{{ effectiveItems.length === 1 ? '' : 's' }} across
-                <b class="tabular-nums">{{ laneCountInShare }}</b> lane{{ laneCountInShare === 1 ? '' : 's' }}.
+                <b class="tabular-nums">{{ effectiveItems.length }}</b> item{{ effectiveItems.length === 1 ? '' : 's' }}.
               </p>
               <p class="text-single-sm-medium text-text-subtle-default mt-1">
                 {{ accessSummary }}{{ passwordEnabled ? ' · Password protected' : '' }} · {{ theme === 'dark' ? 'Dark' : 'Light' }} share ·

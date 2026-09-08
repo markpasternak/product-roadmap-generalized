@@ -224,7 +224,9 @@ function shareContext(share: AuthoredCanvas) {
     shareMetaNumber(share, 'itemCount') !== null
       ? `${shareMetaNumber(share, 'itemCount')} item${shareMetaNumber(share, 'itemCount') === 1 ? '' : 's'}`
       : '',
-    shareMetaNumber(share, 'laneCount') !== null
+    shareMetaNumber(share, 'productCount') !== null
+      ? `${shareMetaNumber(share, 'productCount')} product${shareMetaNumber(share, 'productCount') === 1 ? '' : 's'}`
+      : shareMetaNumber(share, 'laneCount') !== null
       ? `${shareMetaNumber(share, 'laneCount')} lane${shareMetaNumber(share, 'laneCount') === 1 ? '' : 's'}`
       : '',
   ].filter(Boolean);

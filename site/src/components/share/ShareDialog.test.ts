@@ -96,7 +96,7 @@ describe('ShareDialog', () => {
     expect(w.find('iframe').exists()).toBe(true);
   });
 
-  it('previews selected recipient content, preserves empty lanes, and isolates the preview', async () => {
+  it('previews selected recipient content without horizon framing and isolates the preview', async () => {
     vi.spyOn(assets, 'inlinePreviewAssets').mockResolvedValue(assets.previewAssetUrls());
     const w = mount(ShareDialog, {
       props: {
@@ -115,8 +115,9 @@ describe('ShareDialog', () => {
     expect(html).not.toContain('Excluded');
     expect(html).not.toContain('SECRET OWNER');
     expect(html).not.toContain('INTERNAL ONLY');
-    expect(html).toContain('data-lane="Later"');
-    expect(html).toContain('1 item across 2 lanes');
+    expect(html).not.toContain('data-lane="Later"');
+    expect(html).toContain('1 item');
+    expect(html).not.toContain('data-horizon-filter="');
     await w.get('[data-test="submit"]').trigger('click');
     expect(submitted(w).items.map((item) => item.id)).toEqual(['A']);
     w.unmount();
