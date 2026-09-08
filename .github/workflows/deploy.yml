@@ -72,6 +72,9 @@ jobs:
         working-directory: site
         run: npm run build
 
+      - name: Verify source document links
+        run: node site/scripts/check-document-links.mjs
+
       - name: Verify fictional demo content
         working-directory: site
         run: node scripts/check-demo.mjs

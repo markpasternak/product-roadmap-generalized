@@ -36,6 +36,7 @@ jobs:
       - run: npm --prefix site test
       - run: npm --prefix site run check
       - run: npm --prefix site run build
+      - run: node site/scripts/check-document-links.mjs
       - run: node site/scripts/check-demo.mjs
       - run: python3 tooling/validate_items.py
       - name: Check editing service
