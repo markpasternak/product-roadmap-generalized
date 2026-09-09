@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { EMPTY_ITEM_HISTORY, normalizeItemHistory, type ItemHistory } from './itemHistory';
 
-const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
+// Astro relocates server modules when building. Resolve the checkout through Git,
+// not the module's source location; commands may start in either site/ or the root.
+let repoRoot: string | undefined;
 const cache = new Map<string, ItemHistory>();
 
 /** Read each patch together with its timestamp, including paths before a rename. */
@@ -31,6 +32,7 @@ export function itemHistoryForPath(repoPath: string | null | undefined): ItemHis
   const cached = cache.get(repoPath);
   if (cached) return cached;
   try {
+    repoRoot ??= execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
     const output = execFileSync('git', ['log', '--follow', '--format=%x1e%H%x1f%cI%x1f%an%x1f%s', '--patch', '--unified=0', '--no-ext-diff', '--', repoPath], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
     const history = historyFromLog(output);
     cache.set(repoPath, history);
