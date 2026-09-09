@@ -1951,7 +1951,9 @@ function syncState() {
   const p = new URLSearchParams();
   if (filters.layout === 'timeline') p.set('layout', 'timeline');
   if (filters.timeline) {
-    p.set('timelineGroup', filters.timeline.group); p.set('scale', filters.timeline.scale);
+    const defaults = timelineSettings();
+    if (filters.timeline.group !== defaults.group) p.set('timelineGroup', filters.timeline.group);
+    if (filters.timeline.scale !== defaults.scale) p.set('scale', filters.timeline.scale);
     if (filters.timeline.fit) p.set('fit', '1');
     if (filters.timeline.anchor) p.set('at', filters.timeline.anchor);
   }

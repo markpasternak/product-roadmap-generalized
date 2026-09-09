@@ -1886,3 +1886,30 @@ it('keeps recent changes out of the roadmap until opened from More', async () =>
   expect(w.findComponent({ name: 'RecentChangesDrawer' }).exists()).toBe(false);
   expect(window.location.search).toBe(before);
 });
+
+
+it('leaves the default board URL clean, including restored legacy defaults', async () => {
+  sessionStorage.setItem('rm-board-state', '?timelineGroup=product&scale=months');
+  const w = await mountBoard();
+  expect(window.location.pathname).toBe('/');
+  expect(window.location.search).toBe('');
+  expect(sessionStorage.getItem('rm-board-state')).toBe('');
+  expect(w.find('[aria-label="Roadmap timeline"]').exists()).toBe(false);
+});
+
+it('compacts an existing date-filter link without changing the filter', async () => {
+  window.history.replaceState(null, '', '/?timelineGroup=product&scale=months&activity=updated&tz=Europe%2FStockholm&days=7');
+  const w = await mountBoard();
+  expect(window.location.search).toBe('?days=7&tz=Europe%2FStockholm');
+  expect(w.text()).toContain('Updated · Last 7 days');
+  await w.get('[data-test="active-filter-clear"]').trigger('click');
+  await flushPromises();
+  expect(window.location.search).toBe('');
+});
+
+it('keeps the default timeline layout explicit without serializing its defaults', async () => {
+  window.history.replaceState(null, '', '/?layout=timeline&timelineGroup=product&scale=months');
+  const w = await mountBoard();
+  expect(window.location.search).toBe('?layout=timeline');
+  expect(w.find('[aria-label="Roadmap timeline"]').exists()).toBe(true);
+});
