@@ -127,7 +127,7 @@ onMounted(() => {
 });
 onUnmounted(() => { clearInterval(activityTimer); window.removeEventListener('focus', refreshActivityDay); });
 watch(() => filters.activity, refreshActivityDay);
-// Horizon is a MULTI-select filter, deliberately kept OUTSIDE `filters` — `canReorder`
+// Visible horizons are view settings, deliberately kept OUTSIDE `filters` — `canReorder`
 // (below) reads `filters` only, so keeping horizon separate means selecting/deselecting
 // horizon chips never affects whether priority-reordering is allowed.
 const DEFAULT_HORIZONS = ['Now', 'Next', 'Later'] as const;
@@ -137,11 +137,10 @@ function toggleHorizon(h: string) {
 }
 const activeChips = computed(() => activeFilterChips(filters).filter(chip => chip.kind !== 'product'));
 const customHorizons = computed(() => horizons.value.length !== DEFAULT_HORIZONS.length || !DEFAULT_HORIZONS.every(h => horizons.value.includes(h)));
-const toolbarFilterCount = computed(() => activeFilterCount({ ...filters, product: null }) + Number(customHorizons.value));
+const toolbarFilterCount = computed(() => activeFilterCount({ ...filters, product: null }));
 function clearAdditionalFilters() {
   const { product, layout, group, timeline } = filters;
-  clear();
-  Object.assign(filters, { product, layout, group, timeline });
+  Object.assign(filters, emptyFilters(), { product, layout, group, timeline });
 }
 const sort = ref<SortKey>('manual');
 // Personal display preference, deliberately separate from filters and share state.
@@ -1520,8 +1519,7 @@ watch(sheetOpen, async (open) => {
     releaseSheetFocus = null;
   }
 });
-function clear() {
-  Object.assign(filters, emptyFilters());
+function resetHorizons() {
   horizons.value = [...DEFAULT_HORIZONS];
 }
 function setPresent(on: boolean) {
@@ -2183,9 +2181,16 @@ const editActionBtn =
             <template #settings>
               <div class="compact-view-settings">
                 <template v-if="filters.layout !== 'timeline'">
-                <label>Group by<Select v-model="filters.group" :options="groupOptions" name="group" aria-label="Group by" /></label>
-                <label>Sort by<Select v-model="sort" :options="sortOptions" name="sort" aria-label="Sort" /></label>
+                  <label>Group by<Select v-model="filters.group" :options="groupOptions" name="group" aria-label="Group by" /></label>
+                  <label>Sort by<Select v-model="sort" :options="sortOptions" name="sort" aria-label="Sort" /></label>
                 </template>
+                <fieldset class="view-horizons">
+                  <legend>Show horizons</legend>
+                  <label v-for="s in stats" :key="s.key">
+                    <input type="checkbox" :checked="s.active" data-test="horizon-chip" :data-horizon="s.key" :aria-pressed="s.active" @change="toggleHorizon(s.key)" />
+                    <span>{{ s.label }}</span><small>{{ s.value }}</small>
+                  </label>
+                </fieldset>
                 <label class="lane-order-setting">
                   <input v-model="reverseLaneOrder" type="checkbox" aria-describedby="lane-order-hint" />
                   <span>Reverse lane order</span>
@@ -2340,8 +2345,9 @@ const editActionBtn =
             :present="present"
           />
 
-          <div v-if="customHorizons && !present" class="horizon-filter-summary">
-            <button type="button" @click="horizons = [...DEFAULT_HORIZONS]" aria-label="Reset horizon filter">Horizons: {{ horizons.length ? horizons.join(', ') : 'None' }} <PhX :size="12" /></button>
+          <div v-if="customHorizons && !present" class="horizon-view-summary">
+            <span>Showing horizons: {{ horizons.length ? horizons.join(', ') : 'None' }}</span>
+            <button type="button" @click="resetHorizons" aria-label="Reset visible horizons">Reset</button>
           </div>
           <ActiveFilterChips
             v-if="activeChips.length && !present"
@@ -2373,16 +2379,16 @@ const editActionBtn =
                     ? 'There are no public roadmap items to show yet.'
                     : 'Items will appear here when they are added to the roadmap.'
                   : horizons.length === 0
-                    ? 'Choose a horizon in Filters, or reset your filters.'
+                    ? 'Choose horizons in View, or reset to Now, Next and Later.'
                     : 'Try a different search, filter, or horizon.'
               }}
             </p>
             <button
-              v-if="itemsForBoard.length && (activeFilterCount(filters) || horizons.length === 0)"
+              v-if="itemsForBoard.length && (toolbarFilterCount || horizons.length === 0)"
               class="text-text-link-default mt-3 hover:underline"
-              @click="clear"
+              @click="horizons.length === 0 ? resetHorizons() : clearAdditionalFilters()"
             >
-              {{ horizons.length === 0 && !activeFilterCount(filters) ? 'Reset horizons' : 'Clear all filters' }}
+              {{ horizons.length === 0 ? 'Reset horizons' : 'Clear all filters' }}
             </button>
             <div v-if="canEdit && editMode" class="mt-4">
               <button
@@ -2500,13 +2506,6 @@ const editActionBtn =
             </div>
           </div>
           <div class="flex-1 overflow-y-auto p-5">
-            <fieldset class="filter-horizons">
-              <legend>Horizon</legend>
-              <label v-for="s in stats" :key="s.key">
-                <input type="checkbox" :checked="s.active" data-test="horizon-chip" :data-horizon="s.key" :aria-pressed="s.active" @change="toggleHorizon(s.key)" />
-                <span>{{ s.label }}</span><small>{{ s.value }}</small>
-              </label>
-            </fieldset>
             <FiltersSidebar
               :filters="filters"
               :owners="availableOwners"
@@ -2515,7 +2514,7 @@ const editActionBtn =
               :effort-options="availableEffort"
               :tag-options="availableTags"
               hide-header
-              @clear="clear"
+              @clear="clearAdditionalFilters"
             />
           </div>
           <div class="border-border-subtle-default border-t p-4">
