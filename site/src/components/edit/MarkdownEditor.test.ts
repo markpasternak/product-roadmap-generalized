@@ -1,6 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { enableAutoUnmount, mount } from '@vue/test-utils';
 import MarkdownEditor from './MarkdownEditor.vue';
+
+// The editor schedules delayed preview/zoom work. Finish it while the test DOM
+// still exists, and unmount every wrapper instead of leaking it into later tests.
+beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+enableAutoUnmount(cleanup => afterEach(async () => {
+  cleanup();
+  try { await vi.runOnlyPendingTimersAsync(); }
+  finally { vi.clearAllTimers(); vi.useRealTimers(); }
+}));
 
 // md-editor-v3 mounts cleanly in happy-dom once its CDN-loading side features
 // (highlight/mermaid/katex/echarts/prettier/cropper, all fetched from unpkg.com by
@@ -19,15 +28,15 @@ describe('MarkdownEditor', () => {
     const path = 'content/assets/ast_one/rev_one/image.png';
     resourcePreviewURLs.value = { [path]: '' };
     const w = mount(MarkdownEditor, { props: { modelValue: '![Diagram](../../assets/ast_one/rev_one/image.png)' } });
-    await new Promise(r => setTimeout(r, 30));
+    await vi.advanceTimersByTimeAsync(30);
     resourcePreviewURLs.value = { [path]: 'blob:http://localhost/recovered' };
-    await new Promise(r => setTimeout(r, 30));
+    await vi.advanceTimersByTimeAsync(30);
     expect(w.get('.md-editor-preview img').attributes('src')).toBe('blob:http://localhost/recovered');
     w.unmount(); resourcePreviewURLs.value = {};
   });
   it('renders the live preview from the initial value with no console errors', async () => {
     const w = mount(MarkdownEditor, { props: { modelValue: '# Hello' } });
-    await new Promise((r) => setTimeout(r, 20));
+    await vi.advanceTimersByTimeAsync(20);
     expect(w.find('.cm-content').exists()).toBe(true);
     expect(w.find('.md-editor-preview').html()).toContain('Hello');
   });
@@ -41,22 +50,22 @@ describe('MarkdownEditor', () => {
     // md-editor-v3 debounces preview re-render (default renderDelay: 500ms), so the
     // wait here needs to clear that, not just a tick.
     const w = mount(MarkdownEditor, { props: { modelValue: '# One' } });
-    await new Promise((r) => setTimeout(r, 600));
+    await vi.advanceTimersByTimeAsync(600);
     await w.setProps({ modelValue: '# Two' });
-    await new Promise((r) => setTimeout(r, 600));
+    await vi.advanceTimersByTimeAsync(600);
     expect(w.find('.md-editor-preview').html()).toContain('Two');
     expect(w.find('.md-editor-preview').html()).not.toContain('One');
   });
 
   it('emits update:modelValue when the editor content changes', async () => {
     const w = mount(MarkdownEditor, { props: { modelValue: '' } });
-    await new Promise((r) => setTimeout(r, 20));
+    await vi.advanceTimersByTimeAsync(20);
 
     const vm = w.vm as unknown as {
       editorRef?: { insert: (fn: (selected: string) => { targetValue: string }) => void };
     };
     vm.editorRef?.insert(() => ({ targetValue: 'hello world' }));
-    await new Promise((r) => setTimeout(r, 20));
+    await vi.advanceTimersByTimeAsync(20);
 
     const emitted = w.emitted('update:modelValue');
     expect(emitted).toBeTruthy();
@@ -69,7 +78,7 @@ describe('MarkdownEditor', () => {
     // MarkdownEditor.vue) — this failed before the toolbarsExclude fix and must
     // keep passing after it, for any toolbar item, present or future.
     const w = mount(MarkdownEditor, { props: { modelValue: '' } });
-    await new Promise((r) => setTimeout(r, 20));
+    await vi.advanceTimersByTimeAsync(20);
 
     const externalPattern = /unpkg\.com|jsdelivr|cdn\.|^https?:\/\/(?!localhost|127\.0\.0\.1)/i;
     const offenders: string[] = [];

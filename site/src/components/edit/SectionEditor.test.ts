@@ -1,8 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { enableAutoUnmount, mount } from '@vue/test-utils';
 import SectionEditor from './SectionEditor.vue';
 import MarkdownEditor from './MarkdownEditor.vue';
 import { CANONICAL_SECTIONS } from '../../lib/edit/sections';
+
+// The editor schedules delayed preview/zoom work. Finish it while the test DOM
+// still exists, and unmount every wrapper instead of leaking it into later tests.
+beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+enableAutoUnmount(cleanup => afterEach(async () => {
+  cleanup();
+  try { await vi.runOnlyPendingTimersAsync(); }
+  finally { vi.clearAllTimers(); vi.useRealTimers(); }
+}));
 
 // Real body shape (see content/items/podcasts-audiobooks/TALK-013-migrate-off-supabase.md):
 // a title preamble, two of the three canonical headings, and one custom/optional
@@ -459,7 +468,7 @@ Quick summary.
 
       textarea.setSelectionRange(0, 4); // "Some"
       await w.find('[data-test="format-link"]').trigger('click');
-      await new Promise((r) => setTimeout(r, 0));
+      await vi.advanceTimersByTimeAsync(0);
 
       expect(textarea.value).toBe('[Some](https://) reasoning here.\n');
       expect(textarea.value.slice(textarea.selectionStart!, textarea.selectionEnd!)).toBe('https://');
@@ -496,7 +505,7 @@ Quick summary.
     const w = mount(SectionEditor, { props: { modelValue: '' } });
 
     await w.find('[data-test="mode-toggle"]').trigger('click');
-    await new Promise((r) => setTimeout(r, 20));
+    await vi.advanceTimersByTimeAsync(20);
     expect(w.find('[data-test="structured-fields"]').exists()).toBe(false);
     expect(w.findComponent(MarkdownEditor).exists()).toBe(true);
 
@@ -506,12 +515,12 @@ Quick summary.
     };
     const written = '# Title\n\n## One-liner\nWritten in markdown mode.\n';
     vm.editorRef?.insert(() => ({ targetValue: written }));
-    await new Promise((r) => setTimeout(r, 20));
+    await vi.advanceTimersByTimeAsync(20);
 
     expect(w.emitted('update:modelValue')!.at(-1)![0]).toBe(written);
 
     await w.find('[data-test="mode-toggle"]').trigger('click');
-    await new Promise((r) => setTimeout(r, 20));
+    await vi.advanceTimersByTimeAsync(20);
 
     expect(w.find('[data-test="structured-fields"]').exists()).toBe(true);
     expect((w.find('[data-test="spine-oneliner"]').element as HTMLInputElement).value).toBe(
