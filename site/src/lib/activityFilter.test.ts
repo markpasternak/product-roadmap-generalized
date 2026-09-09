@@ -38,3 +38,18 @@ describe('activity dates', () => {
     expect(activityLabel(range)).toBe('Updated · Aug 1, 2026 – Aug 31, 2026');
   });
 });
+
+
+it('uses stable defaults for compact date URLs and keeps legacy links readable', () => {
+  const filter: ActivityFilter = { field: 'updated', period: 'relative', days: 7, timeZone: 'UTC' };
+  const params = new URLSearchParams();
+  writeActivityParams(params, filter);
+  expect(params.toString()).toBe('days=7');
+  expect(activityFromParams(params)).toEqual(filter);
+  expect(activityFromParams(new URLSearchParams('activity=updated&tz=UTC&days=7'))).toEqual(filter);
+  expect(activityFromParams(new URLSearchParams())).toBeNull();
+  const created = new URLSearchParams();
+  writeActivityParams(created, { ...filter, field: 'created', timeZone: 'Europe/Stockholm' });
+  expect(created.toString()).toBe('activity=created&days=7&tz=Europe%2FStockholm');
+  expect(activityFromParams(created)).toEqual({ ...filter, field: 'created', timeZone: 'Europe/Stockholm' });
+});

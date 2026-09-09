@@ -62,7 +62,8 @@ export function activityLabel(filter: ActivityFilter): string {
   return `${field} · ${period}`;
 }
 export function activityFromParams(params: URLSearchParams): ActivityFilter | null {
-  const field = params.get('activity');
+  // A date period alone means Updated; Created remains an explicit choice.
+  const field = params.get('activity') ?? 'updated';
   const timeZone = params.get('tz') || 'UTC';
   return parseActivity(params.has('days')
     ? { field, timeZone, period: 'relative', days: Number(params.get('days')) }
@@ -70,8 +71,9 @@ export function activityFromParams(params: URLSearchParams): ActivityFilter | nu
 }
 export function writeActivityParams(params: URLSearchParams, filter: ActivityFilter | null | undefined) {
   if (!filter) return;
-  params.set('activity', filter.field);
-  params.set('tz', filter.timeZone);
+  if (filter.field !== 'updated') params.set('activity', filter.field);
   if (filter.period === 'relative') params.set('days', String(filter.days));
   else { params.set('from', filter.from); params.set('to', filter.to); }
+  // UTC is the stable URL default. Preserve other zones for recipients elsewhere.
+  if (filter.timeZone !== 'UTC') params.set('tz', filter.timeZone);
 }
