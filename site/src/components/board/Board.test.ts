@@ -185,7 +185,7 @@ describe('Board — product navigation and view options', () => {
     expect(w.get('[aria-controls="board-more-actions"]').text()).toContain('More');
   });
 
-  it('keeps the layout and product when clearing additional filters', async () => {
+  it('keeps the layout, product and visible horizons when clearing additional filters', async () => {
     const w = await mountBoard();
     const vm = w.vm as unknown as { filters: ReturnType<typeof import('../../lib/filters').emptyFilters>; horizons: string[] };
     const product = item().product;
@@ -198,7 +198,7 @@ describe('Board — product navigation and view options', () => {
     expect(vm.filters.product).toBe(product);
     expect(vm.filters.layout).toBe('timeline');
     expect(vm.filters.owner).toBeNull();
-    expect(vm.horizons).toEqual(['Now', 'Next', 'Later']);
+    expect(vm.horizons).toEqual(['Now']);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await flushPromises();
     expect(w.get('button[aria-label="Filters"]').attributes('aria-expanded')).toBe('false');
@@ -940,9 +940,9 @@ describe('Board — multi-select horizon filter', () => {
     expect(w.text()).toContain('No horizons selected');
   });
 
-  it('clicking a horizon chip in the template toggles it', async () => {
+  it('chooses visible horizons from View without counting them as filters', async () => {
     const w = await mountBoard([item({ id: 'TALK-1', horizon: 'Now' })]);
-    await w.get('button[aria-label="Filters"]').trigger('click');
+    await w.get('[aria-label="View options and saved views"]').trigger('click');
     const nowChip = w.find('[data-test="horizon-chip"][data-horizon="Now"]');
     expect(nowChip.attributes('aria-pressed')).toBe('true');
 
@@ -951,6 +951,10 @@ describe('Board — multi-select horizon filter', () => {
     const vm = w.vm as unknown as HorizonVM;
     expect(vm.horizons).not.toContain('Now');
     expect(nowChip.attributes('aria-pressed')).toBe('false');
+    expect(w.get('[aria-label="Filters"]').find('.board-filter-count').exists()).toBe(false);
+    await w.get('[aria-label="Close views"]').trigger('click');
+    await w.get('[aria-label="Filters"]').trigger('click');
+    expect(w.get('[role="dialog"][aria-label="Filters"]').find('[data-test="horizon-chip"]').exists()).toBe(false);
   });
 });
 
@@ -1952,4 +1956,27 @@ it('offers the same local lane-order setting in timeline view', async () => {
   await w.get('.lane-order-setting input').setValue(true);
   expect(w.getComponent({ name: 'TimelineView' }).props('reverseGroups')).toBe(true);
   expect(window.location.href).toBe(before);
+});
+
+
+it('resets hidden horizons independently from active filters', async () => {
+  window.history.replaceState(null, '', '/?horizon=none&owner=Alice');
+  const w = await mountBoard([item({ owner: 'Alice' })]);
+  expect(w.text()).toContain('Choose horizons in View');
+  expect(w.get('[aria-label="Filters"] .board-filter-count').text()).toBe('1');
+  await w.findAll('button').find(button => button.text() === 'Reset horizons')!.trigger('click');
+  await flushPromises();
+  const vm = w.vm as unknown as { filters: { owner: string }; horizons: string[] };
+  expect(vm.horizons).toEqual(['Now', 'Next', 'Later']);
+  expect(vm.filters.owner).toBe('Alice');
+  expect(w.text()).toContain('Existing item');
+});
+
+it('offers visible horizons under View in timeline mode too', async () => {
+  window.history.replaceState(null, '', '/?layout=timeline');
+  const w = await mountBoard();
+  await w.get('[aria-label="View options and saved views"]').trigger('click');
+  expect(w.get('.view-horizons legend').text()).toBe('Show horizons');
+  expect(w.findAll('.view-horizons input')).toHaveLength(5);
+  expect(w.find('select[name="group"]').exists()).toBe(false);
 });
