@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mount, type VueWrapper } from '@vue/test-utils';
 import { flushPromises } from '@vue/test-utils';
 import type { ItemVM } from '../../lib/filters';
+import { PRODUCTS } from '../../lib/schema';
 
 // Board pulls in a lot of real child components (drawer, editors, share dialog); auto-stub
 // them via `global.stubs: true` below so this test only exercises Board's own script:
@@ -1912,4 +1913,43 @@ it('keeps the default timeline layout explicit without serializing its defaults'
   const w = await mountBoard();
   expect(window.location.search).toBe('?layout=timeline');
   expect(w.find('[aria-label="Roadmap timeline"]').exists()).toBe(true);
+});
+
+
+it.each(['horizon', 'product'])('reverses %s lanes locally without changing card order or sharing state', async group => {
+  if (group === 'product') window.history.replaceState(null, '', '/?group=product');
+  const w = await mountBoard([
+    item({ id: 'first', product: PRODUCTS[0], horizon: 'Now', order: 1 }),
+    item({ id: 'second', product: PRODUCTS[0], horizon: 'Now', order: 2 }),
+    item({ id: 'third', product: PRODUCTS[1], horizon: 'Next', order: 1 }),
+  ]);
+  const expected = group === 'product' ? [PRODUCTS[1], PRODUCTS[0]] : ['Later', 'Next', 'Now'];
+  const beforeURL = window.location.href;
+  const vm = w.vm as unknown as { shareItems: unknown; shareContext: unknown };
+  const beforeShare = JSON.stringify([vm.shareItems, vm.shareContext]);
+  await w.get('[aria-label="View options and saved views"]').trigger('click');
+  await w.get('.lane-order-setting input').setValue(true);
+  await flushPromises();
+  expect(w.findAll('section[data-lane-key]').map(lane => lane.attributes('data-lane-key'))).toEqual(expected);
+  const lane = w.get(`section[data-lane-key="${group === 'product' ? PRODUCTS[0] : 'Now'}"]`);
+  expect(lane.findAll('[data-item-id]').map(card => card.attributes('data-item-id'))).toEqual(['first', 'second']);
+  expect(window.location.href).toBe(beforeURL);
+  expect(JSON.stringify([vm.shareItems, vm.shareContext])).toBe(beforeShare);
+  expect(localStorage.getItem('rm-reverse-lanes')).toBe('1');
+  w.unmount();
+  const restored = await mountBoard();
+  await restored.get('[aria-label="View options and saved views"]').trigger('click');
+  expect((restored.get('.lane-order-setting input').element as HTMLInputElement).checked).toBe(true);
+  await restored.get('.lane-order-setting input').setValue(false);
+  expect(localStorage.getItem('rm-reverse-lanes')).toBe('0');
+});
+
+it('offers the same local lane-order setting in timeline view', async () => {
+  window.history.replaceState(null, '', '/?layout=timeline');
+  const w = await mountBoard();
+  const before = window.location.href;
+  await w.get('[aria-label="View options and saved views"]').trigger('click');
+  await w.get('.lane-order-setting input').setValue(true);
+  expect(w.getComponent({ name: 'TimelineView' }).props('reverseGroups')).toBe(true);
+  expect(window.location.href).toBe(before);
 });

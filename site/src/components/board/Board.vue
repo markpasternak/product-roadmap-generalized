@@ -144,6 +144,14 @@ function clearAdditionalFilters() {
   Object.assign(filters, { product, layout, group, timeline });
 }
 const sort = ref<SortKey>('manual');
+// Personal display preference, deliberately separate from filters and share state.
+const reverseLaneOrder = ref(false);
+onMounted(() => {
+  try { reverseLaneOrder.value = localStorage.getItem('rm-reverse-lanes') === '1'; } catch { /* Storage is optional. */ }
+});
+watch(reverseLaneOrder, value => {
+  try { localStorage.setItem('rm-reverse-lanes', value ? '1' : '0'); } catch { /* Still apply in this view. */ }
+});
 const sheetOpen = ref(false);
 // Fix #9: the "?" cheat-sheet overlay (global keyboard shortcuts). See onGlobalKey below.
 const shortcutsOpen = ref(false);
@@ -1271,7 +1279,7 @@ const hiddenLaneMatches = computed(() => {
     }))
     .filter((match) => match.count > 0);
 });
-const lanes = computed(() => {
+const canonicalLanes = computed(() => {
   if (filters.group === 'product') {
     const g = groupItems(focused.value, PRODUCTS, (i) => i.product);
     return PRODUCTS.filter((p) => g[p]!.length).map((p) => ({
@@ -1292,6 +1300,8 @@ const lanes = computed(() => {
     items: g[h]!,
   }));
 });
+
+const lanes = computed(() => reverseLaneOrder.value ? [...canonicalLanes.value].reverse() : canonicalLanes.value);
 
 function removeFilterChip(chip: ActiveFilterChip) {
   switch (chip.kind) {
@@ -2171,9 +2181,16 @@ const editActionBtn =
             "
           >
             <template #settings>
-              <div v-if="filters.layout !== 'timeline'" class="compact-view-settings">
+              <div class="compact-view-settings">
+                <template v-if="filters.layout !== 'timeline'">
                 <label>Group by<Select v-model="filters.group" :options="groupOptions" name="group" aria-label="Group by" /></label>
                 <label>Sort by<Select v-model="sort" :options="sortOptions" name="sort" aria-label="Sort" /></label>
+                </template>
+                <label class="lane-order-setting">
+                  <input v-model="reverseLaneOrder" type="checkbox" aria-describedby="lane-order-hint" />
+                  <span>Reverse lane order</span>
+                </label>
+                <p id="lane-order-hint" class="lane-order-hint">Only in this browser. Items inside each lane keep their order.</p>
               </div>
             </template>
           </SavedViews>
@@ -2333,7 +2350,7 @@ const editActionBtn =
             @clear="clearAdditionalFilters"
           />
 
-          <TimelineView v-if="filters.layout === 'timeline'" :items="focused" :settings="filters.timeline" :client="present || IS_PUBLIC" @select="select" @settings="filters.timeline = $event" @board="filters.layout = 'board'" />
+          <TimelineView v-if="filters.layout === 'timeline'" :items="focused" :settings="filters.timeline" :reverse-groups="reverseLaneOrder" :client="present || IS_PUBLIC" @select="select" @settings="filters.timeline = $event" @board="filters.layout = 'board'" />
           <!-- Empty -->
           <div
             v-else-if="!focused.length"
