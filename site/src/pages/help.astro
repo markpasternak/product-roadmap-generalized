@@ -1,52 +1,42 @@
 ---
 import Base from '../layouts/Base.astro';
 import Breadcrumb from '../components/ui/Breadcrumb.vue';
-import { HORIZONS, STAGES, PRODUCTS, VISIBILITIES } from '../lib/schema';
-import { horizonDot, horizonDescription, productColor, productShort, levelTone, toneText } from '../lib/display';
+import { HORIZONS, STAGES, PRODUCTS } from '../lib/schema';
+import { horizonDot, horizonDescription, productColor, productShort } from '../lib/display';
 
 const base = import.meta.env.BASE_URL;
 
 const STAGE_DESCRIPTION: Record<(typeof STAGES)[number], string> = {
   Discovery: 'Exploring the problem. Nothing is committed yet.',
-  Validation: 'Checking with users and data that the problem is real, and our answer with it.',
-  Shaping: 'Defining scope and approach so it could be picked up.',
-  Committed: 'Agreed and queued. It will be built.',
+  Validation: 'Testing the problem and proposed approach with users and evidence.',
+  Shaping: 'Defining the scope and approach.',
+  Committed: 'Agreed for delivery and queued to begin.',
   Building: 'In active development.',
   Pilot: 'Live with a limited set of users before general availability.',
   Shipped: 'Generally available.',
   Parked: 'On hold on purpose. Kept for the record.',
 };
 
-const PRODUCT_DESCRIPTION: Record<(typeof PRODUCTS)[number], string> = {
-  'Spotify for Artists': 'Its own folder and ID prefix — items live under content/items/spotify-for-artists/ as ARTISTS-NNN.',
-  'Ads Platform': 'Its own folder and ID prefix — items live under content/items/ads-platform/ as ADS-NNN.',
-  'Core Platform & Data': 'Its own folder and ID prefix — items live under content/items/core-platform-data/ as PLATFORM-NNN.',
-  'Music App': 'Its own folder and ID prefix — items live under content/items/music-app/ as MUSIC-NNN.',
-  'Podcasts & Audiobooks': 'Its own folder and ID prefix — items live under content/items/podcasts-audiobooks/ as TALK-NNN.',
-};
-
 const TOC = [
-  { href: '#mental-model', label: 'The mental model' },
+  { href: '#mental-model', label: 'Priorities, progress and dates' },
   { href: '#horizons', label: 'Horizons' },
   { href: '#stages', label: 'Stages' },
-  { href: '#products', label: 'Products' },
-  { href: '#other-fields', label: 'Owner, impact, effort, visibility, tags, order' },
-  { href: '#reading-the-board', label: 'Reading the board' },
-  { href: '#editing', label: 'Editing in the app' },
-  { href: '#latest-changes', label: 'Latest changes' },
-  { href: '#new-with-ai', label: 'New with AI' },
-  { href: '#rewrite-with-ai', label: 'Rewrite with AI' },
-  { href: '#presence', label: 'Live presence' },
-  { href: '#how-it-connects', label: 'How it connects to GitHub' },
-  { href: '#shares', label: 'Sharing a view' },
-  { href: '#why-no-dates', label: 'Why no dates?' },
+  { href: '#reading-the-board', label: 'Board, filters and views' },
+  { href: '#timeline', label: 'Timeline and planned dates' },
+  { href: '#other-fields', label: 'Item fields' },
+  { href: '#editing', label: 'Drafts and publishing' },
+  { href: '#resources', label: 'Files, links and images' },
+  { href: '#new-with-ai', label: 'Working with AI' },
+  { href: '#latest-changes', label: 'Changes and collaboration' },
+  { href: '#how-it-connects', label: 'GitHub and the source of truth' },
+  { href: '#shares', label: 'Sharing a snapshot' },
 ];
 ---
 
 <Base
   title="How the roadmap works · Roadmap"
   active="help"
-  description="A practical guide to reading, editing, and sharing the Product Roadmap product roadmap."
+  description="A practical guide to priorities, timelines, editing and sharing the roadmap."
 >
   <main class="support-page page-reveal mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
     <Breadcrumb items={[{ label: 'Roadmap', href: base }, { label: 'Help' }]} />
@@ -54,11 +44,11 @@ const TOC = [
       <p class="roadmap-label">Roadmap guide</p>
       <h1 class="roadmap-display roadmap-title mt-2 text-[2rem] sm:text-[2.55rem]">How the roadmap <em>works.</em></h1>
       <p class="roadmap-muted text-body-lg mt-3 max-w-2xl">
-        This is a <b class="roadmap-title">Now / Next / Later</b> roadmap. Horizons communicate confidence and
-        sequence without pretending every idea has a reliable date.
+        Start with <b class="roadmap-title">what matters and what comes next</b>. Use Now / Next / Later to
+        communicate priorities and direction, and Timeline to see planned work windows when dates are useful.
       </p>
       <p class="roadmap-muted text-body-md mt-2 max-w-2xl">
-        Use this guide to read the board, understand its fields, edit the source safely, and publish a filtered snapshot.
+        The same items power both views. Dates add detail; you do not need them to put an idea on the roadmap.
       </p>
     </section>
 
@@ -109,410 +99,241 @@ const TOC = [
       <article class="help-article roadmap-panel rounded-[24px] px-5 pb-8 sm:px-7 lg:px-9">
 
     <section id="mental-model" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">The mental model</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        <b class="text-text-primary-default">The markdown files are the source of truth. This site is a live,
-        editable view of them.</b> Every item on the board is one file under <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">content/items/&lt;product&gt;/</code>
-        in the roadmap's GitHub repo — nothing lives in a separate database. If you can see it on the board, a
-        file says so; if you change it here, that change becomes a commit to that same file.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        Everything below follows from that one fact — including the whole editing model in
-        <a href="#editing" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Editing in the app</a>.
-      </p>
+      <h2>Priorities first. Dates when they help.</h2>
+<p>The roadmap helps you understand what we are working toward, why it matters and what comes next.
+        <b>Horizon</b> describes priority and sequence. <b>Stage</b> describes progress.
+        <b>Planned start and end dates</b> describe the intended work window. These are separate choices.</p>
+      <p>For example, an item can be in Now, still in Shaping, and have a planned start next month.
+        Moving it to Now does not start it automatically, and reaching its end date does not mark it shipped.</p>
+      <p>Use Board for the overall direction and Timeline for timing and overlaps. Dates are planning assumptions
+        to review as the work changes, rather than a requirement for every idea.</p>
     </section>
 
     <section id="horizons" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Horizons: how sure we are</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        The lanes on the board. As an item moves toward <b class="text-text-primary-default">Now</b>, our
-        confidence grows and the detail fills in. Further out, it stays a broad direction.
-      </p>
-      <div class="mt-5 flex flex-col gap-2">
-        {
-          HORIZONS.map((h) => (
-            <div class="border-border-subtle-default bg-card flex items-baseline gap-3 rounded-lg border px-4 py-3">
-              <span class="flex w-28 shrink-0 items-center gap-2">
-                <span class="size-2.5 rounded-full" style={`background:${horizonDot[h]}`} />
-                <b class="text-single-base-medium text-text-primary-default">{h}</b>
-              </span>
-              <span class="text-single-base-medium text-text-subtle-default">{horizonDescription[h]}</span>
-            </div>
-          ))
-        }
+      <h2>Horizons: priority and sequence</h2>
+<p>The default board shows Now, Next and Later. Open <b>View → Show horizons</b> to include Candidates
+        or Completed, or hide horizons you do not need. This also controls which items are considered in Timeline.</p>
+      <div class="help-reference-list">
+        {HORIZONS.map((h) => (
+          <div class="help-reference-row">
+            <b><span class="size-2.5 shrink-0 rounded-full" style={`background:${horizonDot[h]}`} />{h}</b>
+            <span>{horizonDescription[h]}</span>
+          </div>
+        ))}
       </div>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        The board opens focused on <b class="text-text-primary-default">Now, Next and Later</b> — the stat tiles
-        above the lanes double as toggles, so <b class="text-text-primary-default">Candidates</b> (raw intake,
-        not committed to the roadmap yet) and <b class="text-text-primary-default">Completed</b> (already
-        shipped) stay out of the way until you click them on.
-      </p>
+      <p>Horizons have no fixed duration: Next does not mean next month. Clearing filters keeps your horizon
+        choices. When they differ from the default, the summary above the items offers a separate Reset.</p>
     </section>
 
     <section id="stages" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Stages: how real it is</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        Independent from the horizon: an item can be <i>Now</i> and still <i>Shaping</i>. The stage tells you how far the work itself has come.
-      </p>
-      <div class="mt-5 flex flex-col gap-2">
-        {
-          STAGES.map((s) => (
-            <div class="border-border-subtle-default bg-card flex items-baseline gap-3 rounded-lg border px-4 py-3">
-              <b class="text-single-base-medium text-text-primary-default w-28 shrink-0">{s}</b>
-              <span class="text-single-base-medium text-text-subtle-default">{STAGE_DESCRIPTION[s]}</span>
-            </div>
-          ))
-        }
+      <h2>Stages: progress through the work</h2>
+<p>Stage tells you how far the work has progressed, independently of its horizon and dates.</p>
+      <div class="help-reference-list">
+        {STAGES.map((stage) => (
+          <div class="help-reference-row"><b>{stage}</b><span>{STAGE_DESCRIPTION[stage]}</span></div>
+        ))}
       </div>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        Rule of thumb: <b class="text-text-primary-default">horizon</b> answers "when, and how confident are we?";
-        <b class="text-text-primary-default">stage</b> answers "how cooked is the work itself?"
-      </p>
-    </section>
-
-    <section id="products" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Products</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        Every item belongs to exactly one product track. The product decides the item's folder and ID
-        prefix, and it's the other way you can slice the board: group by product instead of by horizon to see
-        each product's own Now/Next/Later, side by side.
-      </p>
-      <div class="mt-5 flex flex-col gap-2">
-        {
-          PRODUCTS.map((p) => (
-            <div class="border-border-subtle-default bg-card flex items-baseline gap-3 rounded-lg border px-4 py-3">
-              <span class="flex w-40 shrink-0 items-center gap-2">
-                <span
-                  class="text-single-sm-medium grid size-6 shrink-0 place-items-center rounded font-semibold text-white"
-                  style={`background:${productColor[p]}`}
-                >
-                  {productShort[p]}
-                </span>
-                <b class="text-single-base-medium text-text-primary-default">{p}</b>
-              </span>
-              <span class="text-single-base-medium text-text-subtle-default">{PRODUCT_DESCRIPTION[p]}</span>
-            </div>
-          ))
-        }
-      </div>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        <b class="text-text-primary-default">Grouping by horizon</b> (the default) answers "what's happening
-        across everything, right now?" <b class="text-text-primary-default">Grouping by product</b> answers "what's
-        the plan for just this product?" — and it's also what makes drag-to-reorder priority meaningful (see
-        <a href="#reading-the-board" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Reading the board</a>).
-      </p>
-    </section>
-
-    <section id="other-fields" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Owner, impact, effort, visibility, tags, order</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        The rest of what a card carries — some required, some there only when it earns its place.
-      </p>
-      <dl class="mt-5 flex flex-col gap-4">
-        <div>
-          <dt class="text-single-base-medium text-text-primary-default font-semibold">Owner</dt>
-          <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
-            The person accountable for the item. Shown by name on internal cards and in the detail drawer.
-            Hidden in presentation mode, public builds, and shares (see <a href="#shares" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Sharing a view</a>).
-          </dd>
-        </div>
-        <div>
-          <dt class="text-single-base-medium text-text-primary-default font-semibold">Impact &amp; effort</dt>
-          <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
-            Rough sizing, not precision, each one of <b style={`color:${toneText[levelTone.Low]}`}>Low</b>,
-            <b style={`color:${toneText[levelTone.Medium]}`}> Medium</b> or <b style={`color:${toneText[levelTone.High]}`}> High</b>.
-            <b class="text-text-primary-default"> Impact</b> is the value we expect it to create;
-            <b class="text-text-primary-default"> effort</b> is how much work it takes. High-impact, low-effort
-            items tend to move up. Both are optional — an item without either just shows
-            <span class="text-single-sm-medium bg-surface-subtle-default text-text-subtle-default rounded px-1.5 py-0.5">Not scored</span>,
-            which is a perfectly normal state, not a gap to fill in.
-          </dd>
-        </div>
-        <div>
-          <dt class="text-single-base-medium text-text-primary-default font-semibold">Visibility</dt>
-          <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
-            {VISIBILITIES.join(' or ')}, defaulting to Internal. Visibility decides whether an item appears on a
-            <b class="text-text-primary-default">public build of the roadmap</b>. A share is different: it starts
-            from the board’s current filtered view and its review list, so an Internal item can be included if the
-            author selects it. Share payloads still omit owner names and editing links. Review the item list before
-            publishing anything outside the team.
-          </dd>
-        </div>
-        <div>
-          <dt class="text-single-base-medium text-text-primary-default font-semibold">Tags &amp; themes</dt>
-          <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
-            Free-form labels for filtering — a comma-separated list on the item. A tag written as
-            <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">theme:name</code>
-            is a cross-cutting theme: it groups items across products and horizons and gets its own page (see
-            "Themes" in the nav) instead of just being a filter chip.
-          </dd>
-        </div>
-        <div>
-          <dt class="text-single-base-medium text-text-primary-default font-semibold">Order (priority)</dt>
-          <dd class="text-body-md text-text-subtle-default mt-1 max-w-xl">
-            Where an item sits within its lane, relative to its neighbors — set by dragging (see
-            <a href="#editing" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Editing in the app</a>),
-            not by typing a number. It's what "Sort: Priority" reflects, and it's scoped to one product's one
-            horizon at a time — reordering never reaches across a product or a lane boundary.
-          </dd>
-        </div>
-      </dl>
     </section>
 
     <section id="reading-the-board" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Reading the board</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        A card shows the shorthand: product mark, title, short description, stage, and
-        the owner on internal views. Sizing, tags, and resources stay in the <b class="text-text-primary-default">detail drawer</b>. Click a card to read the
-        full write-up (One-liner, Why it matters, Target outcome, What ships, and whatever optional sections the
-        item has), the owner, and — when you're signed in and not viewing a public build — an
-        <b class="text-text-primary-default">"Edit on GitHub"</b> link that jumps straight to that item's markdown
-        file in GitHub's own web editor.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        Use the product selector to choose a product. <b class="text-text-primary-default">Filters</b> opens a side panel for horizons, activity dates, owner and visibility (internal views),
-        stage, impact, effort, and tags. Item visibility is separate from access to a shared link.
-        <b class="text-text-primary-default">View</b> groups the lanes by horizon or product and sets the sort order:
-        Priority (the manual drag order), Highest impact, Lowest effort, Recently updated, or Title (A–Z).
-        Use <b class="text-text-primary-default">search</b> to find items, or press <kbd class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">/</kbd> to jump into it.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        <b class="text-text-primary-default">More</b> contains presentation and full-screen actions. Starting a presentation hides
-        the board controls; copying its link leaves your current view intact. The link opens the live board with the default horizons and uses its existing access rules.
-        <b class="text-text-primary-default">Share</b> creates a separate snapshot, with its own access settings.
-        Use <b class="text-text-primary-default">Account</b> in the top navigation for editing sign-in and light or dark appearance.
-      </p>
-      <div class="border-border-subtle-default bg-card mt-5 flex items-center justify-between gap-3 rounded-lg border px-4 py-3">
-        <span class="text-single-base-medium text-text-primary-default font-semibold">Keyboard shortcuts</span>
-        <kbd class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5 font-mono">?</kbd>
+      <h2>Board, filters and saved views</h2>
+<p>Choose a product, search for an item, or open a card to read its full write-up and resources.
+        Switch between <b>Board</b> and <b>Timeline</b> without losing your current selection.</p>
+      <dl>
+        <div><dt>Filters — which items to show</dt><dd>Filter by stage, impact, effort, tags or activity.
+          Internal views also offer owner and visibility. Clear all removes these filters while keeping the
+          selected product and view settings.</dd></div>
+        <div><dt>View — how to show them</dt><dd>Choose visible horizons and manage your saved views.
+          On Board, choose grouping by horizon or product and a sort order: Priority, Highest impact, Lowest effort,
+          Recently updated or Title. Timeline has its own grouping and scale controls.</dd></div>
+        <div><dt>Reverse lane order</dt><dd>Reverse the displayed lanes or Timeline groups without changing item priority.
+          This preference stays in this browser and is not included in saved views or shared snapshots.</dd></div>
+      </dl>
+      <h3>Find recently created or updated items</h3>
+      <p>In <b>Filters → Activity</b>, choose Created or Updated, then Today, the last 7, 30 or 90 days,
+        a custom number of days, or an inclusive From–To range. Choose Apply for a custom period.
+        The filter shows the time zone it uses.</p>
+      <p>Updated includes any published item change within the period, even if the item changed again later.
+        Newly created items count too. Draft autosaves and site rebuilds do not count.
+        These activity dates describe publication history; they are separate from planned start and end dates.</p>
+      <h3>Keep a useful view</h3>
+      <p>Choose <b>View → Save as new view</b> to name your current filters, horizons, layout, grouping and order.
+        Timeline settings are saved too. You can update, rename or delete saved views in the same menu.
+        They are stored in this browser, not synced to your account; clearing browser data removes them.
+        A saved “last 7 days” filter keeps rolling as time passes.</p>
+      <p><b>More</b> contains Recent changes, presentation and full-screen controls.
+        Presentation hides the editing controls on the live roadmap and keeps its existing access rules.
+        Use Account for editing sign-in and appearance; read-only deployments may show Appearance instead.</p>
+      <p>Press <kbd>/</kbd> to search or <kbd>?</kbd> to see keyboard shortcuts.</p>
+    </section>
+
+    <section id="timeline" class="mt-10 scroll-mt-24">
+      <h2>Timeline and planned dates</h2>
+<span id="why-no-dates" class="scroll-mt-24"></span>
+      <p>Add a <b>planned start</b> and <b>planned end</b> in the item editor. The end must be on or after the start.
+        The dates appear on the item and as a bar in Timeline after saving your edit. They publish with the rest of the item.</p>
+      <p><b>Both dates are required to draw a bar.</b> Items with missing or invalid dates remain on the roadmap,
+        but are omitted from the chart. The count above Timeline shows how many; choose Review to see and open them.
+        Items with valid dates outside the visible period are counted separately.</p>
+      <p>Group by Product, Owner, Tag, Stage or None. Use Weeks, Months or Quarters for the scale, the arrows to
+        move through time, Today to return to the current period, and Fit items to see all dated work in your selection.
+        Click a bar or title to open the item. The vertical line marks today.</p>
+      <p>An item with several tags appears in each relevant tag group, while the overall count counts it once.
+        Owner and tag grouping are unavailable in public and presentation views. Neither dates nor a bar's position change the
+        item's stage, horizon or priority.</p>
+    </section>
+
+    <section id="other-fields" class="mt-10 scroll-mt-24">
+      <h2>What an item contains</h2>
+<span id="products" class="scroll-mt-24"></span>
+      <p>Give each item a clear title and a write-up explaining the problem, why it matters and what will ship.
+        Add detail where it helps someone understand a decision.</p>
+      <dl>
+        <div><dt>Product</dt><dd>Each item belongs to one product. Choose a product to focus the roadmap,
+          or group by product to compare tracks.</dd></div>
+        <div><dt>Owner</dt><dd>The person accountable for the item. Owner names appear in internal views,
+          but are omitted from public builds and shared snapshots.</dd></div>
+        <div><dt>Impact and effort</dt><dd>Optional Low, Medium or High estimates of value and work.
+          Use them to compare ideas; an unscored item can still belong on the roadmap.</dd></div>
+        <div><dt>Tags</dt><dd>Labels for finding related work. Tags can also group items on Timeline.</dd></div>
+        <div><dt>Visibility</dt><dd>Internal or Public. This controls inclusion in a public build of the roadmap.
+          A separately published share has its own selected items and access settings; an Internal item can be
+          included in a share, so review the content and audience before publishing.</dd></div>
+        <div><dt>Priority</dt><dd>The manual order within one product and horizon. It is separate from
+          stage, planned dates and the temporary sort order you choose for viewing.</dd></div>
+      </dl>
+      <div class="help-products" aria-label="Products in this roadmap">
+        {PRODUCTS.map((product) => (
+          <span><b style={`color:${productColor[product]}`}>{productShort[product]}</b>{product}</span>
+        ))}
       </div>
     </section>
 
     <section id="editing" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Editing in the app</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        This board doubles as the editor. Anyone with <b class="text-text-primary-default">write access to the
-        roadmap's GitHub repo</b> can sign in and edit it directly — no separate account, no ticket.
-      </p>
-
-      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">1. Sign in, then flip into edit mode</h3>
-      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
-        Open <b class="text-text-primary-default">Account → Sign in to edit</b> and sign in with GitHub.
-        If you have write access, an <b class="text-text-primary-default">Edit</b> button appears on the board.
-        In edit mode, cards show drag handles and an inline "+ Add item" control appears in
-        every lane, and clicking a card opens the full-screen editor instead of the read-only drawer.
-        With a drag handle focused, left and right arrows move between visible horizons; up and down change priority when priority sorting is available.
-      </p>
-
-      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">2. Your draft saves automatically</h3>
-      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
-        Your draft saves to this device as you type, then to your account. The save bar shows how many changes are unpublished and whether your private draft is saved. A clean workspace has no save bar. Git changes only when you publish. Your draft covers:
-      </p>
-      <ul class="text-body-md text-text-subtle-default mt-2 max-w-xl list-disc space-y-1.5 pl-5">
-        <li>Editing any field — title, product (new items only), horizon, stage, owner, impact, effort, visibility, tags.</li>
-        <li>
-          Editing the write-up, in either mode: <b class="text-text-primary-default">structured</b> mode pins the
-          three sections every item has (One-liner, Why it matters, What ships) plus a reorderable list of optional
-          sections (Target outcome, Who it's for, Open questions, Links, and more), or switch to whole-body
-          <b class="text-text-primary-default">markdown</b> mode with a formatting toolbar (bold, italic, lists,
-          link, code, quote) for free-form editing. Both modes edit the same underlying text — toggling between
-          them re-parses it, nothing is lost.
-        </li>
-        <li><b class="text-text-primary-default">Dragging a card between lanes</b> changes its horizon (when the board is grouped by horizon).</li>
-        <li><b class="text-text-primary-default">Dragging a card within a lane</b> sets its priority order — only enabled while filtered to one product with sort set to Priority and no other filters muddying what "priority" means.</li>
-        <li><b class="text-text-primary-default">+ New item</b>, duplicating a card, deleting one, and renaming inline by double-clicking a title.</li>
-      </ul>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        Your working copy persists across a refresh, so you can step away mid-edit without losing anything.
-      </p>
-
-      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">3. Attach evidence where it belongs</h3>
-      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
-        Each item has one <b class="text-text-primary-default">Resources</b> section beneath its write-up. Choose <b class="text-text-primary-default">Add resource</b> there to upload files, paste a link, or search existing files and source documents.
-        To put an image in your text, use the image button in that text’s toolbar. Choose an existing image, upload a new one, or paste an external image URL, then add alt text and insert it at your cursor. You can also paste images into the write-up. Uploaded images are also attached in Resources.
-        Image resources show thumbnail previews. Choose <b class="text-text-primary-default">Edit</b> beside a resource to rename it, update its image descriptions, replace it, or remove a use. Removing a use keeps the original file available for reuse. Images use standard <code>![alt text](image-url)</code> Markdown and render in previews and published write-ups.
-        Removing a placement keeps the file available. Deleting an unused file removes it from the current repository when you publish; Git history retains previous versions.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
-        PNG, JPEG, GIF, WebP, PDF, MP4, WebM, Office, ZIP and text files are supported, up to 25 MiB each and 100 MiB per publication.
-        Unpublished uploads are kept for 30 days. Published originals live in Git alongside the Markdown, with a checksum and a separate path for every revision.
-        Replacing a file updates this item's references; other items keep their selected revision. Public items require Public files.
-      </p>
-      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">4. Publish when the changes are ready</h3>
-      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
-        <b class="text-text-primary-default">Review</b> lists your unpublished changes. <b class="text-text-primary-default">Publish changes</b> commits items, files and resource metadata together.
-        The save bar first confirms the Git commit, then confirms when that version is live. You can keep writing while the site updates; those later edits remain in your draft.
-        If the connection drops, retrying checks the original publication and avoids duplicate items or commits. Overlapping edits show both versions for review.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
-        Leaving edit mode keeps your draft. Use Discard draft in the save bar to reset all unpublished changes; confirm the reset to remove the account draft too. Published items and files stay unchanged. If you are offline, the reset remains on this device until the account reconnects. Publishing does not change access permissions or update existing shares.
-        When sharing, choose explicitly which links and published files to include; selected files are copied into that snapshot.
-      </p>
-
-      <h3 class="text-single-base-medium text-text-primary-default mt-6 font-semibold">The alternative: edit the file directly on GitHub</h3>
-      <p class="text-body-md text-text-subtle-default mt-1.5 max-w-xl">
-        Every item's <b class="text-text-primary-default">"Edit on GitHub"</b> link (in the detail drawer) opens
-        that item's markdown file in GitHub's own web editor — frontmatter and body both, in one file. Good for a
-        quick one-off fix, or when you'd rather open a PR for review than commit straight to <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">main</code>.
-        Both paths edit the exact same file, so they're always interchangeable.
-      </p>
+      <h2>Drafts, saving and publishing</h2>
+<p>When editing is enabled, use <b>Account → Sign in to edit</b> and sign in with GitHub.
+        You need write access to the roadmap repository. Choose Edit to make changes; opening a card then opens its editor.</p>
+      <h3>Work in a private draft</h3>
+      <p>Edits save on this device, then sync to your account when connected. The save bar reports that status
+        and your unpublished changes. <b>A saved draft is not published to GitHub or the live site.</b>
+        Leaving edit mode keeps the draft. Check the save status before leaving, especially if you are offline.</p>
+      <p>Use the section editor or whole-body Markdown to write, add optional sections, and set fields and dates.
+        You can create, duplicate or delete items. Drag between horizon lanes to change a horizon.
+        To reorder priority, choose one product, sort by Priority and clear other filters.</p>
+      <h3>Review, then publish</h3>
+      <p><b>Review</b> shows the unpublished changes. <b>Publish changes</b> commits your
+        item changes, uploaded files and resource metadata together. The save bar distinguishes saved to Git
+        from confirmed live on the site. You can keep editing while the site updates; those later edits stay in your draft.</p>
+      <p>If GitHub sign-in is missing or expires, sign in again with the same account; your draft is kept.
+        The editing session lasts up to seven days, but lost repository access or a revoked session can require
+        an earlier sign-in. If a connection fails during publication, retrying checks the previous attempt first.</p>
+      <p>When another published change overlaps yours, the app asks you to review both versions before publishing.
+        Conflicting account drafts also need review. Resolve the differences rather than overwriting work blindly.</p>
+      <h3>Discard a draft</h3>
+      <p>Use <b>Discard draft</b> in the save bar and confirm to reset unpublished changes.
+        Published items and files stay unchanged, and a recovery copy is kept on this device.
+        If offline, the account reset waits for reconnection. Publishing does not update existing shares or change access permissions.</p>
     </section>
 
-    <section id="latest-changes" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Latest changes</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        A <b class="text-text-primary-default">"Recent changes"</b> card sits on the board itself, and its
-        <b class="text-text-primary-default">"View all →"</b> link opens the full history page. Both are built
-        straight from the repo's publication commit history — one commit
-        (<a href="#editing" class="text-text-primary-default underline decoration-border-subtle-default underline-offset-4">Publish changes</a>
-        or a direct commit) is one row.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        Each row shows <b class="text-text-primary-default">who</b> changed things (the editor who published, not the
-        bot that makes the commit), <b class="text-text-primary-default">what</b> (how many items were updated,
-        created, deleted, or reordered, plus the titles of the items involved), a relative timestamp, and a
-        link out to that <b class="text-text-primary-default">exact commit on GitHub</b>. A manual commit made
-        outside the app (a direct push or PR) still shows up, using its raw commit message.
-      </p>
+    <section id="resources" class="mt-10 scroll-mt-24">
+      <h2>Files, links and inline images</h2>
+<p>Each item has one <b>Resources</b> section beneath the write-up. Choose <b>Add resource</b> there
+        to upload a file, paste a link, or find an existing file or source document.</p>
+      <p>To place an image within your writing, use the <b>image button in that text's toolbar</b>.
+        Choose an existing image, upload one, or paste an external image URL. Add descriptive alt text and insert
+        it at the cursor. You can also paste images into the editor. Image resources show thumbnail previews.</p>
+      <p>Images use standard Markdown: <code>![alt text](image-url)</code>.
+        They render in the editor preview and published write-up. Attaching a resource and placing it inline are
+        separate uses of the same file.</p>
+      <p>Choose <b>Edit</b> beside a resource to change its name or image description, replace the file or remove
+        a use. Removing a use keeps the file in the library. Replacing a file updates this item's references;
+        other items keep their chosen revision. Delete from library is available when the file has no remaining uses.</p>
+      <p>Uploads support common image, document, video, archive and text formats, up to 25 MiB per file and
+        100 MiB per publication. Unpublished uploads expire after 30 days.
+        Published originals and revisions live in Git. Deleting a file on publication removes the current copy,
+        while Git history retains earlier versions. Public items require Public files.</p>
     </section>
 
     <section id="new-with-ai" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">New with AI</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        In edit mode, <b class="text-text-primary-default">"New with AI"</b> sits beside "+ New item". Describe
-        what the item should cover and pick a product, and AI (Sonnet) drafts a full spec — every relevant
-        section filled in, plus a suggested stage, horizon, and tags — instead of you starting from a blank card.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        The draft opens straight in the same full-screen editor you'd use for any item, as a normal
-        <b class="text-text-primary-default">working-copy created item</b> — nothing about it is special or
-        locked. Read it over, change anything you like, or delete it outright. Like every other edit, it's only a
-        saved draft: <b class="text-text-primary-default">nothing publishes until you choose Publish changes</b>.
-      </p>
+      <h2>Working with AI</h2>
+<span id="rewrite-with-ai" class="scroll-mt-24"></span>
+      <p>When AI is enabled, <b>New with AI</b> drafts an item from your description and chosen product.
+        It opens as an ordinary draft: review the reasoning, scope, fields and suggested details before publishing.</p>
+      <p>Inside an item, <b>Rewrite with AI</b> lets you discuss a change first. Apply generates a proposed rewrite
+        and a section-by-section comparison. Accept puts it in your draft; Discard keeps the original text.
+        Accepting AI text does not publish it.</p>
     </section>
 
-    <section id="rewrite-with-ai" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Rewrite with AI</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        Inside the item editor, <b class="text-text-primary-default">"Rewrite with AI"</b> opens a conversational
-        panel over the item you're already editing. Give it an instruction — "sharpen Why it matters", "add a
-        risk to Open questions" — and it first tells you <b class="text-text-primary-default">what it would
-        change</b>, in plain language. Nothing is rewritten yet at this point.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        You can chat back and forth to steer the plan before committing to anything. When it looks right, hit
-        <b class="text-text-primary-default">Apply</b>: the AI returns the full item rewritten, keeping the exact
-        same section structure, and you get a <b class="text-text-primary-default">before/after diff, shown
-        section by section</b>. <b class="text-text-primary-default">Accept</b> writes the rewrite into your
-        working copy (same as any other edit — it publishes when you choose Publish changes); <b class="text-text-primary-default">
-        Discard</b> throws it away and keeps your conversation so you can try again.
-      </p>
-    </section>
-
-    <section id="presence" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Live presence</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        The board shows a subtle <b class="text-text-primary-default">"N viewing"</b> indicator with avatars for
-        who else is looking at it right now, visible to everyone. A viewer who goes quiet — no activity on the
-        page — idles out of that count after about <b class="text-text-primary-default">10 minutes</b>; coming
-        back and doing anything on the page rejoins it.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        In edit mode specifically, you'll also see a soft <b class="text-text-primary-default">"X is also
-        editing"</b> nudge when another editor is active at the same time. It's advisory only — a heads-up so you
-        can coordinate — not a lock: the roadmap still works on a last-write-wins basis, and nothing stops either
-        of you from publishing.
-      </p>
-      <div class="border-border-subtle-default bg-card mt-5 rounded-xl border px-4 py-3.5">
-        <p class="text-body-md text-text-subtle-default max-w-xl">
-          <b class="text-text-primary-default">Good to know:</b> New with AI, Rewrite with AI, and live presence
-          all depend on the canvas Backend (AI + realtime) being enabled, so they only appear when it's on —
-          they're simply absent, never broken, when it's off. Latest changes is different: it doesn't touch that
-          Backend at all, it just reads the repo's own GitHub commit history, so it works everywhere the app does.
-        </p>
-      </div>
+    <section id="latest-changes" class="mt-10 scroll-mt-24">
+      <h2>Recent changes and collaboration</h2>
+<span id="presence" class="scroll-mt-24"></span>
+      <p>Open <b>More → Recent changes</b> for publication history. Entries show the changes, their author and time,
+        and a link to the Git commit. This history records publications, not private draft edits.
+        Use Activity filters to find the items changed in a particular period.</p>
+      <p>When live presence is enabled, the viewing indicator shows other active viewers and an editing notice
+        helps editors coordinate. It does not lock items or share your private draft with everyone.
+        Publication conflicts are reviewed in the save flow.</p>
     </section>
 
     <section id="how-it-connects" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">How it connects to GitHub</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        In-app publishing, "Edit on GitHub", and a direct commit or PR all converge on the same files under
-        <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">content/items/**</code> on
-        <code class="text-single-sm-medium bg-surface-subtle-default rounded px-1.5 py-0.5">main</code>. A push there
-        triggers a rebuild that redeploys this site, and a validation check runs on every change to catch a bad ID,
-        a missing required field, or a misplaced file — gating the merge on a PR, flagging the problem after the
-        fact on a direct push or publication. (There's no GitHub Project board in this pipeline — that integration is retired.)
-      </p>
-    </section>
-
-    <section id="timeline" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Planning on a timeline</h2>
-      <p class="text-text-subtle-default mt-2 leading-relaxed">
-        Switch between Board and Timeline without changing your filters. Add a planned start and end date in an item's editor; these dates save and publish with the rest of the item. They describe the intended work window and do not change its stage or Now / Next / Later horizon.
-      </p>
-      <p class="text-text-subtle-default mt-4 leading-relaxed">
-        Group the timeline by product, owner, tag or stage, or choose None. Use Weeks, Months or Quarters to explore, Today to return to the current period, and Fit items to see all dated work. Items with multiple tags appear in each tag group, but the overall counts count each item once. Click a bar or title to open the item. Review missing dates to find items that need a start or end; dated items outside the visible period are counted separately.
-      </p>
-      <p class="text-text-subtle-default mt-4 leading-relaxed">
-        Saved views remember the layout, grouping and date window. Shared cards group by product without Now / Next / Later labels. Timeline shares keep a fixed calendar window. Owner and tag grouping becomes product grouping when sharing, so private names and tags stay private.
-      </p>
+      <h2>GitHub is the published source of truth</h2>
+<p>Each published roadmap item is a Markdown file in the GitHub repository, with fields and a write-up.
+        Uploaded files and resource metadata are stored there too. Private drafts are temporary working copies
+        held separately until publication.</p>
+      <p>Publishing commits those changes and triggers a site rebuild. A Git commit can be complete before the
+        updated site is live; the save bar makes that distinction. The item’s Edit on GitHub link, where available,
+        opens the same source file for direct editing or a pull request. Repository checks validate the content and build.</p>
     </section>
 
     <section id="shares" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Sharing a view</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        Use <b class="text-text-primary-default">View → Save as new view</b> to name a combination of
-        filters, horizons, grouping, and sort order. Views are saved in this browser. Owner filters affect which
-        items are selected for sharing; owner names and saved-view names are not included in the snapshot.
-      </p>
-      <p class="text-text-subtle-default mt-4 leading-relaxed">
-        In Filters, use <b class="text-text-primary-default">Activity</b> to find items created or updated during a period. Choose Today, the last 7, 30 or 90 days, your own number of days, or an inclusive From–To range. Custom periods apply when you choose Apply. Updated includes any published item change in that period, even if the item changed again later; it also includes newly created items. Draft autosaves and site rebuilds do not count. Dates use the time zone shown in the filter. Relative periods keep rolling in saved views; shared snapshots keep the selected items and dates fixed.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        The board’s <b class="text-text-primary-default">Share</b> action starts with exactly the items in your
-        current filtered and sorted view. Review that list and deselect anything you do not want to include, then
-        publish it as a read-only snapshot at its own URL. It is a point-in-time copy; later roadmap changes do not
-        appear until you update that share.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        In share settings, choose <b class="text-text-primary-default">Preview as recipient</b> to inspect the
-        selected content in the published layout, at full width or mobile size. The preview follows the chosen
-        light or dark appearance and includes selected empty lanes. It previews content; access still follows
-        your sharing settings. Presentation mode is a view of the main roadmap and retains its access requirements.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        New shares default to <b class="text-text-primary-default">Restricted</b>. You can instead choose Whole org
-        or Public link, and optionally add a password. Manage expiry, added people, and teams in Canvas Drop.
-        These are separate controls: no expiry is added automatically, and existing expiry and memberships remain
-        in place when you update the content.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        Updating an existing share keeps its URL and current settings unless you deliberately change them. An
-        unpublished share stays in Shares and can be republished by updating it. Owner names, editing links, and
-        linked documents, resources, and other internal-only fields are omitted from every snapshot.
-        Review all selected content before choosing Public link; selecting an Internal item does not prevent you
-        from including it in a share.
-      </p>
-      <p class="text-body-md text-text-subtle-default mt-3 max-w-xl">
-        <b class="text-text-primary-default">Canvas owner</b> in the share list describes your management role on
-        that Canvas Drop canvas. It is not the share’s audience, and it is unrelated to the owner of a roadmap item.
-      </p>
+      <h2>Share a snapshot with its own audience</h2>
+<p><b>Share</b> creates a separate, read-only snapshot of the selected roadmap content at its own URL.
+        It is different from a local saved view or a link to the live roadmap. Later roadmap edits do not appear
+        in a snapshot until you update that share.</p>
+      <ol>
+        <li>Start from the view you want to share. Review the item list and deselect anything you do not want included.</li>
+        <li>Choose explicitly which links and published files recipients can open. Selected files are copied into
+          the snapshot; unpublished uploads cannot be included.</li>
+        <li>Use <b>Preview as recipient</b> to check the selected content and appearance at desktop or mobile size.</li>
+        <li>Choose the audience and publish a new share, or update an existing one.</li>
+      </ol>
+      <p>Shared cards group by product and leave out Now / Next / Later labels. Timeline shares keep a fixed
+        calendar window; owner or tag grouping changes to product grouping. Reverse lane order is a local preference
+        and is not carried into a share.</p>
+      <p>Owner fields and editing links are omitted. Resources are included only when you select them.
+        Review the write-up itself too: a name or sensitive detail typed into the text is still content you are sharing.
+        The preview shows content and layout; your access settings determine who can open it.</p>
+      <p>New shares default to <b>Restricted</b>. You can choose Whole org or Public link and optionally add a password.
+        Manage people, teams and expiry in Canvas Drop. No expiry is added automatically.</p>
+      <p>Updating a share keeps its URL, expiry and existing memberships. Access settings stay as they are unless
+        you change them. Use Shares to find and manage published snapshots; an unpublished share can be published again
+        by updating it. “Canvas owner” describes your management role, not the audience or an item's owner.</p>
     </section>
 
-    <section id="why-no-dates" class="mt-10 scroll-mt-24">
-      <h2 class="text-heading-md-semibold text-text-primary-default tracking-tight">Why no dates?</h2>
-      <p class="text-body-md text-text-subtle-default mt-2 max-w-xl">
-        Dates on a roadmap go stale the day they're written, and they force false certainty onto work we can't
-        see clearly yet. Horizons don't. We commit to what's directly ahead and keep the rest flexible until we
-        get there. The one date we promise is the ship date: when something ships, it moves to Completed.
-      </p>
-    </section>
       </article>
     </div>
   </main>
 </Base>
 
 <style>
+  .help-article h2 { color: var(--color-text-primary-default); font-size: 1.25rem; font-weight: 600; line-height: 1.35; letter-spacing: -.02em; }
+  .help-article h3, .help-article dt { color: var(--color-text-primary-default); font-weight: 600; }
+  .help-article h3 { margin-top: 1.5rem; }
+  .help-article p, .help-article dd, .help-article li { color: var(--color-text-subtle-default); line-height: 1.7; }
+  .help-article p { margin-top: .75rem; }
+  .help-article b { color: var(--color-text-primary-default); }
+  .help-article dl { display: grid; gap: 1rem; margin-top: 1rem; }
+  .help-article dd { margin: .25rem 0 0; }
+  .help-article ol { margin: 1rem 0 0; padding-left: 1.4rem; list-style: decimal; }
+  .help-article li + li { margin-top: .6rem; }
+  .help-article code, .help-article kbd { background: var(--color-surface-subtle-default); border-radius: 4px; padding: .1rem .3rem; font-size: .875em; overflow-wrap: anywhere; }
+  .help-reference-list { display: grid; gap: .5rem; margin-top: 1.25rem; }
+  .help-reference-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 1rem; padding: .85rem 1rem; border: 1px solid var(--color-border-subtle-default); border-radius: 8px; line-height: 1.5; color: var(--color-text-subtle-default); }
+  .help-reference-row > b { display: flex; align-items: center; gap: .5rem; }
+  .help-products { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin-top: 1.25rem; font-size: .8125rem; color: var(--color-text-subtle-default); }
+  .help-products > span { display: flex; align-items: center; gap: .4rem; }
+  @media (max-width: 480px) { .help-reference-row { grid-template-columns: 1fr; gap: .3rem; } }
+
   .help-article > section:first-child {
     margin-top: 0;
     padding-top: 2rem;
