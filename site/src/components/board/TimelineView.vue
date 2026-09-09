@@ -5,11 +5,12 @@ import { productColor } from '../../lib/display';
 import type { ItemVM } from '../../lib/filters';
 import { timelineModel, timelineSettings, panTimeline, todayDate, dateDay, formatPlanDate, scheduleIssue, scheduleLabel, type TimelineSettings } from '../../lib/timeline';
 import '../../styles/timeline.css';
-const props = defineProps<{ items: ItemVM[]; settings?: TimelineSettings; client?: boolean }>();
+const props = defineProps<{ items: ItemVM[]; settings?: TimelineSettings; client?: boolean; reverseGroups?: boolean }>();
 const emit = defineEmits<{ select: [item: ItemVM]; settings: [settings: TimelineSettings]; board: [] }>();
 const review = ref(false);
 const config = computed(() => { const s = timelineSettings(props.settings); return props.client && (s.group === 'owner' || s.group === 'tag') ? { ...s, group: 'product' as const } : s; });
 const model = computed(() => timelineModel(props.items, config.value));
+const displayGroups = computed(() => props.reverseGroups ? [...model.value.groups].reverse() : model.value.groups);
 const groups = computed(() => [{ value: 'product', label: 'Product' }, ...(!props.client ? [{ value: 'owner', label: 'Owner' }, { value: 'tag', label: 'Tag' }] : []), { value: 'stage', label: 'Stage' }, { value: 'none', label: 'None' }]);
 const today = computed(() => (dateDay(todayDate())! - dateDay(model.value.range.from)!) / (dateDay(model.value.range.to)! - dateDay(model.value.range.from)! + 1) * 100);
 const change = (patch: Partial<TimelineSettings>) => emit('settings', { ...config.value, ...patch });
@@ -40,7 +41,7 @@ const barStyle = (item: ItemVM) => { const p = model.value.position(item); retur
     <div v-if="model.visible.length" class="timeline-chart" tabindex="0" aria-label="Timeline chart. Scroll horizontally to explore dates.">
       <div class="timeline-canvas">
         <div class="timeline-head"><div class="timeline-label">Roadmap item</div><div class="timeline-axis"><span v-for="tick in model.ticks" :key="tick.left" class="timeline-tick" :style="{left:tick.left+'%',width:tick.width+'%'}">{{ tick.label }}</span><span v-if="today >= 0 && today <= 100" class="timeline-today" :style="{left:today+'%'}" /></div></div>
-        <details v-for="group in model.groups" :key="group.name" class="timeline-group" open>
+        <details v-for="group in displayGroups" :key="group.name" class="timeline-group" open>
           <summary>{{ group.name }}<small>{{ group.items.length }} {{ group.items.length === 1 ? 'item' : 'items' }}</small></summary>
           <div v-for="item in group.items" :key="item.id" class="timeline-row">
             <button class="timeline-label" type="button" :title="item.title" @click="emit('select', item)"><strong>{{ item.title }}</strong><small>{{ item.stage }} · {{ item.product }}</small></button>

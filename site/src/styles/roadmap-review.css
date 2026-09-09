@@ -112,6 +112,9 @@
 .compact-toolbar .board-more > button { border-color: transparent; background: transparent; }
 .compact-view-settings { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; padding: .5rem 1rem 1rem; border-bottom: 1px solid var(--roadmap-glass-border); }
 .compact-view-settings label { display: grid; gap: .4rem; min-width: 0; font-size: .75rem; color: var(--roadmap-ink-muted); }
+.compact-view-settings .lane-order-setting { grid-column: 1 / -1; display: flex; align-items: center; gap: .65rem; min-height: 40px; cursor: pointer; color: var(--roadmap-ink); }
+.lane-order-setting input { width: 16px; height: 16px; accent-color: var(--color-accent-brand-default); }
+.lane-order-hint { grid-column: 1 / -1; margin: -.5rem 0 0; font-size: .7rem; line-height: 1.5; color: var(--roadmap-ink-muted); }
 .filter-horizons { border: 0; padding: 0 0 1.25rem; margin: 0 0 1.25rem; border-bottom: 1px solid var(--roadmap-glass-border); }
 .filter-horizons legend { margin-bottom: .65rem; font-size: .8rem; font-weight: 600; }
 .filter-horizons label { display: flex; align-items: center; gap: .65rem; min-height: 38px; font-size: .8125rem; cursor: pointer; }

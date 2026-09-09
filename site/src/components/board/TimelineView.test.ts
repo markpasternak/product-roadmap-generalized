@@ -32,3 +32,22 @@ describe('timeline interactions', () => {
     expect(w.find('option[value="owner"]').exists()).toBe(false);w.unmount();
   });
 });
+
+
+it.each(['product', 'owner', 'tag', 'stage'])('reverses %s groups while preserving their rows', async group => {
+  const b = { ...a, id: 'b', title: 'Another release', product: 'Other', owner: 'Zoe', tags: ['retention'], stage: 'Shaping' };
+  const c = { ...a, id: 'c', title: 'Later release', startDate: '2026-09-10' };
+  const items = [a, b, c];
+  const w = mount(TimelineView, { props: { items, settings: timelineSettings({ group, fit: true }) } });
+  const names = () => w.findAll('.timeline-group summary').map(summary => summary.text());
+  const rows = () => Object.fromEntries(w.findAll('.timeline-group').map(lane => [lane.get('summary').text(), lane.findAll('.timeline-label strong').map(label => label.text())]));
+  const before = names();
+  const beforeRows = rows();
+  await w.setProps({ reverseGroups: true });
+  expect(names()).toEqual([...before].reverse());
+  expect(rows()).toEqual(beforeRows);
+  expect(w.emitted('settings')).toBeUndefined();
+  await w.setProps({ reverseGroups: false });
+  expect(names()).toEqual(before);
+  w.unmount();
+});
