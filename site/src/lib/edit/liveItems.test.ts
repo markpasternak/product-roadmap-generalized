@@ -78,7 +78,7 @@ Faster shipping.
     expect(vm.themes).toEqual(['one-view']);
     expect(vm.oneliner).toBe('Ships fast.');
     expect(vm.outcome).toBe('Faster shipping.');
-    expect(vm.sections.map((s) => s.heading)).toEqual(['Why it matters', 'What ships']);
+    expect(vm.sections.map((s) => s.heading)).toEqual(['Why it matters', 'Scope']);
     expect(vm.sections.find((s) => s.heading === 'Why it matters')?.text).toBe('•  Because reasons');
     expect(vm.href).toBe('/item/TALK-1');
   });

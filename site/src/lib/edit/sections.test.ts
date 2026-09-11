@@ -102,10 +102,19 @@ describe('parseSections / serializeSections', () => {
 });
 
 describe('splitSpine / assembleBody', () => {
+  it.each(['Scope', 'What ships', 'What shipped'])('loads %s into the Scope field without changing stored copy', heading => {
+    const body = `## One-liner\nSummary\n\n## Why it matters\nReason\n\n## ${heading}\nThe work.\n`;
+    const spine = splitSpine(parseSections(body));
+    expect(CANONICAL_SECTIONS[2]).toBe('Scope');
+    expect(spine.canonical[2]).toEqual({ heading, body: 'The work.\n' });
+    expect(spine.optional).toEqual([]);
+    expect(assembleBody(spine.preamble, spine.canonical, spine.optional)).toBe(body);
+  });
+
   it('splits the real body into canonical (in canonical order) + optional (in file order)', () => {
     const { preamble, canonical, optional } = splitSpine(parseSections(REAL_BODY));
     expect(preamble).toBe('# Migrate off Supabase\n');
-    expect(canonical.map((s) => s.heading)).toEqual(CANONICAL_SECTIONS);
+    expect(canonical.map((s) => s.heading)).toEqual(['One-liner', 'Why it matters', 'What ships']);
     expect(canonical.map((s) => s.heading)).toEqual(['One-liner', 'Why it matters', 'What ships']);
     expect(optional.map((s) => s.heading)).toEqual(['Open questions', 'Links']);
   });
@@ -122,7 +131,7 @@ describe('splitSpine / assembleBody', () => {
     expect(canonical).toEqual([
       { heading: 'One-liner', body: '' },
       { heading: 'why it matters', body: 'Reasoning.\n' },
-      { heading: 'What ships', body: '' },
+      { heading: 'Scope', body: '' },
     ]);
     expect(optional).toEqual([{ heading: 'Links', body: '- a link\n' }]);
   });
@@ -136,7 +145,7 @@ describe('splitSpine / assembleBody', () => {
     const out = assembleBody(preamble, canonical, optional);
 
     // Canonical order is normalized...
-    expect(canonical.map((s) => s.heading)).toEqual(CANONICAL_SECTIONS);
+    expect(canonical.map((s) => s.heading)).toEqual(['One-liner', 'Why it matters', 'What ships']);
     // ...but no content is lost, and the optional section survives untouched.
     expect(out).toContain('## One-liner\nThe one-liner.\n');
     expect(out).toContain('## Why it matters\nReasoning.\n');
@@ -156,7 +165,6 @@ describe('splitSpine / assembleBody', () => {
       'In the codebase',
       'Resources',
       'Links',
-      'What shipped',
     ]);
   });
 
@@ -196,7 +204,7 @@ describe('splitSpine / assembleBody', () => {
     expect(reparsed.canonical).toHaveLength(3);
     expect(reparsed.canonical[0]).toEqual({ heading: 'One-liner', body: '' });
     expect(reparsed.canonical[1]).toEqual({ heading: 'why it matters', body: 'Reasoning.\n' });
-    expect(reparsed.canonical[2]).toEqual({ heading: 'What ships', body: '' });
+    expect(reparsed.canonical[2]).toEqual({ heading: 'Scope', body: '' });
   });
 
   it('round-trips a fully-filled real body unchanged (no empty sections to drop)', () => {

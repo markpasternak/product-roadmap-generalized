@@ -2,11 +2,17 @@
 import PlannedDates from './PlannedDates.vue';
 import RichMarkdown from '../markdown/RichMarkdown.vue';
 import ImageThumbnail from '../markdown/ImageThumbnail.vue';
+import { installItemImageViewer } from '../../lib/itemImageViewer';
+import { createItemViewPreference } from '../../lib/itemViewPreference';
+import { installItemToc } from '../../lib/itemToc';
+import '../../styles/item-toc.css';
+import '../../styles/image-viewer.css';
+import '../../styles/reading-toolbar.css';
 import { isImageResource } from '../../lib/resources';
 import { resourcePreviewURLs } from '../../lib/edit/resourceClient';
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { animate, type AnimationPlaybackControlsWithThen } from 'motion';
-import ProductMark from '../ui/ProductMark.vue';
+import { installItemHeader } from '../../lib/itemHeader';
 import { useClipboard } from '../../composables/useClipboard';
 import ConfirmAction from '../ui/ConfirmAction.vue';
 import Select from '../ui/Select.vue';
@@ -18,7 +24,6 @@ import {
   PhLink,
   PhCheck,
   PhUser,
-  PhSquaresFour,
   PhCalendarBlank,
   PhStack,
   PhTrash,
@@ -124,7 +129,7 @@ function onUndoDelete() {
   if (props.item) editStore.revertItem(props.item.id);
 }
 
-const CLIENT_SECTIONS = new Set(['Why it matters', 'What ships', 'What shipped']);
+const CLIENT_SECTIONS = new Set(['Why it matters', 'Scope', 'What ships', 'What shipped', 'Bottom line']);
 const visibleSections = computed(() => {
   const sections = props.item?.sections ?? [];
   return props.client ? sections.filter((s) => CLIENT_SECTIONS.has(s.heading)) : sections;
@@ -150,6 +155,16 @@ const decoratedLinks = computed(() =>
 );
 
 const panel = ref<HTMLElement>();
+const expanded = ref(false);
+const viewPreference = createItemViewPreference();
+onMounted(() => { expanded.value = viewPreference.read(); });
+function toggleExpanded() {
+  expanded.value = !expanded.value;
+  viewPreference.write(expanded.value);
+}
+let imageViewer: ReturnType<typeof installItemImageViewer> | null = null;
+let itemToc: ReturnType<typeof installItemToc> | null = null;
+let itemHeader: ReturnType<typeof installItemHeader> | null = null;
 let releaseFocus: (() => void) | null = null;
 
 function onKey(e: KeyboardEvent) {
@@ -326,6 +341,7 @@ function onPanelClickCapture(event: MouseEvent) {
 }
 
 function onPointerDown(event: PointerEvent) {
+  if ((event.target as HTMLElement).closest('dialog, [data-image-open], button, a, input, textarea, select')) return;
   if (!props.item || event.pointerType === 'mouse' || event.isPrimary === false || gesture) return;
   gestureEpoch += 1;
   swipeTransitionDisabled.value = false;
@@ -469,9 +485,20 @@ watch(
       document.addEventListener('keydown', onKey);
       if (!prev) {
         await nextTick();
-        if (panel.value) releaseFocus = trapFocus(panel.value, { initialFocus: () => panel.value?.querySelector<HTMLElement>('#drawer-title') });
+        if (panel.value) {
+          releaseFocus = trapFocus(panel.value, { initialFocus: () => panel.value?.querySelector<HTMLElement>('#drawer-title') });
+          imageViewer = installItemImageViewer(panel.value);
+          itemToc = installItemToc(panel.value);
+          itemHeader = installItemHeader(panel.value);
+        }
       }
     } else {
+      imageViewer?.destroy();
+      imageViewer = null;
+      itemToc?.destroy();
+      itemToc = null;
+      itemHeader?.destroy();
+      itemHeader = null;
       gestureEpoch += 1;
       resetPanelStyles();
       abandonGesture(true);
@@ -483,6 +510,9 @@ watch(
   { immediate: true },
 );
 onUnmounted(() => {
+  itemHeader?.destroy();
+  imageViewer?.destroy();
+  itemToc?.destroy();
   if (typeof document !== 'undefined') {
     gestureEpoch += 1;
     document.removeEventListener('keydown', onKey);
@@ -516,10 +546,14 @@ function tagFilterHref(token: string): string {
 // Copy a clean, shareable deep link to this item (drops any active filter params).
 const { copy, copied, copying, copyError, resetCopy } = useClipboard();
 function copyLink() {
-  if (props.item) void copy(new URL(props.item.href, location.origin).href);
+  if (!props.item) return;
+  const url = new URL(boardBase, location.origin);
+  url.searchParams.set('item', props.item.id);
+  void copy(url.href);
 }
 const scrollArea = ref<HTMLElement>();
 watch(() => props.item?.id, () => {
+  imageViewer?.close();
   resetCopy();
   if (scrollArea.value) scrollArea.value.scrollTop = 0;
 });
@@ -527,7 +561,7 @@ watch(() => props.item?.id, () => {
 
 <template>
   <Transition name="drawer">
-    <div v-if="item" class="fixed inset-0 z-50 flex items-start justify-center overflow-hidden px-3 py-3 sm:px-6 sm:py-6">
+    <div v-if="item" :class="{ 'detail-expanded': expanded }" class="fixed inset-0 z-50 flex items-start justify-center overflow-hidden px-3 py-3 sm:px-6 sm:py-6">
       <div class="drawer-scrim bg-surface-transparent-black-50 fixed inset-0" @click="emit('close')" />
       <aside
         ref="panel"
@@ -540,36 +574,49 @@ watch(() => props.item?.id, () => {
         @click.capture="onPanelClickCapture"
         @pointerdown="onPointerDown"
       >
-        <div class="shrink-0 flex items-center justify-between gap-4 px-4 py-2.5 sm:px-5">
-          <span class="text-single-sm-medium roadmap-title inline-flex items-center gap-2">
-            <span class="h-4 w-1 rounded-full bg-[color:var(--color-accent-brand-default)]" />
-            {{ client ? item.product : item.id }}
+        <div class="item-toolbar">
+          <span class="item-toolbar-title">
+            <span class="item-product-accent" />
+            <span class="item-toolbar-copy"><span class="item-header-product">{{ item.product }}</span><span class="item-header-title" data-header-title aria-hidden="true" :title="item.title">{{ item.title }}</span></span>
           </span>
-          <div class="flex items-center gap-2">
-            <template v-if="pos">
+          <div class="item-toolbar-controls">
+            <div v-if="pos" class="item-control-group" role="group" aria-label="Item navigation">
               <button
-                class="roadmap-action border-border-subtle-default bg-card/80 text-icons-subtle-default hover:text-text-primary-default grid size-10 place-items-center rounded-lg border disabled:opacity-30"
+                class="item-control"
                 aria-label="Previous item"
+                title="Previous item"
                 :disabled="pos.index === 0"
                 @click="emit('prev')"
               >
                 <PhCaretLeft :size="17" />
               </button>
-              <span class="text-single-sm-medium roadmap-title min-w-12 text-center tabular-nums">
+              <span class="item-control-count">
                 {{ pos.index + 1 }}/{{ pos.total }}
               </span>
               <button
-                class="roadmap-action border-[color:var(--color-accent-brand-default)] bg-card/80 text-[color:var(--color-accent-brand-default)] grid size-10 place-items-center rounded-lg border disabled:opacity-30"
+                class="item-control"
                 aria-label="Next item"
+                title="Next item"
                 :disabled="pos.index === pos.total - 1"
                 @click="emit('next')"
               >
                 <PhCaretRight :size="17" />
               </button>
-            </template>
+            </div>
+            <span v-if="pos" class="item-control-divider" aria-hidden="true" />
+            <button type="button" class="item-control" :disabled="copying" :aria-label="copied ? 'Item link copied' : 'Copy item link'" :title="copied ? 'Item link copied' : 'Copy item link'" @click="copyLink">
+              <PhCheck v-if="copied" :size="18" /><PhLink v-else :size="18" />
+            </button>
+            <button type="button" class="item-control" :aria-expanded="expanded" :aria-label="expanded ? 'Collapse item' : 'Expand item'" :title="expanded ? 'Collapse item' : 'Expand item'" @click="toggleExpanded">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path v-if="expanded" d="M4 9h5V4m6 0v5h5M4 15h5v5m6 0v-5h5" />
+                <path v-else d="M9 4H4v5m11-5h5v5M4 15v5h5m6 0h5v-5" />
+              </svg>
+            </button>
             <button
-              class="roadmap-action text-icons-primary-default hover:text-[color:var(--color-accent-brand-default)] grid size-10 place-items-center rounded-lg"
+              class="item-control item-close-control"
               aria-label="Close"
+              title="Close item"
               @click="emit('close')"
             >
               <PhX :size="21" />
@@ -577,20 +624,17 @@ watch(() => props.item?.id, () => {
           </div>
         </div>
 
-        <div ref="scrollArea" class="flex-1 overflow-y-auto">
+        <div ref="scrollArea" class="flex-1 overflow-y-auto" data-reading-scroll>
           <Transition :name="drawerItemTransitionName" mode="out-in">
-          <div :key="item.id" class="px-4 pb-5 sm:px-6 sm:pb-6">
-            <div class="grid items-start gap-3 lg:grid-cols-[46px_minmax(0,1fr)]">
-              <ProductMark :product="item.product" :size="42" />
+          <div :key="item.id" class="drawer-reading-content px-4 pb-5 sm:px-6 sm:pb-6" data-reading-layout>
+            <div data-reading-body>
+            <div>
               <div class="min-w-0">
-                <h2 id="drawer-title" tabindex="-1" aria-live="polite" class="roadmap-display roadmap-title text-[1.5rem] sm:text-[1.8rem]">
+                <h2 data-reading-title id="drawer-title" tabindex="-1" aria-live="polite" class="roadmap-display roadmap-title text-[1.75rem] sm:text-[2.1rem]">
                   {{ item.title }}
                 </h2>
                 <PlannedDates :start-date="item.startDate" :end-date="item.endDate" />
                 <p class="roadmap-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-                  <span v-if="!client" class="inline-flex items-center gap-2">
-                    <PhSquaresFour :size="17" /> {{ item.product }}
-                  </span>
                   <span class="inline-flex items-center gap-2">
                     <span class="h-4 w-1 rounded-full" :style="{ background: horizonDot[item.horizon as keyof typeof horizonDot] }" /> {{ item.horizon }}
                   </span>
@@ -627,10 +671,6 @@ watch(() => props.item?.id, () => {
                   >
                     Open full page <PhArrowSquareOut :size="18" />
                   </a>
-                  <button type="button" :class="actionBtn" :disabled="copying" @click="copyLink">
-                    <template v-if="copied"><PhCheck :size="18" class="text-icons-subtle-default" /> Copied</template>
-                    <template v-else><PhLink :size="18" class="text-icons-subtle-default" /> Copy link</template>
-                  </button>
                   <a
                     v-if="item.editUrl"
                     :href="item.editUrl"
@@ -766,7 +806,7 @@ watch(() => props.item?.id, () => {
                 class="item-reading-section"
               >
                 <div>
-                  <h3 class="roadmap-label">{{ s.heading }}</h3>
+                  <h3 class="roadmap-section-heading">{{ s.heading }}</h3>
                   <RichMarkdown v-if="s.markdown && !client" :markdown="s.markdown" :overrides="resourcePreviewURLs" class="mt-1.5" />
                   <p v-else class="mt-1.5 whitespace-pre-line text-base leading-relaxed text-text-primary-default">
                     {{ s.text }}
@@ -826,7 +866,7 @@ watch(() => props.item?.id, () => {
             </div>
 
             <div v-if="decoratedLinks.length && !client" class="mt-5">
-              <h3 :class="label">Related resources</h3>
+              <h3 :class="label" data-toc-heading>Related resources</h3>
               <div class="mt-3 grid gap-2">
                 <a
                   v-for="ln in decoratedLinks"
@@ -836,7 +876,7 @@ watch(() => props.item?.id, () => {
                   :rel="ln.kind === 'external' || ln.kind === 'presentation' ? 'noopener' : undefined"
                     class="roadmap-panel roadmap-action flex items-center gap-3 rounded-xl px-3 py-2.5"
                 >
-                  <ImageThumbnail v-if="ln.image || isImageResource(ln.target)" :href="ln.target" />
+                  <ImageThumbnail v-if="ln.image || isImageResource(ln.target)" :href="ln.target" :alt="ln.title || ln.label" />
                   <span v-else
                     class="grid size-10 shrink-0 place-items-center rounded-lg"
                     :style="{ background: toneSurfaceStrong[ln.src.tone], color: toneText[ln.src.tone] }"
@@ -855,6 +895,8 @@ watch(() => props.item?.id, () => {
                 </a>
               </div>
             </div>
+            </div>
+            <nav class="item-toc" data-item-toc aria-label="On this page" hidden></nav>
           </div>
           </Transition>
         </div>
@@ -868,6 +910,11 @@ watch(() => props.item?.id, () => {
 .drawer-panel {
   touch-action: pan-y;
 }
+.detail-expanded { padding: 0; }
+.detail-expanded > .drawer-panel { width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+.drawer-reading-content { padding-top: 12px; }
+.detail-expanded .drawer-reading-content { width: 100%; max-width: 1200px; margin-inline: auto; }
+.detail-expanded :deep(.item-reading-section p) { max-width: 75ch; }
 .drawer-enter-active,
 .drawer-leave-active {
   transition: opacity 0.2s ease;

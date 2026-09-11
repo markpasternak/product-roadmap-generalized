@@ -93,8 +93,10 @@ function onOutsidePointer(event: PointerEvent) {
 }
 function onFocusOut(event: FocusEvent) {
   // Replacing the picker with its name form briefly blurs the removed button.
-  // Only dismiss when focus moves to a known element outside this control.
-  if (open.value && event.relatedTarget instanceof Node && !root.value?.contains(event.relatedTarget)) void close(false);
+  // Clicking a label can also move focus to a page ancestor before its checkbox is activated.
+  // Only dismiss for a concrete outside focus target; outside pointers are handled above.
+  if (open.value && event.relatedTarget instanceof Node && !event.relatedTarget.contains(root.value ?? null)
+    && !root.value?.contains(event.relatedTarget)) void close(false);
 }
 async function positionPanel() {
   if (!open.value) return;

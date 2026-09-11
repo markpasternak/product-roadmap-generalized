@@ -17,6 +17,8 @@ import { IS_PUBLIC } from '../audience';
 import { buildSearchText, type ItemVM } from '../filters';
 import { normalizeItemHistory } from '../itemHistory';
 import type { ApiItem } from './client';
+import { STORY_HEADINGS, sectionLabel } from '../sectionHeadings';
+import { resourcePlacements } from '../resources';
 
 const REPO_EDIT_BASE = 'https://github.com/markpasternak/product-roadmap-generalized/edit/main';
 
@@ -47,9 +49,9 @@ export function itemsFromApi(apiItems: ApiItem[], base: string): ItemVM[] {
     const history = normalizeItemHistory(item.git);
     const body = item.body ?? '';
     const { tags, themes } = parseTags(fm.tags);
-    const sections = ['Why it matters', 'What ships', 'What shipped']
-      .map((heading) => ({ heading, text: sectionBlock(body, heading), markdown: extractSection(body, heading) }))
-      .filter((s) => s.text);
+    const sections = STORY_HEADINGS
+      .map((heading) => ({ heading: sectionLabel(heading), text: sectionBlock(body, heading), markdown: extractSection(body, heading) }))
+      .filter((s) => s.text || resourcePlacements(s.markdown).some(placement => placement.image));
     const title = fm.title ?? '';
     const oneliner = sectionText(body, 'One-liner');
     const editUrl = !IS_PUBLIC && item.path ? `${REPO_EDIT_BASE}/${item.path}` : null;

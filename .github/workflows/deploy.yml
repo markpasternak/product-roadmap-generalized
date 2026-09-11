@@ -18,6 +18,7 @@ on:
   push:
     branches: [main]
     paths:
+      - '.github/workflows/deploy.yml'
       - 'site/**'
       - 'content/**'
       - '!content/sources/**'   # raw tooling inputs, not rendered by the site
@@ -57,7 +58,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: site/node_modules
-          key: node-modules-${{ runner.os }}-node22-${{ hashFiles('site/package-lock.json') }}
+          key: node-modules-${{ runner.os }}-node24-${{ hashFiles('site/package-lock.json') }}
 
       - name: Install dependencies (skipped on cache hit)
         if: steps.node-modules.outputs.cache-hit != 'true'

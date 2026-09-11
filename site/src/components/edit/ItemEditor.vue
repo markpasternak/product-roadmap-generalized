@@ -46,6 +46,7 @@ export interface ItemEditorItem extends Partial<ItemHistory> {
 const props = withDefaults(
   defineProps<{
     item: ItemEditorItem;
+    editorLogin?: string;
     /** Raw markdown body — bound into the SectionEditor. */
     body: string;
     /** True when the item hasn't been persisted yet (hides the Delete action). No longer
@@ -592,7 +593,7 @@ const historyRows = computed(() => [
         </div>
 
         <div class="min-h-[420px] min-w-0 overflow-x-auto lg:min-h-0">
-          <ResourceEditor :item-id="item.id" v-model:body="bodyModel" :visibility="visibilityModel" v-slot="resources"><SectionEditor v-model="bodyModel" managed-resources :managed-resource-hrefs="resources.managedResourceHrefs" /></ResourceEditor>
+          <ResourceEditor :item-id="item.id" :editor-login="editorLogin" v-model:body="bodyModel" :visibility="visibilityModel" v-slot="resources"><SectionEditor v-model="bodyModel" managed-resources :managed-resource-hrefs="resources.managedResourceHrefs" /></ResourceEditor>
         </div>
       </div>
     </div>

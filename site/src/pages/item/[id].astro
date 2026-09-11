@@ -1,5 +1,6 @@
 ---
 import { renderRichMarkdown } from '../../lib/richMarkdown';
+import { STORY_HEADINGS, sectionLabel } from '../../lib/sectionHeadings';
 import Base from '../../layouts/Base.astro';
 import { getCollection } from 'astro:content';
 import Breadcrumb from '../../components/ui/Breadcrumb.vue';
@@ -76,12 +77,12 @@ const historyTitle = (at: string, by: string, subject: string): string =>
 // The board card/drawer shows the fixed sections; the full page renders every
 // section the file has, in file order. Public builds keep the curated set only
 // (deeper detail like "Current behavior (in repo)" stays internal).
-const PUBLIC_SECTIONS = new Set(['Why it matters', 'Target outcome', 'What ships', "Who it's for"]);
+const PUBLIC_SECTIONS = new Set([...STORY_HEADINGS, 'Target outcome', "Who it's for"]);
 const HIDDEN_SECTIONS = new Set(['One-liner', 'Links', 'Resources']);
 const storySections = parseSections(body)
   .filter((s) => !HIDDEN_SECTIONS.has(s.heading))
   .filter((s) => !IS_PUBLIC || PUBLIC_SECTIONS.has(s.heading))
-  .map((s) => ({ heading: s.heading, html: renderRichMarkdown(s.raw, base) }));
+  .map((s) => ({ heading: sectionLabel(s.heading), html: renderRichMarkdown(s.raw, base) }));
 
 const docColls = await getVisibleDocCollections();
 const docTitleByTarget = new Map<string, string>();
@@ -211,7 +212,7 @@ function tagFilterHref(token: string): string {
               return (
                 <section class="item-reading-section border-b border-border-subtle-default pb-5 last:border-b-0 last:pb-0">
                   <div class="min-w-0">
-                    <h2 class="font-display roadmap-title text-[1.35rem] leading-tight">{s.heading}</h2>
+                    <h2 class="roadmap-section-heading">{s.heading}</h2>
                     <div class="resource-markdown item-prose mt-1.5 text-base leading-relaxed text-text-primary-default" set:html={s.html} />
                   </div>
                 </section>
@@ -313,3 +314,15 @@ function tagFilterHref(token: string): string {
     </div>
   </main>
 </Base>
+
+<script>
+  import { installItemImageViewer } from '../../lib/itemImageViewer';
+  import '../../styles/image-viewer.css';
+  let viewer: ReturnType<typeof installItemImageViewer> | undefined;
+  document.addEventListener('astro:page-load', () => {
+    viewer?.destroy();
+    const root = document.querySelector<HTMLElement>('[data-item-page]');
+    if (root) viewer = installItemImageViewer(root);
+  });
+  document.addEventListener('astro:before-swap', () => { viewer?.destroy(); viewer = undefined; });
+</script>

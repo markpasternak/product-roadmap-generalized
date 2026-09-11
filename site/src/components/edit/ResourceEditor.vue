@@ -31,7 +31,7 @@ import {
   type ResourceUpload,
   isImageResource,
 } from "../../lib/resources";
-const props = defineProps<{ body: string; visibility: string; itemId?: string }>();
+const props = defineProps<{ body: string; visibility: string; itemId?: string; editorLogin?: string }>();
 const emit = defineEmits<{ "update:body": [body: string] }>();
 const store = useEditStore();
 const locked = computed(() => !!store.snapshot().requestPayload);
@@ -143,7 +143,12 @@ function imageHref(asset: typeof allAssets.value[number]) {
 const imageChoices = computed(() => [...allAssets.value
   .filter(a => !a.remove && shownRevision(a).original.mediaType.startsWith('image/') && (props.visibility !== 'Public' || a.visibility === 'Public'))
   .filter(a => resourcePreviewURLs.value[repositoryAssetPath(imageHref(a))!] !== '')
-  .map(a => ({ href: imageHref(a), name: a.name, attached: !!a.placements.length })),
+  .map(a => ({
+    href: imageHref(a), name: a.name, attached: !!a.placements.length,
+    filename: shownRevision(a).original.path.split('/').pop(),
+    uploadedBy: shownRevision(a).createdBy,
+    mine: !!props.editorLogin && a.revisions.some(revision => revision.createdBy.toLowerCase() === props.editorLogin!.toLowerCase()),
+  })),
   ...placements.value.filter(p => /^https?:\/\//i.test(p.href) && (p.image || isImageResource(p.href)))
     .map(p => ({ href: p.href, name: p.label || 'Image', attached: true }))]
   .filter((image, index, all) => all.findIndex(i => i.href === image.href) === index)
@@ -423,7 +428,7 @@ async function uploadPickerImage(file: File, signal: AbortSignal, onProgress: (p
     if (signal.aborted) throw new Error('Upload canceled.');
     const uploaded = await runUpload(active);
     if (!uploaded) throw new Error(active.error || 'Upload canceled.');
-    return { href: markdownAssetPath(uploaded.repoPath), name: uploaded.name, attached: true };
+    return { href: markdownAssetPath(uploaded.repoPath), name: uploaded.name, filename: file.name, uploadedBy: uploaded.revision.createdBy, mine: true, attached: true };
   } finally {
     signal.removeEventListener('abort', cancel);
     stopProgress();

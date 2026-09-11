@@ -10,44 +10,61 @@ const emit = defineEmits<{ insert: [markdown: string]; cancel: [] }>();
 const source = ref<"resources" | "url">(
   props.images.length || props.uploadImage ? "resources" : "url",
 );
-const selected = ref(""),
-  url = ref(""),
+const selected = ref<string[]>([]);
+const uploadedImages = ref<ImageChoice[]>([]);
+const libraryScope = ref<'personal' | 'shared'>('personal');
+const url = ref(""),
   alt = ref(""),
   search = ref(""),
   error = ref("");
 const uploadInput = ref<HTMLInputElement>();
 const uploading = ref(false), progress = ref(0);
+const uploadName = ref(''), uploadIndex = ref(0), uploadTotal = ref(0);
 let uploadController: AbortController | undefined;
-async function upload(file?: File) {
-  if (!file || !props.uploadImage || uploading.value) return;
+async function upload(files: File[]) {
+  if (!files.length || !props.uploadImage || uploading.value) return;
   error.value = '';
   uploading.value = true;
   progress.value = 0;
   const controller = new AbortController();
   uploadController = controller;
+  uploadTotal.value = files.length;
+  const failures: string[] = [];
   try {
-    const image = await props.uploadImage(file, controller.signal, p => { progress.value = p; });
-    if (controller.signal.aborted) return;
-    choose(image);
-    source.value = 'resources';
-    search.value = '';
-  } catch (e) {
-    if (!controller.signal.aborted) error.value = (e as Error).message;
+    for (const [index, file] of files.entries()) {
+      if (controller.signal.aborted) break;
+      uploadIndex.value = index + 1;
+      uploadName.value = file.name;
+      progress.value = 0;
+      try {
+        const image = await props.uploadImage(file, controller.signal, p => { progress.value = p; });
+        if (controller.signal.aborted) break;
+        uploadedImages.value.push({ ...image, filename: file.name, mine: true });
+        if (!selected.value.includes(image.href)) choose(image);
+        source.value = 'resources';
+        libraryScope.value = 'personal';
+        search.value = '';
+      } catch (e) {
+        if (controller.signal.aborted) break;
+        failures.push(`${file.name}: ${(e as Error).message}`);
+      }
+    }
+    if (!controller.signal.aborted) error.value = failures.join('\n');
   } finally { uploading.value = false; }
 }
 function close() { uploadController?.abort(); emit('cancel'); }
 const panel = ref<HTMLElement>();
-const choices = computed(() =>
-  props.images.filter((i) =>
-    i.name.toLowerCase().includes(search.value.toLowerCase()),
-  ),
-);
+const availableImages = computed(() => [...new Map([...props.images, ...uploadedImages.value].map(image => [image.href, image])).values()]);
+const choices = computed(() => availableImages.value
+  .filter(image => libraryScope.value === 'shared' ? !image.attached && !image.mine : image.attached || image.mine)
+  .filter(image => [image.name, image.filename].some(value => value?.toLowerCase().includes(search.value.trim().toLowerCase()))));
+const selectedImages = computed(() => selected.value.map(href => availableImages.value.find(image => image.href === href)).filter((image): image is ImageChoice => !!image));
 const href = computed(() =>
-  source.value === "resources" ? selected.value : url.value.trim(),
+  source.value === "resources" ? selected.value[0] ?? '' : url.value.trim(),
 );
 function choose(image: ImageChoice) {
-  selected.value = image.href;
-  alt.value = image.name;
+  selected.value = selected.value.includes(image.href) ? selected.value.filter(href => href !== image.href) : [...selected.value, image.href];
+  if (selected.value.length === 1) alt.value = availableImages.value.find(value => value.href === selected.value[0])?.name ?? image.name;
   error.value = "";
 }
 function insert() {
@@ -62,8 +79,12 @@ function insert() {
       error.value = "Enter a complete https:// or http:// image URL.";
       return;
     }
-  } else if (!props.images.some((i) => i.href === target)) {
-    error.value = "Choose an image resource.";
+  } else {
+    if (!selectedImages.value.length || selectedImages.value.length !== selected.value.length) {
+      error.value = "Choose an image resource.";
+      return;
+    }
+    emit('insert', selectedImages.value.map(image => `![${markdownLabel(selectedImages.value.length === 1 ? alt.value.trim() : image.name)}](${image.href})`).join('\n\n'));
     return;
   }
   emit("insert", `![${markdownLabel(alt.value.trim())}](${target})`);
@@ -101,7 +122,7 @@ onUnmounted(() => {
         <header>
           <div>
             <h2 class="font-display">Insert image</h2>
-            <p>Choose an image, upload one, or use an image URL.</p>
+            <p>Select images, upload several at once, or use an image URL.</p>
           </div>
           <button
             type="button"
@@ -120,7 +141,7 @@ onUnmounted(() => {
               error = '';
             "
           >
-            Resources <span>{{ images.length }}</span>
+            Resources <span>{{ availableImages.length }}</span>
           </button>
           <button
             type="button"
@@ -134,21 +155,26 @@ onUnmounted(() => {
           </button>
         </div>
         <div v-if="uploadImage" class="image-upload">
-          <input ref="uploadInput" type="file" accept="image/*" hidden @change="upload(($event.target as HTMLInputElement).files?.[0]); ($event.target as HTMLInputElement).value = ''" />
-          <button type="button" :disabled="uploading" @click="uploadInput?.click()">Upload image</button>
+          <input ref="uploadInput" type="file" accept="image/*" multiple hidden @change="upload(Array.from(($event.target as HTMLInputElement).files ?? [])); ($event.target as HTMLInputElement).value = ''" />
+          <button type="button" :disabled="uploading" @click="uploadInput?.click()">Upload images</button>
           <small v-if="!uploading">Also saved to this item’s resources.</small>
-          <span v-else role="status">{{ progress === 100 ? 'Processing image…' : `Uploading ${progress}%…` }}</span>
+          <span v-else role="status">{{ uploadIndex }} of {{ uploadTotal }} · {{ uploadName }} · {{ progress === 100 ? 'Processing…' : `${progress}%` }}</span>
         </div>
         <form @submit.prevent="insert">
           <template v-if="source === 'resources'">
-            <label v-if="images.length > 6"
-              >Find an image<input
+            <div class="image-library-switch" aria-label="Image library">
+              <button type="button" :aria-pressed="libraryScope === 'personal'" @click="libraryScope = 'personal'">This item &amp; your uploads</button>
+              <button type="button" :aria-pressed="libraryScope === 'shared'" @click="libraryScope = 'shared'">Shared library</button>
+            </div>
+            <label
+              >Filter by name<input
                 v-model="search"
                 type="search"
-                placeholder="Search resources…"
+                placeholder="Type an image name or filename…"
             /></label>
+            <div v-if="search" class="image-filter-result"><span role="status">{{ choices.length }} {{ choices.length === 1 ? 'image' : 'images' }} found</span><button type="button" @click="search = ''">Clear filter</button></div>
             <div
-              v-if="images.length"
+              v-if="availableImages.length"
               class="image-choice-grid"
               aria-label="Image resources"
             >
@@ -157,17 +183,17 @@ onUnmounted(() => {
                 :key="image.href"
                 type="button"
                 class="image-choice"
-                :aria-pressed="selected === image.href"
+                :aria-pressed="selected.includes(image.href)"
+                :title="image.filename || image.name"
                 @click="choose(image)"
               >
                 <ImageThumbnail :href="image.href" authenticated /><strong>{{
                   image.name
                 }}</strong
-                ><small>{{
-                  image.attached ? "Attached to this item" : "Library"
-                }}</small>
+                ><small v-if="image.filename && image.filename !== image.name" class="image-filename">{{ image.filename }}</small>
+                <small>{{ image.attached ? 'Attached to this item' : image.mine ? 'Your upload' : image.uploadedBy ? `Uploaded by ${image.uploadedBy}` : 'Shared library' }}</small>
               </button>
-              <p v-if="!choices.length">No images match your search.</p>
+              <p v-if="!choices.length">{{ search ? 'No images match your search.' : libraryScope === 'personal' ? 'No images here yet. Upload images or browse the shared library.' : 'No other shared images.' }}</p>
             </div>
             <p v-else class="image-empty">
               No image resources yet. Upload an image or use an image URL.
@@ -184,7 +210,7 @@ onUnmounted(() => {
               that address.</small
             ></label
           >
-          <label
+          <label v-if="source === 'url' || selectedImages.length <= 1"
             >Alt text<input
               v-model="alt"
               placeholder="Describe what the image shows"
@@ -196,9 +222,7 @@ onUnmounted(() => {
           <p v-if="error" role="alert" class="image-picker-error">
             {{ error }}
           </p>
-          <p class="image-syntax">
-            Inserts <code>![alt text](image-url)</code>
-          </p>
+          <p v-if="source === 'resources' && selectedImages.length > 1">{{ selectedImages.length }} images selected. Image names will be used as alt text.</p>
           <footer>
             <button type="button" @click="close()">Cancel</button
             ><button
@@ -206,7 +230,7 @@ onUnmounted(() => {
               class="image-insert-action"
               :disabled="!href || uploading"
             >
-              Insert image
+              {{ source === 'resources' && selectedImages.length > 1 ? `Insert ${selectedImages.length} images` : 'Insert image' }}
             </button>
           </footer>
         </form>
@@ -215,7 +239,10 @@ onUnmounted(() => {
   </Teleport>
 </template>
 <style scoped>
+.image-filter-result { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
 .image-upload { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin: 0 0 1rem; }
+.image-library-switch { display:flex; gap:8px; flex-wrap:wrap; }
+.image-library-switch [aria-pressed="true"] { border-color:var(--color-accent-brand-default); background:var(--color-surface-transparent-orange-25); }
 .image-picker-overlay {
   position: fixed;
   inset: 0;
@@ -337,14 +364,13 @@ input {
   border: 0;
 }
 .image-choice strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-size: 13px;
   font-weight: 500;
 }
 .image-choice small {
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 .image-empty {
   padding: 20px;
@@ -356,6 +382,7 @@ input {
 }
 .image-picker-error {
   color: var(--color-feedback-error-text-independent-default);
+  white-space: pre-line;
 }
 footer {
   justify-content: flex-end;

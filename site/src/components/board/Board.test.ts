@@ -185,6 +185,16 @@ describe('Board — product navigation and view options', () => {
     expect(w.get('[aria-controls="board-more-actions"]').text()).toContain('More');
   });
 
+  it('opens a clean completed-item link with its lane and item navigation available', async () => {
+    meMock.mockResolvedValue({ editor: false, login: '' });
+    window.history.replaceState(null, '', '/?item=CM-2');
+    const w = await mountBoard([item(), item({ id: 'CM-2', horizon: 'Completed' })]);
+    const vm = w.vm as unknown as { selected: ItemVM | null; horizons: string[] };
+    expect(vm.selected?.id).toBe('CM-2');
+    expect(vm.horizons).toContain('Completed');
+    expect(w.find('[aria-label="Previous item"]').exists()).toBe(true);
+  });
+
   it('keeps the layout, product and visible horizons when clearing additional filters', async () => {
     const w = await mountBoard();
     const vm = w.vm as unknown as { filters: ReturnType<typeof import('../../lib/filters').emptyFilters>; horizons: string[] };
@@ -803,6 +813,24 @@ describe('Board — durable-draft warning (U6/R7)', () => {
 });
 
 describe('Board — never show the read-only drawer in edit mode (fix #5)', () => {
+  it('restores the reading size and retains an explicit change across closing and opening another item', async () => {
+    localStorage.setItem('rm-item-reading-mode', 'expanded');
+    const w = await mountBoard([item(), item({ id: 'CM-2', title: 'Another item' })]);
+    const vm = w.vm as unknown as { selected: ItemVM | null };
+    vm.selected = item();
+    await flushPromises();
+    expect(w.find('.detail-expanded').exists()).toBe(true);
+    await w.get('button[aria-label="Collapse item"]').trigger('click');
+    expect(localStorage.getItem('rm-item-reading-mode')).toBe('compact');
+    await w.get('button[aria-label="Expand item"]').trigger('click');
+    vm.selected = null;
+    await flushPromises();
+    expect(localStorage.getItem('rm-item-reading-mode')).toBe('expanded');
+    vm.selected = item({ id: 'CM-2', title: 'Another item' });
+    await flushPromises();
+    expect(w.find('.detail-expanded').exists()).toBe(true);
+  });
+
   it('closes an open drawer and opens the full editor once edit mode turns on', async () => {
     const w = await mountBoard();
     const vm = w.vm as unknown as { selected: ItemVM | null; editingId: string | null; editMode: boolean };

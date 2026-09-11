@@ -1,0 +1,25 @@
+.item-image-viewer {
+  position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none;
+  margin: 0; padding: 0; border: 0; background: #151518; color: #f7f7fa;
+  font: 14px/1.4 Inter, system-ui, sans-serif;
+}
+.item-image-viewer[open] { display: flex; flex-direction: column; }
+.item-image-viewer::backdrop { background: #151518; }
+.image-viewer-toolbar { display: flex; flex-wrap: wrap; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 6px 16px; padding: 6px 12px; border-bottom: 1px solid #ffffff18; background: #1d1d20; }
+.image-viewer-toolbar > span { min-width: 0; flex: 1 1 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #d4d4d8; }
+.image-viewer-toolbar nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+.image-control-group { display: flex; align-items: center; gap: 0; border-radius: 6px; background: #ffffff08; }
+.image-viewer-toolbar button { display: inline-grid; place-items: center; font: inherit; width: 36px; height: 36px; padding: 0; color: #e4e4e7; background: transparent; border: 0; border-radius: 6px; cursor: pointer; transition: background-color 120ms ease; }
+.image-viewer-toolbar button svg { display: block; width: 18px; height: 18px; fill: none; }
+.image-viewer-toolbar [data-image-fit] { width: 48px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.image-viewer-toolbar [data-image-count] { min-width: 44px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; color: #a1a1aa; }
+@media (hover: hover) { .image-viewer-toolbar button:hover:not(:disabled) { background: #ffffff16; } }
+.image-viewer-toolbar button:disabled { opacity: .35; cursor: default; }
+.image-viewer-toolbar button:focus-visible, .image-viewer-viewport:focus-visible { outline: 2px solid #b1c6ff; outline-offset: -3px; }
+.image-viewer-viewport { flex: 1; min-height: 0; overflow: auto; padding: 8px; display: flex; align-items: safe center; justify-content: safe center; }
+.image-viewer-viewport > img { flex: none; display: block; height: auto; max-width: none; max-height: none; margin: auto; border-radius: 3px; }
+.image-viewer-viewport > img[hidden], .image-viewer-viewport > p[hidden] { display: none; }
+[data-image-open] { cursor: zoom-in; }
+[data-image-open]:focus-visible { outline: 2px solid var(--color-accent-brand-default, #7151a5); outline-offset: 3px; }
+@media (pointer: coarse) { .image-viewer-toolbar button { width: 44px; height: 44px; } }
+@media (max-width: 600px) { .image-viewer-toolbar > span { flex-basis: 100%; } .image-viewer-toolbar nav { gap: 6px; } }

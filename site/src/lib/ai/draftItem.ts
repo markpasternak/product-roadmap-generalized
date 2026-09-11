@@ -41,7 +41,7 @@ have real content for (skip a section entirely rather than leaving it a placehol
    ## One-liner
    ## Why it matters
    ## Target outcome
-   ## What ships
+   ## Scope
    ## Who it's for
    ## Acceptance criteria
    ## Open questions

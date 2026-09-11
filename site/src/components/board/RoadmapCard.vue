@@ -179,6 +179,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
         <h3
           v-if="!renaming"
           data-test="card-title"
+          :data-title-tooltip="item.title"
           class="text-[15px] font-semibold leading-snug text-text-primary-default pr-8"
           :class="pending === 'deleted' ? 'line-through opacity-70' : ''"
           @click="onTitleClick"

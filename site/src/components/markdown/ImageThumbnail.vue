@@ -6,7 +6,7 @@ import {
   loadImagePreview,
 } from "../../lib/edit/resourceClient";
 
-const props = defineProps<{ href: string; authenticated?: boolean }>();
+const props = defineProps<{ href: string; authenticated?: boolean; alt?: string }>();
 const failed = ref(false);
 const src = computed(() => {
   const path = repositoryAssetPath(props.href);
@@ -34,7 +34,7 @@ async function onError() {
     <img
       v-if="src && !failed"
       :src="src"
-      alt=""
+      :alt="alt ?? ''"
       loading="lazy"
       decoding="async"
       referrerpolicy="no-referrer"

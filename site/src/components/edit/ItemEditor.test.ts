@@ -86,7 +86,7 @@ describe('ItemEditor', () => {
       'Move off Supabase with no feature loss.',
     );
     const sectionLabels = w.findAll('[data-test="spine-label"]').map((l) => l.text());
-    expect(sectionLabels).toEqual(['One-liner', 'Why it matters', 'What ships']);
+    expect(sectionLabels).toEqual(['One-liner', 'Why it matters', 'Scope']);
   });
 
   it('changing a Select (horizon) emits field with the new value', async () => {

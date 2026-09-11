@@ -1,5 +1,6 @@
 import type { ItemVM } from "../filters";
 import type { ProjectedItem } from "./project";
+import { isStoryHeading } from '../sectionHeadings';
 import {
   repositoryAssetPath,
   resourceHref,
@@ -13,6 +14,7 @@ export type ShareResourceChoice = {
   href: string;
   repoPath: string | null;
   image?: boolean;
+  inline?: boolean;
 };
 export type SharedResource = {
   label: string;
@@ -21,20 +23,22 @@ export type SharedResource = {
   bytes?: number;
   sha256?: string;
   image?: boolean;
+  inline?: boolean;
 };
 export function shareResourceChoices(items: ItemVM[]): ShareResourceChoice[] {
   const out: ShareResourceChoice[] = [];
   for (const item of items) {
     const links = [
       ...item.links.map((l) => ({ href: l.target, label: l.title || l.label, image: l.image || isImageResource(l.target) })),
-      ...item.sections.flatMap((s) => resourcePlacements(s.markdown ?? "")),
+      ...item.sections.flatMap((s) => resourcePlacements(s.markdown ?? "").map(p => ({ ...p, inline: p.image && isStoryHeading(s.heading) }))),
     ];
     for (const link of links) {
       const repoPath = repositoryAssetPath(link.href);
       if (!repoPath && !/^https?:\/\//i.test(link.href)) continue;
       const key = `${item.id}:${repoPath ?? link.href}`;
       const existing = out.find(r => r.key === key);
-      if (existing) { if (link.image) existing.image = true; continue; }
+      const inline = 'inline' in link && link.inline === true;
+      if (existing) { if (link.image) existing.image = true; if (inline) existing.inline = true; continue; }
       out.push({
         key,
         itemId: item.id,
@@ -42,6 +46,7 @@ export function shareResourceChoices(items: ItemVM[]): ShareResourceChoice[] {
         href: link.href,
         repoPath,
         ...(link.image ? { image: true } : {}),
+        ...(inline ? { inline: true } : {}),
       });
     }
   }
@@ -53,7 +58,7 @@ const dataURL = (bytes: Uint8Array, mime: string) => {
     raw += String.fromCharCode(...bytes.subarray(i, i + 8192));
   return `data:${mime};base64,${btoa(raw)}`;
 };
-/** Resolve only explicitly selected resources, verify originals, then freeze their bytes. */
+/** Inline images travel with the text. Other resources remain opt-in. */
 export async function prepareShareResources(
   items: ProjectedItem[],
   selected: ShareResourceChoice[],
@@ -64,9 +69,20 @@ export async function prepareShareResources(
     resources = new Map<string, SharedResource[]>();
   let catalog: any = null,
     total = 0;
-  for (const choice of selected) {
+  const choices = new Map(selected.filter(choice => items.some(item => item.id === choice.itemId)).map(choice => [choice.key, choice]));
+  for (const item of items) {
+    for (const section of item.sections ?? []) for (const block of section.blocks ?? []) {
+      if (!('image' in block)) continue;
+      const { href, label } = block.image;
+      const repoPath = repositoryAssetPath(href);
+      const key = `${item.id}:${repoPath ?? href}`;
+      choices.set(key, { key, itemId: item.id, href, label, repoPath, image: true, inline: true });
+    }
+  }
+  const resolved = new Map<string, SharedResource>();
+  for (const choice of choices.values()) {
     if (!items.some((i) => i.id === choice.itemId)) continue;
-    let resource: SharedResource = { label: choice.label, href: choice.href, ...(choice.image ? { image: true } : {}) };
+    let resource: SharedResource = { label: choice.label, href: choice.href, ...(choice.image ? { image: true } : {}), ...(choice.inline ? { inline: true } : {}) };
     if (choice.repoPath) {
       if (!catalog) {
         const res = await fetch(`${base}resources.json`, { cache: "no-store" });
@@ -112,6 +128,7 @@ export async function prepareShareResources(
         files[dst] = bytes;
       }
       resource = {
+        ...resource,
         label: choice.label,
         href: preview ? dataURL(bytes, f.mediaType) : dst,
         mediaType: f.mediaType,
@@ -120,6 +137,7 @@ export async function prepareShareResources(
       };
     } else if (!/^https?:\/\//i.test(choice.href))
       throw new Error("Unsupported resource link");
+    resolved.set(choice.key, resource);
     resources.set(choice.itemId, [
       ...(resources.get(choice.itemId) ?? []),
       resource,
@@ -128,6 +146,15 @@ export async function prepareShareResources(
   return {
     items: items.map((i) => ({
       ...i,
+      ...(i.sections ? { sections: i.sections.map(section => ({
+        ...section,
+        ...(section.blocks ? { blocks: section.blocks.map(block => {
+          if (!('image' in block)) return block;
+          const resource = resolved.get(`${i.id}:${repositoryAssetPath(block.image.href) ?? block.image.href}`);
+          if (!resource) throw new Error(`Could not include ${block.image.label}.`);
+          return { image: { href: resource.href, label: block.image.label } };
+        }) } : {}),
+      })) } : {}),
       ...(resources.has(i.id) ? { resources: resources.get(i.id) } : {}),
     })),
     files,

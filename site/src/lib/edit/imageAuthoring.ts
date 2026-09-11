@@ -9,4 +9,7 @@ export interface ImageChoice {
   href: string;
   name: string;
   attached: boolean;
+  filename?: string;
+  uploadedBy?: string;
+  mine?: boolean;
 }

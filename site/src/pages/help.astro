@@ -240,8 +240,13 @@ const TOC = [
 <p>Each item has one <b>Resources</b> section beneath the write-up. Choose <b>Add resource</b> there
         to upload a file, paste a link, or find an existing file or source document.</p>
       <p>To place an image within your writing, use the <b>image button in that text's toolbar</b>.
-        Choose an existing image, upload one, or paste an external image URL. Add descriptive alt text and insert
-        it at the cursor. You can also paste images into the editor. Image resources show thumbnail previews.</p>
+        Select existing images, upload several at once, or paste an external image URL. The picker starts with this
+        item's images and your uploads; open <b>Shared library</b> to reuse other people's files. Filenames appear
+        below the thumbnails. Use <b>Filter by name</b> to find an image by its name or filename within the selected library.
+        Filtering keeps your selections. Add descriptive alt text and insert at the cursor. You can also paste images into the editor.</p>
+      <p>Click an image in an initiative to open a large viewer. Use <b>Zoom in</b>, <b>Zoom out</b> and <b>Fit</b>,
+        and scroll to inspect a zoomed image. Previous and next show only images from that initiative, in reading order.
+        Escape closes the image and returns to the initiative.</p>
       <p>Images use standard Markdown: <code>![alt text](image-url)</code>.
         They render in the editor preview and published write-up. Attaching a resource and placing it inline are
         separate uses of the same file.</p>
@@ -287,26 +292,38 @@ const TOC = [
 
     <section id="shares" class="mt-10 scroll-mt-24">
       <h2>Share a snapshot with its own audience</h2>
+      <p>In an open initiative, <b>Copy item link</b> copies a URL that opens that initiative directly.
+        Shared item links stay within the shared roadmap and use the same password and access rules.
+        Closing the initiative returns to the roadmap. Use <b>Expand</b> for more reading space and <b>Collapse</b> to return to the compact view.
+        Your last choice is remembered across items and visits in this browser. Each shared roadmap remembers the recipient's own choice;
+        it is not part of the published content. Closing an item does not reset it.
+        Expanded items with several sections show <b>On this page</b> navigation on wide screens. Select a heading to jump to that section.</p>
 <p><b>Share</b> creates a separate, read-only snapshot of the selected roadmap content at its own URL.
         It is different from a local saved view or a link to the live roadmap. Later roadmap edits do not appear
         in a snapshot until you update that share.</p>
       <ol>
         <li>Start from the view you want to share. Review the item list and deselect anything you do not want included.</li>
-        <li>Choose explicitly which links and published files recipients can open. Selected files are copied into
-          the snapshot; unpublished uploads cannot be included.</li>
+        <li>Inline images in the shared text are included automatically. Choose any additional links and files.
+          Published uploaded files are copied into the snapshot; publish new uploads before sharing them.</li>
         <li>Use <b>Preview as recipient</b> to check the selected content and appearance at desktop or mobile size.</li>
         <li>Choose the audience and publish a new share, or update an existing one.</li>
       </ol>
-      <p>Shared cards group by product and leave out Now / Next / Later labels. Timeline shares keep a fixed
+      <p>Card titles use up to two lines. Hover or focus a card to read a clipped title in full; open the item for its full write-up.
+        Shared cards use the same horizon lanes as the main roadmap: Now, Next, Later and Completed,
+        with Candidates when selected. Selected empty lanes stay visible. Cards show the work stage;
+        mixed-product shares also identify the product. The Completed lane is visually quieter.
+        <b>Scope</b> covers both planned and delivered work, including older sections named What ships or What shipped.
+        Bottom line is included when present. Timeline shares keep a fixed
         calendar window; owner or tag grouping changes to product grouping. Reverse lane order is a local preference
         and is not carried into a share.</p>
-      <p>Owner fields and editing links are omitted. Resources are included only when you select them.
+      <p>Owner fields and editing links are omitted. Inline images are included with the text; other resources are optional.
         Review the write-up itself too: a name or sensitive detail typed into the text is still content you are sharing.
         The preview shows content and layout; your access settings determine who can open it.</p>
       <p>New shares default to <b>Restricted</b>. You can choose Whole org or Public link and optionally add a password.
         Manage people, teams and expiry in Canvas Drop. No expiry is added automatically.</p>
       <p>Updating a share keeps its URL, expiry and existing memberships. Access settings stay as they are unless
-        you change them. Use Shares to find and manage published snapshots; an unpublished share can be published again
+        you change them. File selections are remembered for shares published with this version. Reload an already-open
+        recipient page after updating it. Use Shares to find and manage published snapshots; an unpublished share can be published again
         by updating it. “Canvas owner” describes your management role, not the audience or an item's owner.</p>
     </section>
 

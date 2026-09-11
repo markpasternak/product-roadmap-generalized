@@ -29,7 +29,7 @@ import {
 import { prepareShareResources, type ShareResourceChoice } from '../../lib/share/resources';
 import type { ProjectedItem } from '../../lib/share/project';
 import type { AccessMode, AccessRung, AuthoredCanvas, Me, PublicationStatus, ShareAudience, ShareStatus } from '../../lib/share/canvasdrop';
-import { renderShareHtml, type ShareTheme, type ShareContext } from '../../lib/share/render';
+import { renderShareHtml, selectedShareHorizons, type ShareTheme, type ShareContext } from '../../lib/share/render';
 import { inlinePreviewAssets, type ShareAssetUrls } from '../../lib/share/assets';
 import {
   SHARE_TAG,
@@ -132,7 +132,7 @@ const effectiveItems = computed(() => props.items.filter((i) => selected.value.h
 
 const selectedResources = ref<string[]>([]);
 const resourceChoices = computed(() => (props.resources??[]).filter(r=>selected.value.has(r.itemId)));
-const includedResources = computed(() => resourceChoices.value.filter(r=>selectedResources.value.includes(r.key)));
+const includedResources = computed(() => resourceChoices.value.filter(r=>r.inline || selectedResources.value.includes(r.key)));
 const previewResources = ref<ProjectedItem[]|null>(null);
 const resourceError = ref('');
 let resourcePreviewEpoch=0;
@@ -164,6 +164,7 @@ async function loadPreviewAssets() {
 watch([previewOpen,effectiveItems,includedResources], ([open]) => { if(open){void loadPreviewAssets();void loadResourcePreview();} });
 const previewHtml = computed(() => previewOpen.value && previewAssets.value && previewResources.value ? renderShareHtml({
   ...props.context, title: roadmapTitle.value, intro: roadmapIntro.value, theme: theme.value,
+  horizons: selectedShareHorizons(props.context.horizons, props.items, effectiveItems.value),
   assets: previewAssets.value,
 }, previewResources.value) : '');
 
@@ -315,6 +316,9 @@ function hydrateExistingShare(share: AuthoredCanvas) {
   canvasDescription.value = typeof share.metadata.canvasDescription === 'string' ? share.metadata.canvasDescription : '';
   roadmapTitle.value = shareRoadmapTitle(share) || props.context.title;
   roadmapIntro.value = typeof share.metadata.roadmapIntro === 'string' ? share.metadata.roadmapIntro : '';
+  selectedResources.value = Array.isArray(share.metadata.resourceKeys)
+    ? share.metadata.resourceKeys.filter((key): key is string => typeof key === 'string')
+    : [];
   const existingAccess = editableAccess(share);
   if (existingAccess) access.value = existingAccess;
   theme.value = share.metadata.theme === 'dark' ? 'dark' : 'light';
@@ -568,7 +572,7 @@ const primaryCls =
         </div>
 
         <p class="mb-5 text-single-sm-medium text-text-subtle-default">
-          Review the selected text, including any internal items. Recipients see products and stages, without owner names or Now / Next / Later. Choose any files and links to include below.
+          Review the selected text, including any internal items. Recipients see roadmap statuses and stages, without owner names. Inline images are included automatically; choose any additional files and links below.
         </p>
         <div class="space-y-6">
           <section v-for="l in lanes" :key="l.h">
@@ -630,10 +634,11 @@ const primaryCls =
               <small>{{ includedResources.length ? `${includedResources.length} included` : 'None included' }}</small>
             </summary>
             <div class="share-resource-options">
-              <p>Choose what recipients can open. Files are copied into the snapshot; later changes won’t update those copies.</p>
+              <p>Inline images are included with the text. Choose any additional files and links. Uploaded files are copied into the snapshot; use Update share to publish later changes.</p>
               <label v-for="resource in resourceChoices" :key="resource.key">
-                <input v-model="selectedResources" :value="resource.key" type="checkbox" />
-                <span>{{ resource.label }}<small>{{ items.find(i => i.id === resource.itemId)?.title }} · {{ resource.repoPath ? 'File copy' : 'External link' }}</small></span>
+                <input v-if="resource.inline" type="checkbox" checked disabled :aria-label="resource.label + ' — included inline'" />
+                <input v-else v-model="selectedResources" :value="resource.key" type="checkbox" />
+                <span>{{ resource.label }}<small>{{ items.find(i => i.id === resource.itemId)?.title }} · {{ resource.inline ? 'Included inline' : resource.repoPath ? 'File copy' : 'External link' }}</small></span>
               </label>
             </div>
           </details>

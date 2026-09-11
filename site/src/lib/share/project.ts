@@ -2,6 +2,36 @@
 // every field on ProjectedItem is copied explicitly, so owner / editUrl / links /
 // raw body / search text are physically absent from a share, not merely hidden.
 import type { ItemVM } from '../filters';
+import { inlineMdToText } from '../items';
+import { repositoryAssetPath, resourcePlacements } from '../resources';
+import { isStoryHeading, sectionLabel } from '../sectionHeadings';
+
+export type ShareBlock = { text: string } | { image: { href: string; label: string } };
+export type ShareSection = { heading: string; text: string; blocks?: ShareBlock[] };
+
+/** Retain image positions without exporting raw Markdown or internal link targets. */
+function sectionBlocks(markdown: string): ShareBlock[] {
+  const blocks: ShareBlock[] = [];
+  const addText = (source: string) => {
+    const text = source.split('\n').map(line => {
+      const value = inlineMdToText(line);
+      return value && /^\s*[-*]\s+/.test(line) ? `• ${value}` : value;
+    }).join('\n').trim();
+    if (text) blocks.push({ text });
+  };
+  let cursor = 0;
+  const placements = resourcePlacements(markdown);
+  for (const placement of placements.filter(p => p.image)) {
+    const enclosingLink = placements.find(parent => !parent.image && parent.start <= placement.start && parent.end >= placement.end);
+    addText(markdown.slice(cursor, enclosingLink?.start ?? placement.start));
+    if (repositoryAssetPath(placement.href) || /^https?:\/\//i.test(placement.href)) {
+      blocks.push({ image: { href: placement.href, label: placement.label } });
+    }
+    cursor = enclosingLink?.end ?? placement.end;
+  }
+  addText(markdown.slice(cursor));
+  return blocks;
+}
 
 export interface ProjectedItem {
   startDate?: string | null;
@@ -16,7 +46,7 @@ export interface ProjectedItem {
   stage: string;
   tags: string[];
   themes: string[];
-  sections: { heading: string; text: string }[];
+  sections: ShareSection[];
 }
 
 export function projectForShare(item: ItemVM): ProjectedItem {
@@ -32,6 +62,13 @@ export function projectForShare(item: ItemVM): ProjectedItem {
     stage: item.stage,
     tags: [...item.tags],
     themes: [...item.themes],
-    sections: item.sections.map((s) => ({ heading: s.heading, text: s.text })),
+    sections: item.sections.filter(s => isStoryHeading(s.heading)).map((s) => {
+      const blocks = s.markdown ? sectionBlocks(s.markdown) : undefined;
+      return {
+        heading: sectionLabel(s.heading),
+        text: blocks ? blocks.flatMap(block => 'text' in block ? [block.text] : []).join('\n\n') : s.text,
+        ...(blocks ? { blocks } : {}),
+      };
+    }),
   };
 }
