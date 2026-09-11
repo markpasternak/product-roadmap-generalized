@@ -151,6 +151,8 @@ describe('saved view picker', () => {
     expect(w.find('input').exists()).toBe(true);
     expect(document.activeElement).toBe(w.get('input').element);
     await w.trigger('focusout', { relatedTarget: document.body });
+    expect(picker(w).attributes('aria-expanded')).toBe('true');
+    await w.trigger('focusout', { relatedTarget: document.createElement('button') });
     expect(picker(w).attributes('aria-expanded')).toBe('false');
   });
 

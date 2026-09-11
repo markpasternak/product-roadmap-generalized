@@ -17,11 +17,13 @@ import BrandMark from '../ui/BrandMark.vue';
 import ShareDialog from '../share/ShareDialog.vue';
 import RecentChangesDrawer from './RecentChangesDrawer.vue';
 import { cn } from '../../lib/utils';
+import { installTitleTooltips } from '../../lib/titleTooltips';
+import '../../styles/title-tooltips.css';
 import { productSlug } from '../../lib/slugs';
 import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
 import { shareResourceChoices, prepareShareResources, type ShareResourceChoice } from '../../lib/share/resources';
 import { projectForShare } from '../../lib/share/project';
-import { renderShareHtml, buildShareBundle, type ShareContext, type ShareTheme } from '../../lib/share/render';
+import { renderShareHtml, selectedShareHorizons, buildShareBundle, type ShareContext, type ShareTheme } from '../../lib/share/render';
 import { fetchShareAssets, SHARE_ASSET_PATHS } from '../../lib/share/assets';
 import {
   getCanvasdrop,
@@ -1673,9 +1675,12 @@ async function onShareSubmit(p: {
   shareError.value = null;
   try {
     const prepared = await prepareShareResources(p.items, p.resources ?? [], props.base ?? '/');
+    const includedHorizons = selectedShareHorizons(shareContext.value.horizons, shareItems.value, p.items);
     const html = renderShareHtml(
       {
         ...shareContext.value,
+        horizons: includedHorizons,
+        generatedAt: formatDateTime(Date.now()),
         title: p.roadmapTitle,
         intro: p.roadmapIntro,
         theme: p.theme,
@@ -1694,10 +1699,12 @@ async function onShareSubmit(p: {
       roadmapTitle: p.roadmapTitle,
       roadmapIntro: p.roadmapIntro,
       itemCount: p.items.length,
+      itemIds: p.items.map(item => item.id),
+      resourceKeys: (p.resources ?? []).filter(resource => !resource.inline).map(resource => resource.key),
       productCount: new Set(p.items.map(item => item.product)).size,
       laneCount: undefined,
       product: shareContext.value.product,
-      horizons: undefined,
+      horizons: includedHorizons,
       generatedAt: Date.now(),
     };
     const baseOptions = {
@@ -1801,6 +1808,7 @@ function onFsChange() {
 
 // URL state
 let urlStateRestored = false;
+let removeTitleTooltips: (() => void) | undefined;
 onMounted(async () => {
   // Capture the GitHub sign-in token from the callback hash FIRST — before the
   // saved-state restore and syncState() below rewrite the URL via replaceState,
@@ -1851,6 +1859,7 @@ onMounted(async () => {
   // never flashes the read-only drawer before we route it to the full editor in edit mode.
   const restoreItem = p.get('item');
   document.addEventListener('fullscreenchange', onFsChange);
+  if (root.value) removeTitleTooltips = installTitleTooltips(root.value);
   document.addEventListener('keydown', onGlobalKey);
   // U9 (R10): registered unconditionally (not gated on canEdit, which isn't known yet at this
   // point in onMounted) — the handler itself is a no-op for anyone without unsynced work or an
@@ -1923,8 +1932,11 @@ onMounted(async () => {
   // Now that edit mode is decided, resolve a deep-linked ?item=: straight to the full editor
   // when editing, else the read-only drawer.
   if (restoreItem && byId.value.has(restoreItem)) {
+    const linkedItem = byId.value.get(restoreItem)!;
+    // A clean item link also reveals its lane, including completed work.
+    if (!p.has('horizon') && !horizons.value.includes(linkedItem.horizon)) horizons.value = [...horizons.value, linkedItem.horizon];
     if (canEdit.value && editMode.value) openEditor(restoreItem);
-    else selected.value = byId.value.get(restoreItem)!;
+    else selected.value = linkedItem;
   }
   editorLogin.value = meRes.login;
   if (canEdit.value && editStore.snapshot().requestPayload) {
@@ -1944,6 +1956,7 @@ onMounted(async () => {
     });
 });
 onUnmounted(() => {
+  removeTitleTooltips?.();
   document.removeEventListener('fullscreenchange', onFsChange);
   document.removeEventListener('keydown', onSheetKey);
   document.removeEventListener('keydown', onGlobalKey);
@@ -2545,6 +2558,7 @@ const editActionBtn =
       :is="ItemEditor"
       v-if="canEdit && editMode && editingItem"
       :item="editingItem"
+      :editor-login="editorLogin"
       :body="editingBody"
       :is-new="editingIsNew"
       :all-tags="allTags"

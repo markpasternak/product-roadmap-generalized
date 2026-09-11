@@ -1,6 +1,6 @@
 // Serializes a projected board into a polished, standalone roadmap share app.
 // The bundle keeps its behavior inline and carries its own brand assets.
-// Recipients see product groups; internal horizon choices stay in the working board.
+// Recipients see the same horizon lanes and item statuses as the main roadmap.
 import { timelineModel, timelineSettings, scheduleLabel, scheduleIssue, formatPlanDate, type TimelineSettings, type TimelineRange } from '../timeline';
 import timelineCss from '../../styles/timeline.css?raw';
 import { zipSync, strToU8 } from 'fflate';
@@ -9,8 +9,31 @@ import reviewCss from '../../styles/roadmap-review.css?raw';
 import appearanceCss from '../../styles/appearance.css?raw';
 import { SHARE_ASSET_PATHS, type ShareAssetUrls } from './assets';
 import type { ProjectedItem } from './project';
+import { isStoryHeading, sectionLabel } from '../sectionHeadings';
+import { installItemImageViewer } from '../itemImageViewer';
+import imageViewerCss from '../../styles/image-viewer.css?raw';
+import { HORIZONS, type Horizon } from '../schema';
+import { createItemViewPreference } from '../itemViewPreference';
+import readingToolbarCss from '../../styles/reading-toolbar.css?raw';
+import titleTooltipCss from '../../styles/title-tooltips.css?raw';
+import { installTitleTooltips } from '../titleTooltips';
+import { installItemToc } from '../itemToc';
+import { installItemHeader } from '../itemHeader';
+import itemTocCss from '../../styles/item-toc.css?raw';
 
 export type ShareTheme = 'light' | 'dark';
+
+/** Preserve originally empty lanes, but remove lanes whose items were all deselected. */
+export function selectedShareHorizons(
+  horizons: readonly string[] | undefined,
+  available: readonly Pick<ProjectedItem, 'horizon'>[],
+  selected: readonly Pick<ProjectedItem, 'horizon'>[],
+): Horizon[] {
+  const availableHorizons = new Set(available.map(item => item.horizon));
+  const selectedHorizons = new Set(selected.map(item => item.horizon));
+  return HORIZONS.filter(horizon => selectedHorizons.has(horizon)
+    || (!!horizons?.includes(horizon) && !availableHorizons.has(horizon)));
+}
 
 export interface ShareContext {
   timeline?: TimelineSettings & { range: TimelineRange };
@@ -37,7 +60,13 @@ const PRODUCT_META: Record<string, { short: string; color: string }> = {
   'Music App': { short: 'MA', color: 'var(--roadmap-product-music-app)' },
   'Podcasts & Audiobooks': { short: 'PA', color: 'var(--roadmap-product-podcasts-audiobooks)' },
 };
-const CLIENT_SECTIONS = new Set(['Why it matters', 'What ships', 'What shipped']);
+function safeResourceUrl(href: string): boolean {
+  return /^(?:https?:\/\/|assets\/ast_[a-z0-9_-]+\/rev_[a-z0-9_-]+\/[A-Za-z0-9_.-]+$|data:(?:image\/(?:png|jpeg|gif|webp|avif|svg\+xml)|video\/(?:mp4|webm)|application\/(?:pdf|zip|vnd\.openxmlformats-officedocument\.(?:wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet))|text\/plain)(?:; ?charset=utf-8)?;base64,)/i.test(href);
+}
+
+function statusLabel(item: Pick<ProjectedItem, 'horizon' | 'stage'>): string {
+  return item.horizon === 'Completed' ? 'Completed' : [item.horizon, item.stage].filter(Boolean).join(' · ');
+}
 
 export function escapeHtml(s: string): string {
   return s
@@ -63,11 +92,6 @@ function shareDescription(context: ShareContext): string {
 /** Filename (relative to index.html) the OG image is bundled under — see buildShareBundle. */
 const OG_IMAGE_FILENAME = 'og-card.png';
 
-function productMark(product: string): string {
-  const meta = PRODUCT_META[product] ?? { short: '?', color: '#6c7892' };
-  return `<span class="product-mark" style="--product:${meta.color}" title="${escapeHtml(product)}">${escapeHtml(meta.short)}</span>`;
-}
-
 function shareItemData(items: ProjectedItem[]) {
   return items.map((it) => ({
     planned: scheduleLabel(it),
@@ -77,17 +101,18 @@ function shareItemData(items: ProjectedItem[]) {
     outcome: it.outcome,
     product: it.product,
     stage: it.stage,
+    horizon: it.horizon,
+    status: statusLabel(it),
     themes: [...it.themes],
     resources: (it.resources ?? [])
-      .filter((r) =>
-        /^(?:https?:\/\/|assets\/ast_[a-z0-9_-]+\/rev_[a-z0-9_-]+\/[A-Za-z0-9_.-]+$|data:(?:image\/(?:png|jpeg|gif|webp)|video\/(?:mp4|webm)|application\/(?:pdf|zip|vnd\.openxmlformats-officedocument\.(?:wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet))|text\/plain)(?:; ?charset=utf-8)?;base64,)/.test(
-          r.href,
-        ),
-      )
-      .map((r) => ({ label: r.label, href: r.href, mediaType: r.mediaType, bytes: r.bytes, sha256: r.sha256 })),
+      .filter((r) => safeResourceUrl(r.href))
+      .map((r) => ({ label: r.label, href: r.href, mediaType: r.mediaType, bytes: r.bytes, sha256: r.sha256, image: r.image, inline: r.inline })),
     sections: it.sections
-      .filter((section) => CLIENT_SECTIONS.has(section.heading))
-      .map((section) => ({ heading: section.heading, text: section.text })),
+      .filter((section) => isStoryHeading(section.heading))
+      .map((section) => ({
+        heading: sectionLabel(section.heading), text: section.text,
+        ...(section.blocks ? { blocks: section.blocks.filter(block => !('image' in block) || safeResourceUrl(block.image.href)) } : {}),
+      })),
   }));
 }
 
@@ -114,27 +139,28 @@ function cssString(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '');
 }
 
-function card(it: ProjectedItem, index: number): string {
-  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color ?? 'var(--color-icons-subtle-default)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}">
+function card(it: ProjectedItem, index: number, showProduct: boolean): string {
+  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}">
     <span class="card-open" aria-hidden="true">↗</span>
     <div class="card-main">
-      ${productMark(it.product)}
       <div class="card-copy">
-        <h3>${escapeHtml(it.title)}</h3>
+        ${showProduct ? `<span class="card-product">${escapeHtml(it.product)}</span>` : ''}
+        <h3 data-title-tooltip="${escapeHtml(it.title)}">${escapeHtml(it.title)}</h3>
         ${it.oneliner ? `<p>${escapeHtml(it.oneliner)}</p>` : ''}
       </div>
     </div>
-    <div class="card-meta">
-      <span class="roadmap-quiet-chip stage-chip">
+    ${it.horizon !== 'Completed' && it.stage ? `<div class="card-meta">
+      <span class="roadmap-quiet-chip stage-chip" data-horizon="${escapeHtml(it.horizon)}">
         ${escapeHtml(it.stage)}
       </span>
-    </div>
+    </div>` : ''}
     ${scheduleLabel(it) ? `<p class="timeline-range-caption">Planned ${escapeHtml(scheduleLabel(it))}</p>` : ''}
   </button>`;
 }
 
-function lane(name: string, laneItems: ProjectedItem[], allItems: ProjectedItem[]): string {
-  const accent = PRODUCT_META[name]?.color ?? 'var(--color-accent-brand-default)';
+function lane(name: Horizon, laneItems: ProjectedItem[], allItems: ProjectedItem[]): string {
+  const accent = `var(--roadmap-horizon-${name.toLowerCase()})`;
+  const showProduct = new Set(allItems.map(item => item.product)).size > 1;
   return `<section class="lane" data-lane="${escapeHtml(name)}" style="--lane-accent:${accent}">
     <header class="lane-head">
       <div class="lane-title-row">
@@ -144,35 +170,48 @@ function lane(name: string, laneItems: ProjectedItem[], allItems: ProjectedItem[
       </div>
       <div class="lane-rule"></div>
     </header>
-    <div class="lane-cards">${laneItems.map((it) => card(it, allItems.indexOf(it))).join('')}</div>
+    <div class="lane-cards">${laneItems.length ? laneItems.map((it) => card(it, allItems.indexOf(it), showProduct)).join('') : '<p class="lane-empty">No items in this lane.</p>'}</div>
   </section>`;
+}
+
+function controlIcon(path: string): string {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${path}"/></svg>`;
 }
 
 function detailShell(): string {
   return `<div class="detail-shell" data-detail-shell hidden>
     <div class="drawer-scrim detail-scrim" data-detail-close></div>
     <aside class="drawer-panel roadmap-field roadmap-drawer-field roadmap-product-detail" data-detail-panel role="dialog" aria-modal="true" aria-labelledby="detail-title" tabindex="-1">
-      <div class="drawer-top">
-        <span class="drawer-eyebrow"><span class="drawer-accent"></span><span id="detail-product"></span></span>
-        <div class="drawer-nav">
-          <button type="button" class="roadmap-action nav-btn" data-detail-prev aria-label="Previous item">‹</button>
-          <span class="nav-count" id="detail-count"></span>
-          <button type="button" class="roadmap-action nav-btn nav-next" data-detail-next aria-label="Next item">›</button>
-          <button type="button" class="roadmap-action nav-close" data-detail-close aria-label="Close">×</button>
+      <div class="item-toolbar">
+        <span class="item-toolbar-title"><span class="item-product-accent"></span><span class="item-toolbar-copy"><span class="item-header-product" id="detail-product"></span><span class="item-header-title" data-header-title aria-hidden="true" id="detail-header-title"></span></span></span>
+        <div class="item-toolbar-controls">
+          <div class="item-control-group" role="group" aria-label="Item navigation">
+            <button type="button" class="item-control" data-detail-prev aria-label="Previous item" title="Previous item">${controlIcon('m14 6-6 6 6 6')}</button>
+            <span class="item-control-count" id="detail-count"></span>
+            <button type="button" class="item-control" data-detail-next aria-label="Next item" title="Next item">${controlIcon('m10 6 6 6-6 6')}</button>
+          </div>
+          <span class="item-control-divider" aria-hidden="true"></span>
+          <button type="button" class="item-control" data-detail-copy aria-label="Copy item link" title="Copy item link">${controlIcon('M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2')}</button>
+          <button type="button" class="item-control" data-detail-expand aria-label="Expand item" aria-expanded="false" title="Expand item"><span data-expand-icon>${controlIcon('M9 4H4v5m11-5h5v5M4 15v5h5m6 0h5v-5')}</span><span data-collapse-icon hidden>${controlIcon('M4 9h5V4m6 0v5h5M4 15h5v5m6 0v-5h5')}</span></button>
+          <button type="button" class="item-control item-close-control" data-detail-close aria-label="Close" title="Close item">${controlIcon('m6 6 12 12M6 18 18 6')}</button>
         </div>
       </div>
-      <div class="drawer-scroll">
-        <div class="drawer-content" data-detail-content>
+      <div class="drawer-scroll" data-reading-scroll>
+        <div class="drawer-content" data-detail-content data-reading-layout>
+          <div data-reading-body>
+          <p data-copy-status role="status" hidden></p>
+          <input data-copy-fallback aria-label="Item link; select and copy" readonly hidden />
           <div class="detail-hero">
-            <span id="detail-mark" class="product-mark"></span>
             <div class="detail-heading">
-              <h2 class="roadmap-display roadmap-title detail-title" id="detail-title" tabindex="-1" aria-live="polite"></h2>
+              <h2 class="roadmap-display roadmap-title detail-title" id="detail-title" data-reading-title tabindex="-1" aria-live="polite"></h2>
               <p class="roadmap-muted detail-meta" id="detail-meta"></p>
             </div>
           </div>
           <p class="detail-lede" id="detail-lede"></p>
           <div class="detail-sections" id="detail-sections"></div>
           <div class="detail-themes" id="detail-themes"></div>
+          </div>
+          <nav class="item-toc" data-item-toc aria-label="On this page" hidden></nav>
         </div>
       </div>
     </aside>
@@ -220,27 +259,7 @@ function css(context: ShareContext): string {
   .board-root {
     width: min(1600px, 100%);
     margin: 0 auto;
-    padding: 20px 24px;
-  }
-  .share-header {
-    border-bottom: 1px solid var(--roadmap-glass-border);
-    background: var(--color-card);
-  }
-  .share-header-inner {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    min-height: 64px;
-    max-width: 1600px;
-    margin: 0 auto;
-    padding: 0 24px;
-    font-size: 14px;
-    font-weight: 500;
-  }
-  .share-header-caption {
-    margin-left: auto;
-    color: var(--roadmap-ink-muted);
-    font-size: 12px;
+    padding: 12px 24px;
   }
   .hero-grid {
     display: grid;
@@ -420,9 +439,7 @@ function css(context: ShareContext): string {
     text-align: left;
   }
   .share-card:focus-visible,
-  .stat:focus-visible,
-  .nav-btn:focus-visible,
-  .nav-close:focus-visible {
+  .stat:focus-visible {
     outline: 3px solid rgba(246, 62, 13, .36);
     outline-offset: 2px;
   }
@@ -526,84 +543,27 @@ function css(context: ShareContext): string {
     animation: detail-pop .2s cubic-bezier(.23, 1, .32, 1);
     outline: none;
   }
-  .drawer-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 10px 20px;
-  }
-  .drawer-eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--roadmap-ink);
-    font-size: 13px;
-    font-weight: 500;
-  }
   .drawer-accent {
     width: 4px;
     height: 16px;
     border-radius: 999px;
     background: var(--color-accent-brand-default);
   }
-  .drawer-nav {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .nav-btn {
-    appearance: none;
-    display: grid;
-    width: 40px;
-    height: 40px;
-    place-items: center;
-    border: 1px solid var(--color-border-subtle-default);
-    border-radius: 8px;
-    background: var(--color-card);
-    color: var(--color-icons-subtle-default);
-    cursor: pointer;
-    font-size: 20px;
-  }
-  .nav-next {
-    border-color: var(--color-accent-brand-default);
-    color: var(--color-accent-brand-default);
-  }
-  .nav-close {
-    appearance: none;
-    display: grid;
-    width: 40px;
-    height: 40px;
-    place-items: center;
-    border: 0;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--color-icons-primary-default);
-    cursor: pointer;
-    font-size: 24px;
-  }
-  .nav-btn:disabled {
-    cursor: default;
-    opacity: .34;
-  }
-  .nav-count {
-    min-width: 48px;
-    color: var(--roadmap-ink);
-    font-size: 13px;
-    font-weight: 500;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
+  .detail-shell.is-expanded { padding: 0; }
+  .detail-shell.is-expanded .drawer-panel { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+  .detail-shell.is-expanded .drawer-content { max-width: 1200px; margin-inline: auto; padding-top: 12px; }
+  .detail-shell.is-expanded .detail-section p { max-width: 75ch; }
+  [data-copy-fallback] { width: 100%; padding: 8px; margin-bottom: 12px; }
   .drawer-scroll {
     flex: 1;
     overflow-y: auto;
   }
   .drawer-content {
-    padding: 0 24px 24px;
+    padding: 12px 24px 24px;
   }
   .detail-hero {
     display: grid;
-    grid-template-columns: 46px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 12px;
     align-items: start;
   }
@@ -613,7 +573,7 @@ function css(context: ShareContext): string {
   }
   .detail-title {
     margin: 0;
-    font-size: clamp(1.5rem, 4vw, 1.8rem);
+    font-size: clamp(1.75rem, 4vw, 2.1rem);
   }
   .detail-meta {
     display: flex;
@@ -641,21 +601,15 @@ function css(context: ShareContext): string {
   }
   .shared-resource { display:block; padding:12px 0; color:var(--accent); overflow-wrap:anywhere; }
   .shared-resource img,.shared-resources video { display:block; max-width:100%; max-height:440px; border-radius:8px; margin-bottom:8px; }
+  .shared-inline-image { display:block; margin:18px 0; }
+  .shared-inline-image img { display:block; width:100%; height:auto; border-radius:8px; }
+  .stage-chip[data-horizon="Completed"] { color:var(--color-feedback-success-text-independent-default, #187047); background:var(--color-surface-transparent-green-25, #e8f5ed); }
   .detail-sections {
     display: grid;
     gap: 18px;
     margin-top: 22px;
   }
   .detail-section { min-width: 0; }
-  .detail-section h3 {
-    margin: 0;
-    color: var(--color-accent-brand-default);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: .12em;
-    line-height: 1;
-    text-transform: uppercase;
-  }
   .detail-section p {
     margin: 8px 0 0;
     color: var(--color-text-primary-default);
@@ -700,7 +654,7 @@ function css(context: ShareContext): string {
     flex-wrap: wrap;
     justify-content: space-between;
     gap: 10px;
-    margin-top: 20px;
+    margin-top: 12px;
     color: var(--color-text-subtle-default);
     font-size: 12px;
   }
@@ -717,7 +671,6 @@ function css(context: ShareContext): string {
   }
   @media (max-width: 640px) {
     .board-root { padding: 16px; }
-    .share-header-inner { padding-inline: 16px; }
     .roadmap-masthead { padding: 20px; }
     h1 { font-size: clamp(1.8rem, 10vw, 2.45rem); }
     .stats { grid-template-columns: 1fr; }
@@ -728,13 +681,11 @@ function css(context: ShareContext): string {
     .section-icon { display: none; }
     .detail-shell { padding: 12px; }
     .drawer-panel { max-height: calc(100dvh - 24px); }
-    .drawer-top { padding-inline: 16px; }
     .drawer-content { padding-inline: 16px; }
   }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
     .roadmap-action,
-    .nav-btn,
     .detail-scrim,
     .drawer-panel {
       animation: none;
@@ -752,7 +703,6 @@ function js(): string {
   const panel = document.querySelector('[data-detail-panel]');
   const title = document.getElementById('detail-title');
   const product = document.getElementById('detail-product');
-  const mark = document.getElementById('detail-mark');
   const meta = document.getElementById('detail-meta');
   const lede = document.getElementById('detail-lede');
   const sections = document.getElementById('detail-sections');
@@ -761,9 +711,34 @@ function js(): string {
   const prev = document.querySelector('[data-detail-prev]');
   const next = document.querySelector('[data-detail-next]');
   const cards = Array.from(document.querySelectorAll('[data-card-index]'));
+  (${installTitleTooltips.toString()})(document.querySelector('main'));
+  const imageViewer = (${installItemImageViewer.toString()})(panel);
+  const itemToc = (${installItemToc.toString()})(panel);
+  const itemHeader = (${installItemHeader.toString()})(panel);
+  const expand = document.querySelector('[data-detail-expand]');
+  const viewPreference = (${createItemViewPreference.toString()})();
+  const copyStatus = document.querySelector('[data-copy-status]');
+  const copyFallback = document.querySelector('[data-copy-fallback]');
   const productMeta = ${safeJson(PRODUCT_META)};
   let index = -1;
   let lastFocus = null;
+
+  function setExpanded(expanded) {
+    shell.classList.toggle('is-expanded', expanded);
+    expand.setAttribute('aria-expanded', String(expanded));
+    expand.setAttribute('aria-label', expanded ? 'Collapse item' : 'Expand item');
+    expand.title = expanded ? 'Collapse item' : 'Expand item';
+    expand.querySelector('[data-expand-icon]').hidden = expanded;
+    expand.querySelector('[data-collapse-icon]').hidden = !expanded;
+  }
+
+  function updateHeader() {
+    product.textContent = items[index].product;
+    const headerTitle = document.getElementById('detail-header-title');
+    headerTitle.textContent = items[index].title;
+    headerTitle.title = items[index].title;
+    itemHeader.refresh();
+  }
 
   function el(tag, className, text) {
     const node = document.createElement(tag);
@@ -772,29 +747,24 @@ function js(): string {
     return node;
   }
 
-  function setMark(node, item) {
-    const info = productMeta[item.product] || { short: '?', color: '#6c7892' };
-    node.style.setProperty('--product', info.color);
-    node.title = item.product;
-    node.textContent = info.short;
-  }
-
-  function visibleIndexes() { return items.map((_, i) => i); }
+  function visibleIndexes() { return [...new Set(cards.map(card => Number(card.dataset.cardIndex)))]; }
 
   function render(i) {
     if (!items.length || !shell || !panel) return;
+    imageViewer.close();
+    copyStatus.hidden = true;
+    copyFallback.hidden = true;
     index = Math.max(0, Math.min(items.length - 1, i));
     const visible = visibleIndexes();
     if (!visible.includes(index)) index = visible[0] ?? index;
     const visiblePos = Math.max(0, visible.indexOf(index));
     const item = items[index];
     title.textContent = item.title;
-    product.textContent = item.product;
-    setMark(mark, item);
+    updateHeader();
     panel.style.setProperty('--roadmap-product-accent', productMeta[item.product]?.color || 'var(--color-icons-subtle-default)');
     meta.replaceChildren();
     if (item.planned) meta.append(el('span', '', 'Planned ' + item.planned));
-    meta.append(el('span', '', item.stage));
+    meta.append(el('span', '', item.status));
     lede.hidden = !item.oneliner;
     lede.textContent = item.oneliner || '';
 
@@ -804,13 +774,23 @@ function js(): string {
     sections.replaceChildren(...story.map((section) => {
       const wrap = el('section', 'detail-section');
       const body = el('div');
-      body.append(el('h3', '', section.heading), el('p', '', section.text));
+      body.append(el('h3', 'roadmap-section-heading', section.heading));
+      for (const block of section.blocks || [{ text: section.text }]) {
+        if (block.image) {
+          const link = el('a', 'shared-inline-image');
+          link.href = block.image.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+          const img = el('img'); img.src = block.image.href; img.alt = block.image.label;
+          img.loading = 'lazy'; img.decoding = 'async'; img.referrerPolicy = 'no-referrer';
+          link.append(img); body.append(link);
+        } else body.append(el('p', '', block.text));
+      }
       wrap.append(body);
       return wrap;
     }));
-    if(item.resources?.length){
-      const wrap=el('section','detail-section shared-resources');wrap.append(el('h3','','Resources'));
-      for(const resource of item.resources){
+    const attachments = (item.resources || []).filter(resource => !resource.inline);
+    if(attachments.length){
+      const wrap=el('section','detail-section shared-resources');wrap.append(el('h3','roadmap-section-heading','Resources'));
+      for(const resource of attachments){
         const link=el('a','shared-resource',resource.label);link.href=resource.href;link.target='_blank';link.rel='noopener noreferrer';
         if(resource.image || resource.mediaType?.startsWith('image/')){const img=el('img');img.src=resource.href;img.alt=resource.label;img.loading='lazy';img.referrerPolicy='no-referrer';link.prepend(img);}
         if(resource.mediaType?.startsWith('video/')){const video=el('video');video.src=resource.href;video.controls=true;video.preload='metadata';wrap.append(video);}
@@ -818,6 +798,8 @@ function js(): string {
       }sections.append(wrap);
     }
     sections.hidden = story.length === 0 && !item.resources?.length;
+    imageViewer.refresh();
+    itemToc.refresh();
 
     themes.replaceChildren(...(item.themes || []).map((theme) => el('span', 'chip theme-chip', theme)));
     themes.hidden = !item.themes?.length;
@@ -829,41 +811,89 @@ function js(): string {
     if (!shell.hidden) title.focus();
   }
 
-  function open(i) {
-    lastFocus = document.activeElement;
+  function writeUrl(push = false) {
+    if (!/^https?:$/.test(location.protocol)) return;
+    const url = new URL(location.href);
+    if (shell.hidden) url.searchParams.delete('item');
+    else url.searchParams.set('item', items[index].id);
+    if (url.href !== location.href) history[push ? 'pushState' : 'replaceState'](null, '', url.href);
+  }
+
+  function open(i, updateUrl = true) {
+    const wasClosed = shell.hidden;
+    if (wasClosed) {
+      lastFocus = document.activeElement;
+      setExpanded(viewPreference.read());
+    }
     render(i);
     shell.hidden = false;
     document.body.classList.add('modal-open');
+    if (updateUrl) writeUrl(wasClosed);
     requestAnimationFrame(() => { if (!shell.hidden) title.focus(); });
   }
 
-  function close() {
+  function close(updateUrl = true) {
     if (!shell || shell.hidden) return;
+    imageViewer.close();
     shell.hidden = true;
     document.body.classList.remove('modal-open');
+    if (updateUrl) writeUrl();
     lastFocus?.focus?.();
   }
 
+  function readUrl() {
+    const id = new URL(location.href).searchParams.get('item');
+    const i = items.findIndex(item => item.id === id);
+    const notice = document.querySelector('[data-item-link-notice]');
+    notice.hidden = !id || i >= 0;
+    if (i >= 0) open(i, false); else close(false);
+  }
+  window.addEventListener('popstate', readUrl);
+
   document.addEventListener('click', (event) => {
+    if (event.target.closest('.item-image-viewer')) return;
     const card = event.target.closest('[data-card-index]');
     if (card) open(Number(card.dataset.cardIndex));
     if (event.target.closest('[data-detail-close]')) close();
+    if (event.target.closest('[data-detail-expand]')) {
+      const expanded = !shell.classList.contains('is-expanded');
+      setExpanded(expanded);
+      viewPreference.write(expanded);
+      updateHeader();
+    }
+    if (event.target.closest('[data-detail-copy]')) {
+      const copiedId = items[index].id;
+      const url = new URL(location.href);
+      url.searchParams.set('item', copiedId);
+      const fallback = () => {
+        if (shell.hidden || items[index].id !== copiedId) return;
+        copyStatus.hidden = false;
+        copyStatus.textContent = 'Select and copy the item link below.';
+        copyFallback.hidden = false; copyFallback.value = url.href; copyFallback.focus(); copyFallback.select();
+      };
+      if (!/^https?:$/.test(location.protocol)) { copyStatus.hidden = false; copyStatus.textContent = 'Publish the share to copy an item link.'; }
+      else if (!navigator.clipboard?.writeText) fallback();
+      else navigator.clipboard.writeText(url.href).then(() => {
+        if (shell.hidden || items[index].id !== copiedId) return;
+        copyStatus.hidden = false; copyStatus.textContent = 'Item link copied.';
+      }).catch(fallback);
+    }
     if (event.target.closest('[data-detail-prev]')) {
       const visible = visibleIndexes();
       const pos = visible.indexOf(index);
-      if (pos > 0) render(visible[pos - 1]);
+      if (pos > 0) { render(visible[pos - 1]); writeUrl(); }
     }
     if (event.target.closest('[data-detail-next]')) {
       const visible = visibleIndexes();
       const pos = visible.indexOf(index);
-      if (pos >= 0 && pos < visible.length - 1) render(visible[pos + 1]);
+      if (pos >= 0 && pos < visible.length - 1) { render(visible[pos + 1]); writeUrl(); }
     }
   });
 
   document.addEventListener('keydown', (event) => {
     if (!shell || shell.hidden) return;
     if (event.key === 'Tab') {
-      const controls = Array.from(panel.querySelectorAll('button:not(:disabled), a[href], [tabindex="0"]'));
+      const controls = Array.from(panel.querySelectorAll('button:not(:disabled), a[href], input:not([hidden]), [tabindex="0"]')).filter(control => !control.closest('dialog:not([open]), [hidden]'));
       const first = controls[0];
       const last = controls[controls.length - 1];
       const active = document.activeElement;
@@ -881,17 +911,18 @@ function js(): string {
     if (event.key === 'ArrowLeft') {
       const visible = visibleIndexes();
       const pos = visible.indexOf(index);
-      if (pos > 0) render(visible[pos - 1]);
+      if (pos > 0) { render(visible[pos - 1]); writeUrl(); }
     }
     if (event.key === 'ArrowRight') {
       const visible = visibleIndexes();
       const pos = visible.indexOf(index);
-      if (pos >= 0 && pos < visible.length - 1) render(visible[pos + 1]);
+      if (pos >= 0 && pos < visible.length - 1) { render(visible[pos + 1]); writeUrl(); }
     }
   });
   document.addEventListener('focusin', (event) => {
     if (!shell.hidden && !panel.contains(event.target)) title.focus();
   });
+  readUrl();
 })();
 `;
 }
@@ -907,7 +938,7 @@ function renderSharedTimeline(settings: TimelineSettings & { range: TimelineRang
   const groups = model.groups.map(group => `<details class="timeline-group" open><summary>${escapeHtml(group.name)}<small>${group.items.length} items</small></summary>${group.items.map(item => {
     const pos = model.position(item), index = items.indexOf(item);
     const color = PRODUCT_META[item.product]?.color ?? 'var(--color-accent-brand-default)';
-    return `<div class="timeline-row"><button type="button" class="timeline-label" data-card-index="${index}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.stage)} · ${escapeHtml(item.product)}</small></button><div class="timeline-track">${grid}<button type="button" class="timeline-bar" data-card-index="${index}" data-before="${pos.before}" data-after="${pos.after}" style="left:${pos.left}%;width:${pos.width}%;padding:${pos.width < 4 ? '0' : '0 10px'};font-size:${pos.width < 4 ? '0' : '12px'};--product:${color}" aria-label="${escapeHtml(item.title + '. Planned ' + scheduleLabel(item))}" title="${escapeHtml(scheduleLabel(item))}">${escapeHtml(item.title)}</button></div></div>`;
+    return `<div class="timeline-row"><button type="button" class="timeline-label" data-card-index="${index}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(statusLabel(item))} · ${escapeHtml(item.product)}</small></button><div class="timeline-track">${grid}<button type="button" class="timeline-bar" data-card-index="${index}" data-before="${pos.before}" data-after="${pos.after}" style="left:${pos.left}%;width:${pos.width}%;padding:${pos.width < 4 ? '0' : '0 10px'};font-size:${pos.width < 4 ? '0' : '12px'};--product:${color}" aria-label="${escapeHtml(item.title + '. Planned ' + scheduleLabel(item))}" title="${escapeHtml(scheduleLabel(item))}">${escapeHtml(item.title)}</button></div></div>`;
   }).join('')}</details>`).join('');
   const missing = model.missing.length ? `<details class="timeline-missing-shared"><summary data-timeline-missing>${model.missing.length} missing or invalid dates · Review</summary>${model.missing.map(item => `<p><button type="button" data-card-index="${items.indexOf(item)}">${escapeHtml(item.title)} · ${escapeHtml(scheduleIssue(item) ?? '')}</button></p>`).join('')}</details>` : '';
   const outside = model.outside.length ? `<details class="timeline-missing-shared"><summary data-timeline-outside>${model.outside.length} outside this period · Review</summary>${model.outside.map(item => `<p><button type="button" data-card-index="${items.indexOf(item)}">${escapeHtml(item.title)} · ${escapeHtml(scheduleLabel(item))}</button></p>`).join('')}</details>` : '';
@@ -916,9 +947,10 @@ function renderSharedTimeline(settings: TimelineSettings & { range: TimelineRang
 
 export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): string {
   const theme = context.theme ?? 'light';
-  // Recipient views organize selected work by product, without internal horizon framing.
-  const products = [...new Set(items.map(item => item.product))];
-  const lanes = products.map(product => lane(product, items.filter(item => item.product === product), items)).join('');
+  // Keep selected empty lanes, and never omit included work if the selection is stale.
+  const selectedHorizons = new Set([...(context.horizons ?? []), ...items.map(item => item.horizon)]);
+  const lanes = HORIZONS.filter(horizon => selectedHorizons.has(horizon))
+    .map(horizon => lane(horizon, items.filter(item => item.horizon === horizon), items)).join('');
   const title = escapeHtml(context.title);
   const description = shareDescription(context);
   const logo = escapeHtml(
@@ -943,18 +975,15 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
 <meta name="twitter:description" content="${description}">
 <meta name="twitter:image" content="${OG_IMAGE_FILENAME}">
 <link rel="icon" href="${ROADMAP_FAVICON}">
-<style>${css(context)}\n${appearanceCss}\n${reviewCss}\n${timelineCss}</style></head>
+<style>${css(context)}\n${appearanceCss}\n${reviewCss}\n${timelineCss}\n${imageViewerCss}\n${readingToolbarCss}\n${titleTooltipCss}\n${itemTocCss}</style></head>
 <body>
 <a class="skip-link" href="#main-content">Skip to roadmap</a>
-<header class="share-header"><div class="share-header-inner">
-  <span class="site-brand-tile"><img src="${logo}" alt="Product Roadmap" width="36" height="36"></span>
-  <span>Roadmap</span><span class="share-header-caption">Shared view</span>
-</div></header>
-<main id="main-content" class="board-root" tabindex="-1">
+<main id="main-content" class="board-root shared-roadmap" tabindex="-1">
+  <p data-item-link-notice role="status" hidden>This initiative is not included in this shared roadmap. Browse the available initiatives below.</p>
   <section class="roadmap-masthead">
+    <span class="site-brand-tile"><img src="${logo}" alt="Product Roadmap" width="36" height="36"></span>
     <div class="hero-grid">
       <div>
-        <p class="roadmap-label">Product roadmap</p>
         <h1 class="roadmap-display roadmap-title">${title}</h1>
         ${context.intro ? `<p class="roadmap-muted intro">${textWithBreaks(context.intro)}</p>` : `<p class="roadmap-muted intro">${DEFAULT_SHARE_DESCRIPTION}</p>`}
       </div>
@@ -964,7 +993,6 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
   ${context.activitySummary ? `<p class="roadmap-muted" style="margin-bottom:1rem">${escapeHtml(context.activitySummary)}</p>` : ''}
   ${context.timeline ? renderSharedTimeline(context.timeline, items) : `<div class="roadmap-glass board-shell"><div class="board-scroll">${lanes}</div></div>`}
   <footer>
-    <span>Shared from the product roadmap</span>
     <span>Shared ${escapeHtml(context.generatedAt)}</span>
     <span>${itemCount} item${itemCount === 1 ? '' : 's'}${context.timeline ? ' · Timeline' : ''}</span>
   </footer>

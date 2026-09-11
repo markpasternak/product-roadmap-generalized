@@ -4,6 +4,7 @@
 // display-only `parseSections` in `lib/items.ts` (which trims/drops placeholder
 // sections for read-only rendering) — this one preserves exact prose so it can
 // round-trip through an editor without silently discarding whitespace or content.
+import { sectionLabel } from '../sectionHeadings';
 export type Section = { heading: string; body: string };
 
 const HEADING_RE = /^##\s+(.*)$/;
@@ -57,7 +58,7 @@ export function serializeSections(preamble: string, sections: Section[]): string
  * pins them at the top: an item's "signature" shape. Derived from a survey of the real
  * content/items corpus (see docs/plans) rather than invented — every item has these.
  */
-export const CANONICAL_SECTIONS: string[] = ['One-liner', 'Why it matters', 'What ships'];
+export const CANONICAL_SECTIONS: string[] = ['One-liner', 'Why it matters', 'Scope'];
 
 /**
  * Sections that show up on some items but not others, in the order they're offered in
@@ -73,7 +74,6 @@ export const OPTIONAL_SECTIONS: string[] = [
   'In the codebase',
   'Resources',
   'Links',
-  'What shipped',
 ];
 
 /**
@@ -90,7 +90,7 @@ export function splitSpine(parsed: { preamble: string; sections: Section[] }): {
 } {
   const remaining = [...parsed.sections];
   const canonical = CANONICAL_SECTIONS.map((heading) => {
-    const idx = remaining.findIndex((s) => s.heading.toLowerCase() === heading.toLowerCase());
+    const idx = remaining.findIndex((s) => sectionLabel(s.heading).toLowerCase() === heading.toLowerCase());
     if (idx === -1) return { heading, body: '' };
     return remaining.splice(idx, 1)[0];
   });

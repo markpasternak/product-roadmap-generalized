@@ -46,10 +46,33 @@ async function mockFiles(response: Response) {
   return fetcher;
 }
 describe("explicit frozen share resources", () => {
+  it('automatically freezes inline images once and preserves their place in the text', async () => {
+    const imageBytes = new Uint8Array([137, 80, 78, 71]);
+    const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', imageBytes))).map(b => b.toString(16).padStart(2, '0')).join('');
+    const href = '../../assets/ast_image/rev_one/image.png';
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ assets: [{ id: 'ast_image', revisions: [{ original: { path: 'rev_one/image.png', mediaType: 'image/png', bytes: imageBytes.length, sha256 } }] }] })))
+      .mockResolvedValueOnce(new Response(imageBytes, { headers: { 'Content-Type': 'image/png' } }));
+    vi.stubGlobal('fetch', fetcher);
+    const source = { ...item, sections: [{ heading: 'Scope', text: '', blocks: [{ text: 'Before' }, { image: { href, label: '' } }, { text: 'After' }, { image: { href, label: 'Again' } }] }] };
+    const result = await prepareShareResources([source], []);
+    expect(result.files['assets/ast_image/rev_one/image.png']).toEqual(imageBytes);
+    expect(result.items[0].sections[0].blocks).toEqual([{ text: 'Before' }, { image: { href: 'assets/ast_image/rev_one/image.png', label: '' } }, { text: 'After' }, { image: { href: 'assets/ast_image/rev_one/image.png', label: 'Again' } }]);
+    expect(result.items[0].resources).toHaveLength(1);
+    expect(result.items[0].resources?.[0]).toMatchObject({ inline: true, image: true, sha256 });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it('retains image intent for explicitly selected external images without a file extension', async () => {
-    const choices = shareResourceChoices([{ id: 'TALK-001', links: [], sections: [{ markdown: '![Diagram](https://example.com/image?id=1)' }] } as any]);
+    const choices = shareResourceChoices([{ id: 'TALK-001', links: [], sections: [{ heading: 'Scope', markdown: '![Diagram](https://example.com/image?id=1)' }] } as any]);
     const result = await prepareShareResources([item], choices);
-    expect(result.items[0].resources).toEqual([{ label: 'Diagram', href: 'https://example.com/image?id=1', image: true }]);
+    expect(result.items[0].resources).toEqual([{ label: 'Diagram', href: 'https://example.com/image?id=1', image: true, inline: true }]);
+  });
+  it('does not automatically include images from internal sections', () => {
+    const choices = shareResourceChoices([{ id: 'TALK-001', links: [], sections: [
+      { heading: 'Internal notes', markdown: '![Internal diagram](https://example.com/internal.png)' },
+      { heading: 'Scope', markdown: '![Public diagram](https://example.com/public.png)' },
+    ] } as any]);
+    expect(choices.filter(choice => choice.inline).map(choice => choice.label)).toEqual(['Public diagram']);
   });
   it("does not fetch or include anything unless selected", async () => {
     const fetcher = vi.fn();

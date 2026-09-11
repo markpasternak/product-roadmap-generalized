@@ -13,6 +13,7 @@
 import { computed, inject, nextTick, onMounted, ref, watch } from 'vue';
 import { resourcePlacements, removeResourcePlacement } from '../../lib/resources';
 import { insertImageKey } from '../../lib/edit/imageAuthoring';
+import { sectionLabel } from '../../lib/sectionHeadings';
 import {
   parseSections,
   splitSpine,
@@ -59,14 +60,14 @@ function sectionTone(heading: string): Tone {
   const h = heading.toLowerCase();
   if (h.includes('target')) return 'orange';
   if (h.includes('why')) return 'red';
-  if (h.includes('ships')) return 'violet';
+  if (sectionLabel(heading) === 'Scope') return 'violet';
   return 'blue';
 }
 function sectionIcon(heading: string) {
   const h = heading.toLowerCase();
   if (h.includes('target')) return PhTarget;
   if (h.includes('why')) return PhHeart;
-  if (h.includes('ships')) return PhCube;
+  if (sectionLabel(heading) === 'Scope') return PhCube;
   return PhFileText;
 }
 
@@ -74,6 +75,7 @@ type OptionalRow = Section & { id: number };
 
 const preamble = ref('');
 const canonicalBodies = ref<string[]>(CANONICAL_SECTIONS.map(() => ''));
+const canonicalHeadings = ref([...CANONICAL_SECTIONS]);
 const optional = ref<OptionalRow[]>([]);
 function managedSection(row: OptionalRow) {
   if (!props.managedResources || !['resources', 'links'].includes(row.heading.toLowerCase())) return false;
@@ -90,12 +92,13 @@ function loadFromModel() {
   const spine = splitSpine(parseSections(model.value));
   preamble.value = spine.preamble;
   canonicalBodies.value = spine.canonical.map((s) => s.body);
+  canonicalHeadings.value = spine.canonical.map((s) => s.heading);
   optional.value = spine.optional.map((s) => ({ id: nextId++, heading: s.heading, body: s.body }));
 }
 loadFromModel();
 
 function currentAssembled(): string {
-  const canonical: Section[] = CANONICAL_SECTIONS.map((heading, i) => ({ heading, body: canonicalBodies.value[i] }));
+  const canonical: Section[] = canonicalHeadings.value.map((heading, i) => ({ heading, body: canonicalBodies.value[i] }));
   const opt: Section[] = optional.value.map(({ heading, body }) => ({ heading, body }));
   return assembleBody(preamble.value, canonical, opt);
 }
@@ -445,7 +448,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
               >
                 <component :is="sectionIcon(heading)" :size="13" />
               </span>
-              <label class="font-display roadmap-title text-[1.05rem]" data-test="spine-label" :for="`spine-${i}`">{{ heading }}</label>
+              <label class="roadmap-section-heading" data-test="spine-label" :for="`spine-${i}`">{{ heading }}</label>
             </div>
             <!-- Fix #7: a quiet nudge, not a limit — the One-liner is meant to be one short
                  sentence, so the count flips from muted to a brand-accent tone past the soft
@@ -504,7 +507,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
               <textarea
                 :id="`spine-${i}`"
                 data-test="spine-textarea"
-                :data-resource-heading="CANONICAL_SECTIONS[i]"
+                :data-resource-heading="canonicalHeadings[i]"
                 :ref="(el) => bindEditingTextarea(el as Element | null)"
                 rows="2"
                 placeholder="Add detail…"

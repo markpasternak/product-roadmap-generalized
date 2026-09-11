@@ -58,7 +58,7 @@
 :root .board-root .roadmap-lane > header > div:last-child,
 :root .board-root .lane-rule { border: 0; }
 :root .board-root .roadmap-card.roadmap-action { padding: 1rem; border-radius: 8px; }
-:root .board-root .roadmap-card h3 { line-height: 1.4; letter-spacing: -.015em; text-wrap: pretty; }
+:root .board-root .roadmap-card h3 { font-size: 1rem; font-weight: 600; line-height: 1.35; letter-spacing: -.015em; text-wrap: pretty; }
 :root .board-root .roadmap-card .roadmap-quiet-chip { padding: .2rem .4rem; font-size: .7rem; border-radius: 4px; }
 
 @media (min-width: 768px) {
@@ -92,6 +92,7 @@
 .item-facts dt { color: var(--color-text-subtle-default); font-size: .75rem; line-height: 1.5; }
 .item-facts dd { margin: .25rem 0 0; color: var(--color-text-primary-default); font-size: .9375rem; font-weight: 500; }
 .item-reading-section { min-width: 0; }
+.roadmap-section-heading { margin:0; color:var(--color-text-primary-default); font-family:'Inter', sans-serif; font-size:1.125rem; font-weight:600; line-height:1.35; letter-spacing:-.015em; text-transform:none; }
 .item-reading-section p, .item-reading-section .item-prose { max-width: 70ch; line-height: 1.7; }
 
 :root .board-root[data-editing='true'] .board-body {
@@ -131,6 +132,17 @@
   .compact-toolbar .board-primary-actions { margin-left: auto; }
 }
 
-.board-shell .lane:only-child .lane-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: .75rem; }
 
-.board-shell .lane:only-child .share-card { display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; }
+
+/* Shared snapshots keep the board close to its title and use the main horizon lanes. */
+:root .shared-roadmap .roadmap-masthead { padding: .5rem 0 1rem; margin-bottom: 1.25rem; border-bottom: 1px solid var(--roadmap-glass-border); }
+:root .shared-roadmap .roadmap-masthead h1 { margin-top: 1rem; font-size: clamp(2rem, 3vw, 2.75rem); }
+:root .shared-roadmap .roadmap-masthead .intro { margin-top: .5rem; }
+:root .shared-roadmap .lane-empty { margin: 0; padding: 1rem; color: var(--roadmap-ink-muted); font-size: .85rem; }
+:root .shared-roadmap .lane-head { padding: .75rem 1rem 0; }
+:root .shared-roadmap .lane-count { margin-left: .2rem; }
+:root .shared-roadmap .roadmap-card .stage-chip { border-color: transparent; border-radius: 999px; background: color-mix(in srgb, var(--lane-accent) 14%, transparent); color: var(--roadmap-ink); }
+:root .shared-roadmap .card-product { display: block; margin-bottom: .4rem; color: var(--roadmap-ink-muted); font-size: .7rem; }
+:root .shared-roadmap [data-lane='Completed'] .share-card { --roadmap-product-wash: 6%; }
+:root[data-theme='dark'] .shared-roadmap [data-lane='Completed'] .share-card { --roadmap-product-wash: 10%; }
+:root .shared-roadmap footer { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--roadmap-glass-border); flex-wrap: nowrap; font-size: .75rem; }

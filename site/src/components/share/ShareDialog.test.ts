@@ -60,6 +60,25 @@ const submitted = (w: ReturnType<typeof mount>) => w.emitted('submit')?.[0]?.[0]
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('ShareDialog', () => {
+  it('updates the same share with current item content, automatic inline images, and remembered attachments', async () => {
+    const resources = [
+      { key: 'A:inline', itemId: 'A', label: 'Screenshot', href: 'https://example.com/image.png', repoPath: null, image: true, inline: true },
+      { key: 'A:notes', itemId: 'A', label: 'Notes', href: 'https://example.com/notes', repoPath: null },
+    ];
+    const w = mount(ShareDialog, { props: {
+      items: [mk({ id: 'A', title: 'Old title' })], context, resources,
+      shares: [mkShare({ metadata: { resourceKeys: ['A:notes'] } })],
+    } });
+    expect(w.get('input[aria-label="Screenshot — included inline"]').element).toMatchObject({ checked: true, disabled: true });
+    await toSettings(w);
+    await w.get('[data-test="target-existing"]').trigger('click');
+    await w.setProps({ items: [mk({ id: 'A', title: 'Updated title', horizon: 'Completed', sections: [{ heading: 'Scope', text: 'Delivered.' }] })] });
+    await w.get('[data-test="submit"]').trigger('click');
+    expect(submitted(w).targetShareId).toBe('S1');
+    expect(submitted(w).items[0]).toMatchObject({ title: 'Updated title', horizon: 'Completed', sections: [{ heading: 'Scope', text: 'Delivered.' }] });
+    expect((w.emitted('submit')![0][0] as { resources: unknown[] }).resources).toEqual(resources);
+  });
+
   it('fits a mobile preview without changing the recipient viewport width', async () => {
     let resize: ResizeObserverCallback;
     const disconnect = vi.fn();
@@ -96,12 +115,12 @@ describe('ShareDialog', () => {
     expect(w.find('iframe').exists()).toBe(true);
   });
 
-  it('previews selected recipient content without horizon framing and isolates the preview', async () => {
+  it('previews selected horizon lanes and isolates the preview', async () => {
     vi.spyOn(assets, 'inlinePreviewAssets').mockResolvedValue(assets.previewAssetUrls());
     const w = mount(ShareDialog, {
       props: {
         items: [Object.assign(mk({ id: 'A', title: 'Included', sections: [{ heading: 'Open questions', text: 'INTERNAL ONLY' }] }), { owner: 'SECRET OWNER' }), mk({ id: 'B', title: 'Excluded', horizon: 'Later' })],
-        context: { ...context, horizons: ['Now', 'Later'] },
+        context: { ...context, horizons: ['Now', 'Next', 'Later'] },
       },
     });
     await w.get('[data-test="lane-Later"]').setValue(false);
@@ -116,6 +135,8 @@ describe('ShareDialog', () => {
     expect(html).not.toContain('SECRET OWNER');
     expect(html).not.toContain('INTERNAL ONLY');
     expect(html).not.toContain('data-lane="Later"');
+    expect(html).toContain('data-lane="Now"');
+    expect(html).toContain('data-lane="Next"');
     expect(html).toContain('1 item');
     expect(html).not.toContain('data-horizon-filter="');
     await w.get('[data-test="submit"]').trigger('click');

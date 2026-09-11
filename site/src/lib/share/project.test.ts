@@ -13,6 +13,19 @@ const base: ItemVM = {
 };
 
 describe('projectForShare', () => {
+  it('keeps inline image positions and Bottom line while excluding internal sections and link targets', () => {
+    const href = '../../assets/ast_example/rev_one/screen.png';
+    const projected = projectForShare({ ...base, sections: [
+      { heading: 'What shipped', text: 'Before Image After', markdown: `Before\n\n![Image](${href})\n\nAfter [internal](https://internal.example/private)` },
+      { heading: 'Bottom line', text: 'The work is complete.' },
+      { heading: 'In the codebase', text: 'private implementation' },
+    ] });
+    expect(projected.sections.map(section => section.heading)).toEqual(['Scope', 'Bottom line']);
+    expect(projected.sections[0].blocks).toEqual([{ text: 'Before' }, { image: { href, label: 'Image' } }, { text: 'After internal' }]);
+    expect(JSON.stringify(projected)).not.toContain('https://internal.example');
+    expect(JSON.stringify(projected)).not.toContain('private implementation');
+  });
+
   it('uses canonical title and one-liner', () => {
     const p = projectForShare(base);
     expect(p.title).toBe('Internal Title');

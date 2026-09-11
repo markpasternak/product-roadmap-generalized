@@ -49,7 +49,7 @@ describe('SectionEditor', () => {
     const w = mount(SectionEditor, { props: { modelValue: BODY } });
     const spineLabels = w.findAll('[data-test="spine-label"]').map((l) => l.text());
     expect(spineLabels).toEqual(CANONICAL_SECTIONS);
-    expect(spineLabels).toEqual(['One-liner', 'Why it matters', 'What ships']);
+    expect(spineLabels).toEqual(['One-liner', 'Why it matters', 'Scope']);
 
     const optionalLabels = w.findAll('[data-test="optional-label"]').map((l) => l.text());
     expect(optionalLabels).toEqual(['Custom Heading']);
@@ -95,7 +95,7 @@ describe('SectionEditor', () => {
   it('stubs a missing canonical section as an empty field rather than omitting it', () => {
     const w = mount(SectionEditor, { props: { modelValue: '# Title\n\n## One-liner\nJust this.\n' } });
     const spineLabels = w.findAll('[data-test="spine-label"]').map((l) => l.text());
-    expect(spineLabels).toEqual(['One-liner', 'Why it matters', 'What ships']);
+    expect(spineLabels).toEqual(['One-liner', 'Why it matters', 'Scope']);
   });
 
   // Fix #7: a quiet character-count hint on the One-liner — never a hard limit.
@@ -232,7 +232,6 @@ describe('SectionEditor', () => {
       'In the codebase',
       'Resources',
       'Links',
-      'What shipped',
       'Custom section…',
     ]);
 
@@ -305,7 +304,7 @@ describe('SectionEditor', () => {
 
   it('a body with no ## sections still renders the pinned spine, all empty', () => {
     const w = mount(SectionEditor, { props: { modelValue: 'Just prose.\nNo sections at all.' } });
-    expect(w.findAll('[data-test="spine-label"]').map((l) => l.text())).toEqual(['One-liner', 'Why it matters', 'What ships']);
+    expect(w.findAll('[data-test="spine-label"]').map((l) => l.text())).toEqual(['One-liner', 'Why it matters', 'Scope']);
     expect((w.find('[data-test="spine-oneliner"]').element as HTMLInputElement).value).toBe('');
     expect(w.findAll('[data-test="optional-field"]')).toHaveLength(0);
   });

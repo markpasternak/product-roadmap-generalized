@@ -17,6 +17,8 @@ import { IS_PUBLIC } from './audience';
 import { getVisibleDocCollections } from './docs';
 import { buildSearchText, type ItemVM } from './filters';
 import { itemHistoryForPath } from './itemHistory.server';
+import { STORY_HEADINGS, sectionLabel } from './sectionHeadings';
+import { resourcePlacements } from './resources';
 
 const REPO_EDIT_BASE = 'https://github.com/markpasternak/product-roadmap-generalized/edit/main';
 
@@ -81,9 +83,9 @@ export async function buildBoardItems(base: string): Promise<ItemVM[]> {
     };
     // The card/drawer is the fixed layer: headline + Target outcome + Why it matters +
     // What ships. Everything else in the body renders on the full item page only.
-    const sections = ['Why it matters', 'What ships', 'What shipped']
-      .map((heading) => ({ heading, text: sectionBlock(heading), markdown: extractSection(body, heading) }))
-      .filter((s) => s.text);
+    const sections = STORY_HEADINGS
+      .map((heading) => ({ heading: sectionLabel(heading), text: sectionBlock(heading), markdown: extractSection(body, heading) }))
+      .filter((s) => s.text || resourcePlacements(s.markdown).some(placement => placement.image));
     const repoPath = e.filePath ? e.filePath.slice(e.filePath.indexOf('content/items/')) : null;
     const editUrl = !IS_PUBLIC && repoPath ? `${REPO_EDIT_BASE}/${repoPath}` : null;
     const history = itemHistoryForPath(repoPath);

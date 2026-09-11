@@ -10,6 +10,55 @@ const setup = () =>
     global: { stubs: { Teleport: true } },
   }));
 describe("image insertion", () => {
+  it('filters by filename regardless of case and preserves selections across filters and tabs', async () => {
+    w = mount(ImagePicker, { props: { images: [
+      { href: '/cover.png', name: 'Cover', filename: 'production-cover.png', attached: true },
+      { href: '/screen.png', name: 'Screen', filename: 'production-screen.png', attached: false, mine: true },
+      { href: '/shared.png', name: 'Shared screen', filename: 'shared-screen.png', attached: false },
+    ] }, global: { stubs: { Teleport: true } } });
+    await w.findAll('.image-choice')[0].trigger('click');
+    await w.get('input[type=search]').setValue(' SCREEN ');
+    expect(w.findAll('.image-choice').map(choice => choice.text())).toEqual(['Screenproduction-screen.pngYour upload']);
+    await w.findAll('.image-choice')[0].trigger('click');
+    await w.findAll('button').find(button => button.text() === 'Shared library')!.trigger('click');
+    expect(w.findAll('.image-choice').map(choice => choice.text())).toEqual(['Shared screenshared-screen.pngShared library']);
+    await w.get('input[type=search]').setValue('no-match');
+    expect(w.text()).toContain('No images match your search.');
+    await w.findAll('button').find(button => button.text() === 'Clear filter')!.trigger('click');
+    expect(w.get('button[type=submit]').text()).toBe('Insert 2 images');
+    await w.get('form').trigger('submit');
+    expect(w.emitted('insert')?.[0]).toEqual(['![Cover](/cover.png)\n\n![Screen](/screen.png)']);
+  });
+  it('defaults to this item and personal uploads, with filenames visible and other authors in the shared library', async () => {
+    w = mount(ImagePicker, { props: { images: [
+      { href: '../../assets/ast_one/rev_one/long-filename.png', name: 'Cover', filename: 'long-filename.png', attached: true },
+      { href: '../../assets/ast_two/rev_one/mine.png', name: 'Mine', attached: false, mine: true },
+      { href: '../../assets/ast_three/rev_one/test.png', name: 'Test', attached: false, uploadedBy: 'markpasternak' },
+    ] }, global: { stubs: { Teleport: true } } });
+    expect(w.findAll('.image-choice').map(choice => choice.text())).toEqual(['Coverlong-filename.pngAttached to this item', 'MineYour upload']);
+    await w.findAll('button').find(button => button.text() === 'Shared library')!.trigger('click');
+    expect(w.findAll('.image-choice').map(choice => choice.text())).toEqual(['TestUploaded by markpasternak']);
+  });
+
+  it('uploads a batch, reports failed filenames, and inserts successful images in order', async () => {
+    const uploadImage = vi.fn(async (file: File) => {
+      if (file.name === 'broken.png') throw new Error('Upload failed');
+      return { href: `../../assets/ast_test/rev_one/${file.name}`, name: file.name, attached: true };
+    });
+    w = mount(ImagePicker, { props: { images: [], uploadImage }, global: { stubs: { Teleport: true } } });
+    const input = w.get('input[type=file]');
+    const files = ['first.png', 'broken.png', 'last.png'].map(name => new File(['image'], name, { type: 'image/png' }));
+    Object.defineProperty(input.element, 'files', { value: files });
+    expect(input.attributes('multiple')).toBeDefined();
+    await input.trigger('change');
+    await flushPromises();
+    expect(uploadImage).toHaveBeenCalledTimes(3);
+    expect(w.get('[role=alert]').text()).toBe('broken.png: Upload failed');
+    expect(w.get('button[type=submit]').text()).toBe('Insert 2 images');
+    await w.get('form').trigger('submit');
+    expect(w.emitted('insert')?.[0]).toEqual(['![first.png](../../assets/ast_test/rev_one/first.png)\n\n![last.png](../../assets/ast_test/rev_one/last.png)']);
+  });
+
   it("uses standard Markdown, escapes alt text and URL parentheses", async () => {
     setup();
     await w.get("input[type=url]").setValue("https://example.com/image(1).png");
@@ -69,7 +118,7 @@ it('keeps the picker open with a useful upload error so the author can retry', a
   Object.defineProperty(input.element, 'files', { value: [new File(['image'], 'image.png', { type: 'image/png' })] });
   await input.trigger('change');
   await flushPromises();
-  expect(w.get('[role=alert]').text()).toBe('Could not upload. Try again.');
-  expect(w.findAll('button').find(b => b.text() === 'Upload image')!.attributes('disabled')).toBeUndefined();
+  expect(w.get('[role=alert]').text()).toBe('image.png: Could not upload. Try again.');
+  expect(w.findAll('button').find(b => b.text() === 'Upload images')!.attributes('disabled')).toBeUndefined();
   expect(w.emitted('cancel')).toBeUndefined();
 });

@@ -2,6 +2,7 @@
 // can render the local working copy (unsynced edits/creates/deletes/reorders) without ever
 // mutating the published content. No DOM, fully unit-tested.
 import { sectionText, parseSections, parseLinks, inlineMdToText } from '../items';
+import { isStoryHeading, sectionLabel } from '../sectionHeadings';
 import type { ItemVM } from '../filters';
 import { EMPTY_ITEM_HISTORY } from '../itemHistory';
 
@@ -46,8 +47,8 @@ function applyBody(item: ItemVM, body: string): ItemVM {
     oneliner: sectionText(body, 'One-liner'),
     outcome: sectionText(body, 'Target outcome'),
     sections: parseSections(body)
-      .filter((s) => ['Why it matters', 'What ships', 'What shipped'].includes(s.heading))
-      .map((s) => ({ heading: s.heading, text: inlineMdToText(s.raw), markdown: s.raw })),
+      .filter((s) => isStoryHeading(s.heading))
+      .map((s) => ({ heading: sectionLabel(s.heading), text: inlineMdToText(s.raw), markdown: s.raw })),
     links: parseLinks(body, import.meta.env.BASE_URL).map((l) => ({ ...l, title: null })),
   };
 }

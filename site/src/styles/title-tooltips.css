@@ -1,0 +1,3 @@
+.roadmap-card [data-title-tooltip] { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.roadmap-title-tooltip { position: fixed; inset: auto; z-index: 100; width: max-content; max-width: min(360px, calc(100vw - 24px)); margin: 0; padding: 10px 12px; border: 1px solid var(--roadmap-glass-border); border-radius: 8px; background: var(--color-card); color: var(--roadmap-ink); box-shadow: 0 4px 18px #00000018; font: 500 13px/1.5 Inter, system-ui, sans-serif; overflow-wrap: anywhere; pointer-events: auto; }
+.roadmap-title-tooltip[hidden] { display: none; }
