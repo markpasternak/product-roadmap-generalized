@@ -115,6 +115,22 @@ describe('ShareDialog', () => {
     expect(w.find('iframe').exists()).toBe(true);
   });
 
+  it('shows a resource error without rendering a blank recipient frame', async () => {
+    vi.spyOn(assets, 'inlinePreviewAssets').mockResolvedValue(assets.previewAssetUrls());
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ documents: [], assets: [] }))));
+    const w = mount(ShareDialog, {
+      props: {
+        items: [mk({ cover: '../../assets/ast_missing/rev_one/cover.png' })],
+        context,
+      },
+    });
+    await toSettings(w);
+    await w.findAll('button').find((button) => button.text() === 'Preview as recipient')!.trigger('click');
+    await flushPromises();
+    expect(w.text()).toContain('not published yet');
+    expect(w.find('iframe').exists()).toBe(false);
+  });
+
   it('previews selected horizon lanes and isolates the preview', async () => {
     vi.spyOn(assets, 'inlinePreviewAssets').mockResolvedValue(assets.previewAssetUrls());
     const w = mount(ShareDialog, {

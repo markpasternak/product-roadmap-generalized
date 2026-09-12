@@ -973,10 +973,12 @@ onUnmounted(() => {
                 <span v-if="asset.placements.length"> · {{ asset.placements.length }} {{ asset.placements.length === 1 ? 'use' : 'uses' }}</span><span v-else> · Not used here</span>
               </p>
             </div>
-            <button v-if="shownRevision(asset).original.mediaType.startsWith('image/') && asset.placements.length" type="button" class="resource-quiet" :aria-pressed="isCoverAsset(asset)" @click="setCover(asset)">{{ isCoverAsset(asset) ? 'Remove cover' : 'Use as cover' }}</button>
-            <button type="button" class="resource-quiet" :aria-label="`Download ${asset.name}`" @click="download(asset)">Download</button>
-            <button v-if="!asset.remove" type="button" :aria-label="`${expanded === asset.id ? 'Close' : 'Edit'} ${asset.name}`" :aria-expanded="expanded === asset.id" @click="toggleResource(asset.id)">{{ expanded === asset.id ? 'Done' : 'Edit' }}</button>
-            <button v-else type="button" @click="store.setAssets({ ...dirtyAssets(), update: dirtyAssets().update.filter(c => c.id !== asset.id) })">Undo deletion</button>
+            <div class="resource-row-actions">
+              <button v-if="shownRevision(asset).original.mediaType.startsWith('image/') && asset.placements.length" type="button" class="resource-quiet" :aria-pressed="isCoverAsset(asset)" @click="setCover(asset)">{{ isCoverAsset(asset) ? 'Remove cover' : 'Use as cover' }}</button>
+              <button type="button" class="resource-quiet" :aria-label="`Download ${asset.name}`" @click="download(asset)">Download</button>
+              <button v-if="!asset.remove" type="button" :aria-label="`${expanded === asset.id ? 'Close' : 'Edit'} ${asset.name}`" :aria-expanded="expanded === asset.id" @click="toggleResource(asset.id)">{{ expanded === asset.id ? 'Done' : 'Edit' }}</button>
+              <button v-else type="button" @click="store.setAssets({ ...dirtyAssets(), update: dirtyAssets().update.filter(c => c.id !== asset.id) })">Undo deletion</button>
+            </div>
           </div>
           <p v-if="visibility === 'Public' && asset.visibility !== 'Public'" class="resource-error">
             This file is internal. <button type="button" @click="makePublic(asset)">Make file public</button>
@@ -1081,8 +1083,10 @@ onUnmounted(() => {
               <ImageThumbnail v-if="link.image || isImageResource(link.href)" :href="link.href" />
               <span v-else class="resource-kind">LINK</span>
               <div class="resource-identity"><strong>{{ link.label || 'Untitled link' }}</strong><p class="resource-muted resource-link-url">{{ link.href }}</p></div>
-              <a :href="resourceHref(link.href)" target="_blank" rel="noopener">Open</a>
-              <button type="button" :aria-expanded="expanded === `link-${link.start}`" @click="toggleResource(`link-${link.start}`)">{{ expanded === `link-${link.start}` ? 'Done' : 'Edit' }}</button>
+              <div class="resource-row-actions">
+                <a :href="resourceHref(link.href)" target="_blank" rel="noopener">Open</a>
+                <button type="button" :aria-expanded="expanded === `link-${link.start}`" @click="toggleResource(`link-${link.start}`)">{{ expanded === `link-${link.start}` ? 'Done' : 'Edit' }}</button>
+              </div>
             </div>
             <div v-if="expanded === `link-${link.start}`" class="resource-inspector-shell">
               <button type="button" class="resource-inspector-backdrop" aria-label="Close link details" @click="expanded = null" />
@@ -1320,11 +1324,7 @@ onUnmounted(() => {
   width: 100px;
   accent-color: var(--color-accent-brand-default);
 }
-.resource-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.75rem}.resource-link-list{display:grid;gap:.45rem;margin-top:.85rem}.resource-row{min-width:0;padding:.7rem;border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 76%,transparent);border-radius:12px;background:color-mix(in srgb,var(--color-card) 88%,var(--color-surface-subtle-default));transition:border-color 160ms ease,box-shadow 160ms ease,transform 160ms ease}.resource-row:hover{border-color:color-mix(in srgb,var(--color-accent-brand-default) 26%,var(--color-border-subtle-default));box-shadow:0 10px 24px rgb(0 0 0 / 7%);transform:translateY(-1px)}.resource-row-link{padding:.55rem .7rem}.resource-row-expanded{border-color:color-mix(in srgb,var(--color-accent-brand-default) 44%,var(--color-border-subtle-default))}
-.resource-row-main > div {
-  flex: 1;
-  min-width: 0;
-}
+.resource-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:.75rem}.resource-link-list{display:grid;gap:.45rem;margin-top:.85rem}.resource-row{min-width:0;padding:.7rem;border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 76%,transparent);border-radius:12px;background:color-mix(in srgb,var(--color-card) 88%,var(--color-surface-subtle-default));transition:border-color 160ms ease,box-shadow 160ms ease}.resource-row:hover{border-color:color-mix(in srgb,var(--color-accent-brand-default) 26%,var(--color-border-subtle-default));box-shadow:0 10px 24px rgb(0 0 0 / 7%)}.resource-row-link{padding:.55rem .7rem}.resource-row-expanded{border-color:color-mix(in srgb,var(--color-accent-brand-default) 44%,var(--color-border-subtle-default))}
 .resource-row strong {
   font-size: 0.86rem;
   font-weight: 500;
@@ -1354,13 +1354,15 @@ onUnmounted(() => {
 /* The shelf reads as a list; only the selected resource opens an inspector. */
 .resource-shelf { padding: 1rem; }
 .resource-count { color: var(--color-text-subtle-default); font-size: .8rem; margin-left: .35rem; font-variant-numeric: tabular-nums; }
-.resource-row-main { flex-wrap: nowrap; gap: .6rem; align-items:center; }
+.resource-row-main { display:grid;grid-template-columns:auto minmax(0,1fr);gap:.6rem;align-items:center; }
 .resource-row-main :deep(.image-thumbnail), .resource-kind { width: 58px; height: 52px; flex: 0 0 58px; display: grid; place-items: center; border-radius:8px; }
 .resource-row-image .resource-row-main :deep(.image-thumbnail){width:84px;height:64px;flex-basis:84px;background:var(--color-surface-subtle-default)}
-.resource-row-main .resource-identity { min-width: 0; }
+.resource-row-main .resource-identity { min-width:0;align-self:center; }
+.resource-row-actions { grid-column:1/-1;display:flex;min-width:0;align-items:center;justify-content:flex-end;gap:.25rem;padding-top:.45rem;border-top:1px solid color-mix(in srgb,var(--color-border-subtle-default) 62%,transparent); }
+.resource-row-actions a { display:inline-flex;min-height:38px;align-items:center;padding:.4rem .7rem;text-decoration:none; }
 .resource-controls .resource-quiet { border-color: transparent; background: transparent; }
 .resource-controls :is(button, input, select):focus-visible { outline: 2px solid var(--color-accent-brand-default); outline-offset: 3px; }
-.resource-inspector-shell{position:fixed;inset:0;z-index:95;display:flex;justify-content:flex-end}.resource-inspector-backdrop{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;border:0!important;border-radius:0!important;background:rgb(8 10 14 / 58%)!important;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);cursor:default!important}.resource-inspector{position:relative;display:flex;width:min(680px,96vw);height:100%;flex-direction:column;overflow:hidden;border-left:1px solid var(--color-border-subtle-default);background:var(--color-card);box-shadow:-28px 0 68px rgb(0 0 0 / 32%);animation:resource-inspector-in 220ms cubic-bezier(.2,.8,.2,1)}.resource-inspector-header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.15rem;border-bottom:1px solid var(--color-border-subtle-default)}.resource-inspector-header h3{margin:.2rem 0 0;font-size:1.05rem;font-weight:650;overflow-wrap:anywhere}.resource-inspector-scroll{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(220px,.88fr);gap:1rem;overflow-y:auto;padding:1rem}.resource-inspector-preview{grid-column:1/-1;display:grid;min-height:220px;max-height:42vh;place-items:center;overflow:hidden;border:1px solid var(--color-border-subtle-default);border-radius:14px;background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--roadmap-product-accent,var(--color-accent-brand-default)) 12%,var(--color-surface-subtle-default)),var(--color-surface-subtle-default))}.resource-inspector-preview>img{display:block;width:100%;height:100%;min-height:220px;max-height:42vh;object-fit:contain}.resource-inspector-preview>div{text-align:center;color:var(--color-text-subtle-default)}.resource-inspector-preview .resource-kind{margin:0 auto .75rem}.resource-inspector-preview p{max-width:42ch;font-size:.78rem;overflow-wrap:anywhere}.resource-details{min-width:0}.resource-placements{min-width:0;padding:.85rem;border:1px solid var(--color-border-subtle-default);border-radius:12px;background:color-mix(in srgb,var(--color-card) 84%,var(--color-surface-subtle-default))}@keyframes resource-inspector-in{from{opacity:0;transform:translateX(24px)}}
+.resource-inspector-shell{position:fixed;inset:0;z-index:130;display:flex;justify-content:flex-end}.resource-inspector-backdrop{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;border:0!important;border-radius:0!important;background:rgb(8 10 14 / 58%)!important;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);cursor:default!important}.resource-inspector{position:relative;display:flex;width:min(680px,96vw);height:100%;flex-direction:column;overflow:hidden;border-left:1px solid var(--color-border-subtle-default);background:var(--color-card);box-shadow:-28px 0 68px rgb(0 0 0 / 32%);animation:resource-inspector-in 180ms cubic-bezier(.2,.8,.2,1)}.resource-inspector-header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.15rem;border-bottom:1px solid var(--color-border-subtle-default)}.resource-inspector-header h3{margin:.2rem 0 0;font-size:1.05rem;font-weight:650;overflow-wrap:anywhere}.resource-inspector-scroll{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(220px,.88fr);gap:1rem;overflow-y:auto;padding:1rem}.resource-inspector-preview{grid-column:1/-1;display:grid;min-height:220px;max-height:42vh;place-items:center;overflow:hidden;border:1px solid var(--color-border-subtle-default);border-radius:14px;background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--roadmap-product-accent,var(--color-accent-brand-default)) 12%,var(--color-surface-subtle-default)),var(--color-surface-subtle-default))}.resource-inspector-preview>img{display:block;width:100%;height:100%;min-height:220px;max-height:42vh;object-fit:contain}.resource-inspector-preview>div{text-align:center;color:var(--color-text-subtle-default)}.resource-inspector-preview .resource-kind{margin:0 auto .75rem}.resource-inspector-preview p{max-width:42ch;font-size:.78rem;overflow-wrap:anywhere}.resource-details{min-width:0}.resource-placements{min-width:0;padding:.85rem;border:1px solid var(--color-border-subtle-default);border-radius:12px;background:color-mix(in srgb,var(--color-card) 84%,var(--color-surface-subtle-default))}@keyframes resource-inspector-in{from{opacity:0;transform:translateX(18px)}}
 .resource-details { display: grid; gap: .7rem; align-content: start; }
 .resource-inspector label { max-width: none; }
 .resource-placements h4 { font-size: .8rem; font-weight: 500; margin-bottom: .5rem; }
@@ -1395,9 +1397,7 @@ onUnmounted(() => {
 .resource-picker form > button { justify-self: start; }
 @media (max-width: 640px) {
   .resource-grid{grid-template-columns:1fr}.resource-inspector{width:100vw}.resource-inspector-backdrop{display:none}.resource-inspector-scroll{grid-template-columns:1fr}.resource-inspector-preview{min-height:180px}.resource-inspector-preview>img{min-height:180px}
-  .resource-row-main { gap: .4rem; flex-wrap: wrap; }
-  .resource-row-main .resource-identity { flex-basis: calc(100% - 60px); }
-  .resource-row-main > button:first-of-type, .resource-row-main > a { margin-left: auto; }
+  .resource-row-main { gap: .4rem; }
   .resource-link-editor { grid-template-columns: 1fr; padding-left: 0; }
   .resource-link-editor > button { justify-self: start; }
   .resource-file-actions { flex-wrap: wrap; }
