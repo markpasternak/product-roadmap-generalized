@@ -325,6 +325,7 @@ func TestLocalDeployOptIn(t *testing.T) {
 func TestLocalDeployIntegration(t *testing.T) {
 	for _, scenario := range []string{"published", "already-current", "conflict", "superseded", "security-failure"} {
 		t.Run(scenario, func(t *testing.T) {
+			logs := captureBuildTimings(t)
 			g, _ := buildFixture(t)
 			protocol, err := os.ReadFile("../tooling/deploy/coordinate.mjs")
 			if err != nil {
@@ -470,6 +471,14 @@ await runCLI(config);`
 			if scenario == "security-failure" && (builds != 0 || !strings.Contains(err.Error(), "secret history check")) {
 				t.Fatal("failed secret scan did not stop the fast path before building")
 			}
+			records := timingRecords(t, logs)
+			wantOutcome := map[string]string{"published": "published", "already-current": "already_current", "conflict": "failed", "superseded": "superseded", "security-failure": "failed"}[scenario]
+			if len(records) == 0 || records[len(records)-1]["stage"] != "attempt" || records[len(records)-1]["outcome"] != wantOutcome {
+				t.Fatalf("missing truthful deployment timing outcome: %v", records)
+			}
+			if strings.Contains(logs.String(), "fixture-canvas-token") || strings.Contains(logs.String(), "fixture-github-token") {
+				t.Fatal("deployment credential leaked in timings")
+			}
 		})
 	}
 }
@@ -558,7 +567,7 @@ func TestLocalBuildDependencyCacheDoesNotModifySource(t *testing.T) {
 
 func TestLocalBuildNotificationRequiresSuccessfulPush(t *testing.T) {
 	g, head := buildFixture(t) // Deliberately has no remote: a push must fail locally.
-	wake := make(chan struct{}, 1)
+	wake := make(chan time.Time, 1)
 	g.localBuild = &localBuildWorker{wake: wake, done: make(chan struct{})}
 	out, _, pushErr, err := g.applyCommitPush(context.Background(), "", g.repoRoot(), Changeset{}, "No-op", "alice", head)
 	if err != nil || pushErr != nil || !out.NoChanges {

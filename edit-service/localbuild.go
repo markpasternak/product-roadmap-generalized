@@ -82,27 +82,28 @@ func (p buildProfile) environment(sha string) []string {
 // The slot represents "look at latest main", not a FIFO of old commits. Even a
 // delayed notification cannot replace a newer pending SHA with an older one.
 type localBuildWorker struct {
-	wake   chan struct{}
+	wake   chan time.Time
 	cancel context.CancelFunc
 	done   chan struct{}
 }
 
 func newLocalBuildWorker(run func(context.Context)) *localBuildWorker {
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &localBuildWorker{wake: make(chan struct{}, 1), cancel: cancel, done: make(chan struct{})}
+	w := &localBuildWorker{wake: make(chan time.Time, 1), cancel: cancel, done: make(chan struct{})}
 	go func() {
 		defer close(w.done)
 		for {
+			var queued time.Time
 			select {
 			case <-ctx.Done():
 				return
-			case <-w.wake:
+			case queued = <-w.wake:
 			}
 			if ctx.Err() != nil {
 				return
 			}
 			job, cancelJob := context.WithTimeout(ctx, 2*time.Minute)
-			run(job)
+			run(context.WithValue(job, buildQueuedAtKey{}, queued))
 			cancelJob()
 		}
 	}()
@@ -119,7 +120,7 @@ func (w *localBuildWorker) enqueue() {
 	default:
 	}
 	select {
-	case w.wake <- struct{}{}:
+	case w.wake <- time.Now():
 	default:
 	}
 }
@@ -142,16 +143,23 @@ func (g *GitHub) startLocalBuild() {
 		return
 	}
 	g.localBuild = newLocalBuildWorker(func(ctx context.Context) {
+		ctx, trace, _ := ensureBuildTiming(ctx)
+		var result error
+		defer func() { trace.finish(ctx, result) }()
 		started := time.Now()
-		if err := g.cleanLocalBuildAttempts(ctx); err != nil {
+		cleanupDone := trace.step(ctx, "cleanup abandoned attempts")
+		result = g.cleanLocalBuildAttempts(ctx)
+		cleanupDone(result)
+		if result != nil {
 			log.Printf("local preparation cleanup failed; GitHub Actions unchanged")
 			return
 		}
-		if err := g.prepareBuild(ctx, g.latestBuildHead, runLocalBuildCommands); err != nil {
+		result = g.prepareBuild(ctx, g.latestBuildHead, runLocalBuildCommands)
+		if result != nil {
 			// Git commands may include auth diagnostics; never log raw subprocess output.
 			stage := "preparation"
 			var failure *localBuildFailure
-			if errors.As(err, &failure) {
+			if errors.As(result, &failure) {
 				stage = failure.stage
 			}
 			log.Printf("local preparation skipped/failed at %s, duration=%s; GitHub Actions unchanged", stage, time.Since(started))
@@ -258,8 +266,15 @@ type preparedBuild struct {
 // Inject the remote read and command runner for deterministic race/failure tests;
 // snapshotting, eligibility, dependencies, version proof and ZIP remain real.
 func (g *GitHub) prepareBuild(ctx context.Context, latest func(context.Context) (string, error), run func(context.Context, string, []string) error) (result error) {
+	ctx, trace, ownsTrace := ensureBuildTiming(ctx)
+	if ownsTrace {
+		defer func() { trace.finish(ctx, result) }()
+	}
 	stage := "latest-main lookup"
+	trace.nextPhase(ctx, stage)
+	setStage := func(name string) { stage = name; trace.nextPhase(ctx, name) }
 	defer func() {
+		trace.endPhase(ctx, result)
 		if result != nil {
 			result = &localBuildFailure{stage: stage, cause: result}
 		}
@@ -268,13 +283,17 @@ func (g *GitHub) prepareBuild(ctx context.Context, latest func(context.Context) 
 	if err != nil {
 		return err
 	}
+	if gitSHA.MatchString(head) {
+		trace.commit = head
+	}
 	c := g.cfg.LocalBuild
-	stage = "approved content baseline"
+	setStage("approved content baseline")
 	if err := g.checkLocalBuildTree(ctx, c.BaseSHA, head); err != nil {
 		return err
 	}
 	profile, _ := json.Marshal(c.Profile)
 	id := stateKey("roadmap-build-v1", g.cfg.Repo, head, string(profile))
+	setStage("prepared artifact cache")
 	root := filepath.Join(g.cfg.StateDir, "local-build")
 	var previous preparedBuild
 	if c.Mode != "deploy" && readJSON(filepath.Join(root, "prepared", "receipt.json"), &previous) == nil && previous.BuildID == id {
@@ -284,11 +303,13 @@ func (g *GitHub) prepareBuild(ctx context.Context, latest func(context.Context) 
 			_, copyErr := io.Copy(hash, archive)
 			closeErr := archive.Close()
 			if copyErr == nil && closeErr == nil && hex.EncodeToString(hash.Sum(nil)) == previous.ArchiveSHA256 {
+				trace.outcome = "skipped"
+				trace.emit(buildTimingRecord{Stage: "prepared artifact cache", Outcome: "success", Cache: "hit"})
 				return nil
 			}
 		}
 	}
-	stage = "immutable checkout"
+	setStage("immutable checkout")
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return err
 	}
@@ -296,7 +317,12 @@ func (g *GitHub) prepareBuild(ctx context.Context, latest func(context.Context) 
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(job)
+	defer func() {
+		trace.endPhase(ctx, result)
+		done := trace.step(context.Background(), "cleanup attempt")
+		done(os.RemoveAll(job))
+	}()
+	trace.installProbe(job)
 	wt := filepath.Join(job, "source")
 	g.repoMu.Lock()
 	_, err = g.runGit(ctx, "", g.repoRoot(), "worktree", "add", "--detach", wt, head)
@@ -305,16 +331,18 @@ func (g *GitHub) prepareBuild(ctx context.Context, latest func(context.Context) 
 		return err
 	}
 	defer func() {
+		trace.endPhase(ctx, result)
 		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		done := trace.step(cleanup, "cleanup worktree")
 		g.repoMu.Lock()
 		defer g.repoMu.Unlock()
-		g.removeWorktree(cleanup, "", wt)
+		done(g.removeWorktree(cleanup, "", wt))
 	}()
 	intentPath := filepath.Join(job, "intent.json")
 	proofPath := filepath.Join(root, "last-deployment.json")
 	if c.Mode == "deploy" {
-		stage = "Canvas coordination preflight"
+		setStage("Canvas coordination preflight")
 		if err := g.coordinateBuild(ctx, wt, head, "preflight", intentPath, "", proofPath); err != nil {
 			return err
 		}
@@ -327,29 +355,40 @@ func (g *GitHub) prepareBuild(ctx context.Context, latest func(context.Context) 
 		if intent.AlreadyCurrent {
 			// The helper verifies the live identity again. A cached local receipt
 			// alone must never suppress a deploy after rollback or unpublish.
-			return g.coordinateBuild(ctx, wt, head, "publish", intentPath, "", proofPath)
+			setStage("verify already current")
+			err := g.coordinateBuild(ctx, wt, head, "publish", intentPath, "", proofPath)
+			if err == nil {
+				trace.outcome = "already_current"
+			}
+			return err
 		}
-		stage = "secret history check"
 		if _, err := os.Stat(filepath.Join(wt, "site/scripts/check-demo.mjs")); err == nil {
+			setStage("secret history check")
 			if err := runBuildCommand(ctx, wt, c.Profile.environment(head), []string{"gitleaks", "git", ".", "--redact=100", "--log-opts=--all"}); err != nil {
 				return err
 			}
+		} else {
+			trace.emit(buildTimingRecord{Stage: "secret history check", Outcome: "skipped"})
 		}
 	}
-	stage = "warm dependencies"
+	setStage("warm dependencies")
 	restoreDependencies, err := prepareBuildDependencies(ctx, wt, c.DependenciesDir, filepath.Join(root, "dependencies"))
 	if err != nil {
 		return err
 	}
-	defer restoreDependencies()
-	stage = "content/build/link/date checks"
+	defer func() {
+		trace.endPhase(ctx, result)
+		done := trace.step(context.Background(), "cleanup dependencies")
+		done(restoreDependencies())
+	}()
+	setStage("content/build/link/date checks")
 	if err := run(ctx, wt, c.Profile.environment(head)); err != nil {
 		return err
 	}
 	var version struct {
 		Commit string `json:"commit"`
 	}
-	stage = "build version proof"
+	setStage("build version proof")
 	if err := readJSON(filepath.Join(wt, "site/dist/version.json"), &version); err != nil {
 		return err
 	}
@@ -357,7 +396,7 @@ func (g *GitHub) prepareBuild(ctx context.Context, latest func(context.Context) 
 		return errors.New("built version does not match selected commit")
 	}
 	artifact := filepath.Join(job, "artifact")
-	stage = "ZIP packaging"
+	setStage("ZIP packaging")
 	if err := os.Mkdir(artifact, 0700); err != nil {
 		return err
 	}
@@ -365,12 +404,13 @@ func (g *GitHub) prepareBuild(ctx context.Context, latest func(context.Context) 
 	if err != nil {
 		return err
 	}
-	stage = "final freshness check"
+	setStage("final freshness check")
 	current, err := latest(ctx)
 	if err != nil {
 		return err
 	}
 	if current != head {
+		trace.outcome = "superseded"
 		return errors.New("build superseded by newer main")
 	}
 	if err := ctx.Err(); err != nil {
@@ -378,13 +418,21 @@ func (g *GitHub) prepareBuild(ctx context.Context, latest func(context.Context) 
 	}
 	receipt := preparedBuild{State: "prepared-not-deployed", Commit: head, BuildID: id, ArchiveSHA256: digest, Profile: c.Profile, PreparedAt: time.Now().UTC()}
 	if c.Mode == "deploy" {
-		stage = "conditional Canvas publication and verification"
+		setStage("conditional Canvas publication and verification")
 		if err := g.coordinateBuild(ctx, wt, head, "publish", intentPath, filepath.Join(artifact, "site.zip"), proofPath); err != nil {
 			return err
 		}
+		trace.outcome = "verified"
+		var proof struct {
+			Commit  string `json:"commit"`
+			Outcome string `json:"outcome"`
+		}
+		if readJSON(proofPath, &proof) == nil && proof.Commit == head && (proof.Outcome == "published" || proof.Outcome == "already_current") {
+			trace.outcome = proof.Outcome
+		}
 		receipt.State = "deployment-verified"
 	}
-	stage = "prepared receipt"
+	setStage("prepared receipt")
 	if err := writeJSONAtomic(filepath.Join(artifact, "receipt.json"), receipt); err != nil {
 		return err
 	}
@@ -396,7 +444,9 @@ func (g *GitHub) prepareBuild(ctx context.Context, latest func(context.Context) 
 }
 
 func (g *GitHub) coordinateBuild(ctx context.Context, root, head, action, intent, archive, report string) error {
+	done := buildTimingFrom(ctx).step(ctx, "coordinator installation token")
 	token, err := g.installationToken(ctx)
+	done(err)
 	if err != nil {
 		return err
 	}
@@ -416,7 +466,7 @@ type localBuildFailure struct {
 func (e *localBuildFailure) Error() string { return e.stage + ": " + e.cause.Error() }
 func (e *localBuildFailure) Unwrap() error { return e.cause }
 
-func prepareBuildDependencies(ctx context.Context, root, source, cache string) (func(), error) {
+func prepareBuildDependencies(ctx context.Context, root, source, cache string) (func() error, error) {
 	var manifests []string
 	for _, name := range []string{"package.json", "package-lock.json"} {
 		a, err := os.ReadFile(filepath.Join(root, "site", name))
@@ -444,16 +494,19 @@ func prepareBuildDependencies(ctx context.Context, root, source, cache string) (
 	if err := os.MkdirAll(cache, 0700); err != nil {
 		return nil, err
 	}
-	restore := func() {
-		if err := os.Rename(modulesInBuild, filepath.Join(cache, "node_modules")); err == nil {
-			_ = writeJSONAtomic(filepath.Join(cache, "key.json"), key)
+	restore := func() error {
+		if err := os.Rename(modulesInBuild, filepath.Join(cache, "node_modules")); err != nil {
+			return err
 		}
+		return writeJSONAtomic(filepath.Join(cache, "key.json"), key)
 	}
 	if cachedKey == key {
 		if err := os.Rename(filepath.Join(cache, "node_modules"), modulesInBuild); err == nil {
+			buildTimingFrom(ctx).emit(buildTimingRecord{Stage: "dependency cache", Outcome: "success", Cache: "hit"})
 			return restore, nil
 		}
 	}
+	buildTimingFrom(ctx).emit(buildTimingRecord{Stage: "dependency cache", Outcome: "success", Cache: "miss"})
 	modules := filepath.Join(source, "node_modules")
 	info, err := os.Stat(modules)
 	if err != nil {
@@ -471,17 +524,24 @@ func prepareBuildDependencies(ctx context.Context, root, source, cache string) (
 }
 
 func runLocalBuildCommands(ctx context.Context, root string, env []string) error {
-	commands := [][]string{
-		{"python3", "tooling/validate_items.py"},
-		{"npm", "--prefix", "site", "run", "build"},
-		{"node", "site/scripts/check-document-links.mjs"},
-		{"node", "site/scripts/check-item-history.mjs"},
+	type buildCheck struct {
+		stage string
+		args  []string
+	}
+	commands := []buildCheck{
+		{"content validation", []string{"python3", "tooling/validate_items.py"}},
+		{"npm build", []string{"npm", "--prefix", "site", "run", "build"}},
+		{"document link checks", []string{"node", "site/scripts/check-document-links.mjs"}},
+		{"item date checks", []string{"node", "site/scripts/check-item-history.mjs"}},
 	}
 	if _, err := os.Stat(filepath.Join(root, "site/scripts/check-demo.mjs")); err == nil {
-		commands = append(commands, []string{"node", "site/scripts/check-demo.mjs"})
+		commands = append(commands, buildCheck{"demo checks", []string{"node", "site/scripts/check-demo.mjs"}})
 	}
-	for _, args := range commands {
-		if err := runBuildCommand(ctx, root, env, args); err != nil {
+	for _, check := range commands {
+		done := buildTimingFrom(ctx).step(ctx, check.stage)
+		err := runBuildCommand(ctx, root, env, check.args)
+		done(err)
+		if err != nil {
 			return err
 		}
 	}
@@ -489,13 +549,27 @@ func runLocalBuildCommands(ctx context.Context, root string, env []string) error
 }
 
 func runBuildCommand(ctx context.Context, root string, env, args []string) error {
+	trace := buildTimingFrom(ctx)
+	if trace != nil && trace.probe != "" && (args[0] == "node" || args[0] == "npm") {
+		// Only our embedded probe can set NODE_OPTIONS; never inherit a caller's.
+		clean := make([]string, 0, len(env)+1)
+		for _, value := range env {
+			if !strings.HasPrefix(value, "NODE_OPTIONS=") {
+				clean = append(clean, value)
+			}
+		}
+		env = append(clean, "NODE_OPTIONS=--import="+trace.probe)
+	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir, cmd.Env = root, env
 	// npm spawns Astro: cancel the process group, not just its parent shell.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = 2 * time.Second
-	var output buildOutput
+	output := buildOutput{trace: trace}
+	if trace != nil {
+		output.parent = trace.phase
+	}
 	cmd.Stdout, cmd.Stderr = &output, &output
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("local check %s failed: %w\n%s", strings.Join(args, " "), err, output.data)
@@ -505,9 +579,35 @@ func runBuildCommand(ctx context.Context, root string, env, args []string) error
 
 // Keep only a bounded diagnostic tail. The service never logs this raw output;
 // local integration tests can display it when the actual toolchain fails.
-type buildOutput struct{ data []byte }
+type buildOutput struct {
+	data, line  []byte
+	trace       *buildTiming
+	parent      string
+	records     int
+	discardLine bool
+}
 
 func (b *buildOutput) Write(p []byte) (int, error) {
+	if b.trace != nil && b.records < 256 {
+		for _, value := range p {
+			if b.records >= 256 {
+				break
+			}
+			if value == '\n' {
+				if !b.discardLine {
+					b.trace.nodeRecord(b.line, b.parent)
+				}
+				if bytes.HasPrefix(b.line, []byte("ROADMAP_BUILD_TIMING ")) {
+					b.records++
+				}
+				b.line, b.discardLine = b.line[:0], false
+			} else if len(b.line) < 2048 {
+				b.line = append(b.line, value)
+			} else {
+				b.discardLine = true
+			}
+		}
+	}
 	const limit = 16 << 10
 	n := len(p)
 	if len(p) > limit {

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -282,12 +283,12 @@ func (g *GitHub) addWorktreeLocked(ctx context.Context, token string) (string, e
 	return wt, nil
 }
 
-func (g *GitHub) removeWorktree(ctx context.Context, token, wt string) {
+func (g *GitHub) removeWorktree(ctx context.Context, token, wt string) error {
 	if wt == "" {
-		return
+		return nil
 	}
-	_, _ = g.runGit(ctx, token, g.repoRoot(), "worktree", "remove", "--force", wt)
-	_ = os.RemoveAll(wt)
+	_, err := g.runGit(ctx, token, g.repoRoot(), "worktree", "remove", "--force", wt)
+	return errors.Join(err, os.RemoveAll(wt))
 }
 
 func safeRepoPath(p string) (string, error) {
