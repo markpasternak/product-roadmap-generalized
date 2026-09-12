@@ -291,6 +291,17 @@ const themeOptions = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ];
+const sortLabels = { manual: 'Priority order', impact: 'Highest impact', effort: 'Lowest effort', updated: 'Recently updated', title: 'Title A–Z' } as const;
+const shareViewSummary = computed(() => {
+  const layout = props.context.timeline ? 'Timeline' : 'Board';
+  const grouping = props.context.timeline
+    ? `Grouped by ${props.context.timeline.group}`
+    : `Grouped by ${props.context.group === 'product' ? 'product' : 'horizon'}`;
+  const parts = [layout, grouping];
+  if (!props.context.timeline) parts.push(props.context.sort ? sortLabels[props.context.sort] : 'Priority order');
+  parts.push(props.context.reverseLanes ? 'Reverse lane order' : 'Canonical lane order');
+  return parts.join(' · ');
+});
 const shareOptions = computed(() =>
   updateableShares.value.map((share) => ({
     value: share.id,
@@ -844,6 +855,7 @@ const primaryCls =
                     : 'No expiry'
                 }}.
               </p>
+              <p class="text-single-sm-medium text-text-subtle-default mt-1">{{ shareViewSummary }}</p>
               <p
                 v-if="targetMode === 'existing'"
                 data-test="predicted-status"

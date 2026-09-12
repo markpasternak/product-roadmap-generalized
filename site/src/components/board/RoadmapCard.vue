@@ -18,6 +18,8 @@ import type { ItemVM } from '../../lib/filters';
 
 const props = defineProps<{
   item: ItemVM;
+  /** Product identity is only needed when cards from multiple products share a horizon lane. */
+  showProduct?: boolean;
   showHorizon?: boolean;
   active?: boolean;
   /** Client-facing (presentation) mode: no internal sizing, no plain tags, no owner. */
@@ -174,7 +176,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
     />
 
     <div class="flex items-start gap-3">
-      <ProductMark :product="item.product" :size="36" />
+      <ProductMark v-if="showProduct" :product="item.product" :size="36" />
       <div class="min-w-0 flex-1">
         <h3
           v-if="!renaming"

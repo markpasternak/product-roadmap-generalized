@@ -145,9 +145,11 @@ const TOC = [
           selected product and view settings.</dd></div>
         <div><dt>View — how to show them</dt><dd>Choose visible horizons and manage your saved views.
           On Board, choose grouping by horizon or product and a sort order: Priority, Highest impact, Lowest effort,
-          Recently updated or Title. Timeline has its own grouping and scale controls.</dd></div>
+          Recently updated or Title. Timeline has its own grouping and scale controls. Horizons, grouping, sort order
+          and lane order stay in this browser. A link with explicit view settings takes precedence without replacing
+          those browser preferences.</dd></div>
         <div><dt>Reverse lane order</dt><dd>Reverse the displayed lanes or Timeline groups without changing item priority.
-          This preference stays in this browser and is not included in saved views or shared snapshots.</dd></div>
+          It is included in saved views, presentation links and shared snapshots.</dd></div>
       </dl>
       <h3>Find recently created or updated items</h3>
       <p>In <b>Filters → Activity</b>, choose Created or Updated, then Today, the last 7, 30 or 90 days,
@@ -157,7 +159,7 @@ const TOC = [
         Newly created items count too. Draft autosaves and site rebuilds do not count.
         These activity dates describe publication history; they are separate from planned start and end dates.</p>
       <h3>Keep a useful view</h3>
-      <p>Choose <b>View → Save as new view</b> to name your current filters, horizons, layout, grouping and order.
+      <p>Choose <b>View → Save as new view</b> to name your current filters, horizons, layout, grouping, sort and lane order.
         Timeline settings are saved too. You can update, rename or delete saved views in the same menu.
         They are stored in this browser, not synced to your account; clearing browser data removes them.
         A saved “last 7 days” filter keeps rolling as time passes.</p>
@@ -309,13 +311,13 @@ const TOC = [
         <li>Choose the audience and publish a new share, or update an existing one.</li>
       </ol>
       <p>Card titles use up to two lines. Hover or focus a card to read a clipped title in full; open the item for its full write-up.
-        Shared cards use the same horizon lanes as the main roadmap: Now, Next, Later and Completed,
-        with Candidates when selected. Selected empty lanes stay visible. Cards show the work stage;
-        mixed-product shares also identify the product. The Completed lane is visually quieter.
+        Shared cards keep the board's grouping, sort and lane order. Selected empty horizon lanes stay visible.
+        Cards show the work stage. When horizon lanes mix products, cards show the product shorthand; the shorthand
+        is hidden for a single product and when product lanes already provide that context. Product lanes show the horizon instead.
+        The Completed lane is visually quieter.
         <b>Scope</b> covers both planned and delivered work, including older sections named What ships or What shipped.
         Bottom line is included when present. Timeline shares keep a fixed
-        calendar window; owner or tag grouping changes to product grouping. Reverse lane order is a local preference
-        and is not carried into a share.</p>
+        calendar window; owner or tag grouping changes to product grouping.</p>
       <p>Owner fields and editing links are omitted. Inline images are included with the text; other resources are optional.
         Review the write-up itself too: a name or sensitive detail typed into the text is still content you are sharing.
         The preview shows content and layout; your access settings determine who can open it.</p>

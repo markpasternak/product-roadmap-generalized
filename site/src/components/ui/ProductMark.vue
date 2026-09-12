@@ -22,6 +22,8 @@ const short = computed(() => productShort[props.product as keyof typeof productS
       borderRadius: Math.max(8, Math.round(size * 0.18)) + 'px',
     }"
     :title="product"
-    >{{ short }}</span
+    role="img"
+    :aria-label="product"
+    ><span aria-hidden="true">{{ short }}</span></span
   >
 </template>

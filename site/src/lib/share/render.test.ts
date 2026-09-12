@@ -18,7 +18,7 @@ describe('renderShareHtml', () => {
     const html = renderShareHtml(ctx, [item, { ...item, id: 'TALK-done', horizon: 'Completed', stage: 'Building' }]);
     expect(html).toContain('Now · Building');
     expect(html).not.toMatch(/data-horizon="Completed">/);
-    expect(html).toMatch(/data-horizon="Now">\s+Building\s+<\/span>/);
+    expect(html).toMatch(/data-horizon="Now">\s*Building\s*<\/span>/);
     expect(html).not.toContain('Completed · Building');
   });
 
@@ -102,13 +102,24 @@ describe('renderShareHtml', () => {
     expect(html).toContain('Podcasts &amp; Audiobooks — partner view');
   });
 
-  it('identifies products on mixed boards without repeating icons on single-product cards', () => {
+  it('identifies products with shorthand on mixed horizon boards without repeating marks for one product', () => {
     const infraItem = { ...item, id: 'ADS-1', product: 'Ads Platform' };
     const infraHtml = renderShareHtml({ ...ctx, product: 'Ads Platform' }, [infraItem]);
     expect(infraHtml).toContain('var(--roadmap-product-ads-platform)');
-    expect(infraHtml).not.toContain('title="Ads Platform">AP</span>');
+    expect(infraHtml).not.toContain('aria-label="Ads Platform"');
     expect(infraHtml).not.toContain('<span class="card-product">');
-    expect(renderShareHtml({ ...ctx, product: null }, [item, infraItem])).toContain('<span class="card-product">Ads Platform</span>');
+    const mixed = renderShareHtml({ ...ctx, product: null }, [item, infraItem]);
+    expect(mixed).toContain('aria-label="Ads Platform"');
+    expect(mixed).toContain('aria-hidden="true">AP</span>');
+    expect(mixed).not.toContain('<span class="card-product">');
+  });
+
+  it('honors product grouping and reversed lane order in baked boards', () => {
+    const adsItem = { ...item, id: 'ADS-1', product: 'Ads Platform', horizon: 'Next' };
+    const rendered = renderShareHtml({ ...ctx, product: null, group: 'product', reverseLanes: true }, [item, adsItem]);
+    expect(rendered.indexOf('data-lane="Ads Platform"')).toBeLessThan(rendered.indexOf('data-lane="Podcasts &amp; Audiobooks"'));
+    expect(rendered).toContain('data-horizon="Next"');
+    expect(rendered).not.toContain('aria-label="Ads Platform"');
   });
 
   it('does not add an unselected empty Completed lane to a baked roadmap', () => {

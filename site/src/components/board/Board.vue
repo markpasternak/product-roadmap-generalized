@@ -65,6 +65,15 @@ import PresenceIndicator from './PresenceIndicator.vue';
 import { useBackend } from '../../composables/useBackend';
 import { usePresence } from '../../composables/usePresence';
 import type { DraftedItem } from '../../lib/ai/draftItem';
+import {
+  BOARD_VIEW_STORAGE_KEY,
+  DEFAULT_BOARD_VIEW_STATE,
+  boardViewStateFromParams,
+  hasBoardViewParams,
+  readBoardViewState,
+  writeBoardViewParams,
+  type BoardViewState,
+} from '../../lib/boardViewState';
 
 // Lazy: keeps the ~270KB md-editor (SectionEditor → MarkdownEditor) out of the initial
 // bundle — only fetched once a signed-in editor actually opens the full-screen editor.
@@ -132,7 +141,7 @@ watch(() => filters.activity, refreshActivityDay);
 // Visible horizons are view settings, deliberately kept OUTSIDE `filters` — `canReorder`
 // (below) reads `filters` only, so keeping horizon separate means selecting/deselecting
 // horizon chips never affects whether priority-reordering is allowed.
-const DEFAULT_HORIZONS = ['Now', 'Next', 'Later'] as const;
+const DEFAULT_HORIZONS = DEFAULT_BOARD_VIEW_STATE.horizons;
 const horizons = ref<string[]>([...DEFAULT_HORIZONS]);
 function toggleHorizon(h: string) {
   horizons.value = horizons.value.includes(h) ? horizons.value.filter((x) => x !== h) : [...horizons.value, h];
@@ -145,14 +154,16 @@ function clearAdditionalFilters() {
   Object.assign(filters, emptyFilters(), { product, layout, group, timeline });
 }
 const sort = ref<SortKey>('manual');
-// Personal display preference, deliberately separate from filters and share state.
 const reverseLaneOrder = ref(false);
-onMounted(() => {
-  try { reverseLaneOrder.value = localStorage.getItem('rm-reverse-lanes') === '1'; } catch { /* Storage is optional. */ }
-});
-watch(reverseLaneOrder, value => {
-  try { localStorage.setItem('rm-reverse-lanes', value ? '1' : '0'); } catch { /* Still apply in this view. */ }
-});
+function currentBoardViewState(): BoardViewState {
+  return { horizons: [...horizons.value], group: filters.group, sort: sort.value, reverseLanes: reverseLaneOrder.value };
+}
+function applyBoardViewState(state: BoardViewState) {
+  horizons.value = [...state.horizons];
+  filters.group = state.group;
+  sort.value = state.sort;
+  reverseLaneOrder.value = state.reverseLanes;
+}
 const sheetOpen = ref(false);
 // Fix #9: the "?" cheat-sheet overlay (global keyboard shortcuts). See onGlobalKey below.
 const shortcutsOpen = ref(false);
@@ -1271,6 +1282,9 @@ const availableEffort = computed(() =>
 );
 const availableTags = computed(() => tagOptionsForFilters(itemsForBoard.value, filters, searchContext.value));
 const focused = computed(() => shown.value.filter((i) => horizons.value.includes(i.horizon)));
+const showCardProducts = computed(() =>
+  filters.group === 'horizon' && new Set(focused.value.map(item => item.product)).size > 1,
+);
 const hiddenLaneMatches = computed(() => {
   if (!filters.q.trim()) return [];
   return HORIZONS.filter((h) => !horizons.value.includes(h))
@@ -1525,6 +1539,10 @@ function resetHorizons() {
   horizons.value = [...DEFAULT_HORIZONS];
 }
 function setPresent(on: boolean) {
+  if (on) {
+    explicitViewUrl = true;
+    canPersistViewPreferences = false;
+  }
   present.value = on;
   if (typeof document === 'undefined') return;
   if (on) document.documentElement.dataset.present = '1';
@@ -1564,9 +1582,9 @@ async function copyPresentationLink() {
   shareCopied.value = false;
   moreError.value = '';
   const p = new URLSearchParams(location.search);
+  writeBoardViewParams(p, currentBoardViewState());
   p.set('present', '1');
   p.delete('item');
-  p.delete('horizon');
   const url = `${location.origin}${location.pathname}?${p.toString()}`;
   try {
     await navigator.clipboard.writeText(url);
@@ -1594,6 +1612,9 @@ const shareContext = computed<ShareContext>(() => ({
   title: filters.product ? `${filters.product} roadmap` : 'product roadmap',
   product: filters.product,
   horizons: [...horizons.value],
+  group: filters.group,
+  sort: sort.value,
+  reverseLanes: reverseLaneOrder.value,
   generatedAt: formatDateTime(Date.now()),
   timeline: filters.layout === 'timeline' ? { ...timelineSettings(filters.timeline), range: timelineRange(focused.value, timelineSettings(filters.timeline)) } : undefined,
   activitySummary: filters.activity ? `${activityLabel({ field: filters.activity.field, timeZone: filters.activity.timeZone, period: 'range', ...activityRange(filters.activity) })} (${filters.activity.timeZone})` : undefined,
@@ -1705,6 +1726,9 @@ async function onShareSubmit(p: {
       laneCount: undefined,
       product: shareContext.value.product,
       horizons: includedHorizons,
+      group: shareContext.value.group,
+      sort: shareContext.value.sort,
+      reverseLanes: shareContext.value.reverseLanes,
       generatedAt: Date.now(),
     };
     const baseOptions = {
@@ -1808,28 +1832,30 @@ function onFsChange() {
 
 // URL state
 let urlStateRestored = false;
+let explicitViewUrl = false;
+let canPersistViewPreferences = false;
 let removeTitleTooltips: (() => void) | undefined;
 onMounted(async () => {
   // Capture the GitHub sign-in token from the callback hash FIRST — before the
   // saved-state restore and syncState() below rewrite the URL via replaceState,
   // which would strip the #roadmap_edit_token fragment before we ever read it.
   readTokenFromHash();
-  // Arriving via a plain link (no params) restores the last board state for this
-  // tab — filters, sort, presentation — so navigating away and back doesn't lose
-  // your place. A URL that carries params always wins (shared links).
-  let search = location.search;
-  if (!search) {
+  const p = new URLSearchParams(location.search);
+  // View settings are personal defaults unless a link names any view parameter.
+  // Explicit links start from product defaults so the recipient's local choices
+  // can never leak into the shared presentation.
+  explicitViewUrl = hasBoardViewParams(p) || p.get('present') === '1';
+  if (explicitViewUrl) applyBoardViewState(boardViewStateFromParams(p));
+  else {
     try {
-      const saved = sessionStorage.getItem('rm-board-state');
-      if (saved) {
-        search = saved;
-        history.replaceState(null, '', `${location.pathname}${saved}`);
-      }
+      applyBoardViewState(readBoardViewState(
+        localStorage.getItem(BOARD_VIEW_STORAGE_KEY),
+        localStorage.getItem('rm-reverse-lanes') === '1',
+      ));
     } catch {
-      /* ignore */
+      applyBoardViewState(DEFAULT_BOARD_VIEW_STATE);
     }
   }
-  const p = new URLSearchParams(search);
   filters.q = p.get('q') ?? '';
   filters.owner = IS_PUBLIC ? null : p.get('owner');
   // Product lives in the URL path (/music-app/), seeded server-side; ?product= is a
@@ -1844,16 +1870,8 @@ onMounted(async () => {
   filters.activity = activityFromParams(p);
   filters.visibility = p.get('visibility');
   filters.tags = p.getAll('tag');
-  if (p.get('group') === 'product') filters.group = 'product';
   const hy = p.get('hygiene');
   if (hy === 'no-owner' || hy === 'now-early' || hy === 'stale-later') filters.hygiene = hy;
-  const hs = p
-    .getAll('horizon')
-    .filter((v): v is (typeof HORIZONS)[number] => (HORIZONS as readonly string[]).includes(v));
-  if (hs.length) horizons.value = hs;
-  else if (p.get('horizon') === 'none') horizons.value = [];
-  const s = p.get('sort');
-  if (s) sort.value = s as SortKey;
   if (p.get('present') === '1') setPresent(true);
   // Defer resolving ?item= until after auth/edit-mode is known (below), so a deep-linked item
   // never flashes the read-only drawer before we route it to the full editor in edit mode.
@@ -1871,6 +1889,7 @@ onMounted(async () => {
   // Let the resolved view paint, then reveal it (cascade defined in the scoped styles).
   await nextTick();
   ready.value = true;
+  canPersistViewPreferences = !explicitViewUrl;
   setupLaneObserver();
   const cd = getCanvasdrop();
   if (cd) {
@@ -1987,14 +2006,7 @@ function syncState() {
   if (filters.visibility) p.set('visibility', filters.visibility);
   if (filters.hygiene) p.set('hygiene', filters.hygiene);
   filters.tags.forEach((t) => p.append('tag', t));
-  if (filters.group !== 'horizon') p.set('group', filters.group);
-  // Only persist the horizon selection when it differs from the default active set —
-  // a plain link with nothing customized stays a plain link.
-  const isDefaultHorizons =
-    horizons.value.length === DEFAULT_HORIZONS.length && DEFAULT_HORIZONS.every((h) => horizons.value.includes(h));
-  if (!isDefaultHorizons) horizons.value.forEach((h) => p.append('horizon', h));
-  if (!horizons.value.length) p.set('horizon', 'none');
-  if (sort.value !== 'manual') p.set('sort', sort.value);
+  if (explicitViewUrl) writeBoardViewParams(p, currentBoardViewState());
   if (present.value) p.set('present', '1');
   if (selected.value) p.set('item', selected.value.id);
   const qs = p.toString();
@@ -2002,21 +2014,18 @@ function syncState() {
   const root = props.base ?? '/';
   const path = filters.product ? `${root}${productSlug(filters.product)}/` : root;
   history.replaceState(null, '', qs ? `${path}?${qs}` : path);
-  // Saved state keeps product as a query param so it survives landing on any
-  // board path; the mount parser's ?product= fallback picks it up and this
-  // function immediately rewrites it back into the path. The open item is
-  // deliberately not saved — returning to the board shouldn't reopen the drawer.
-  try {
-    if (filters.product) p.set('product', filters.product);
-    p.delete('item');
-    const saved = p.toString();
-    sessionStorage.setItem('rm-board-state', saved ? `?${saved}` : '');
-  } catch {
-    /* ignore */
-  }
 }
 
-watch([filters, horizons, sort, selected, present], syncState, { deep: true });
+watch([filters, horizons, sort, reverseLaneOrder, selected, present], syncState, { deep: true });
+watch([() => filters.group, horizons, sort, reverseLaneOrder], () => {
+  if (!canPersistViewPreferences) return;
+  try {
+    localStorage.setItem(BOARD_VIEW_STORAGE_KEY, JSON.stringify(currentBoardViewState()));
+    localStorage.removeItem('rm-reverse-lanes');
+  } catch {
+    /* Storage is optional; keep the current in-memory view. */
+  }
+}, { deep: true });
 
 // Shared secondary action treatment.
 const editActionBtn =
@@ -2182,11 +2191,13 @@ const editActionBtn =
             :filters="filters"
             :horizons="horizons"
             :sort="sort"
+            :reverse-lanes="reverseLaneOrder"
             @apply="
               (view) => {
                 Object.assign(filters, view.filters, { layout: view.filters.layout ?? 'board', timeline: timelineSettings(view.filters.timeline) });
                 horizons = [...view.horizons];
                 sort = view.sort;
+                reverseLaneOrder = view.reverseLanes;
                 selected = null;
               }
             "
@@ -2208,7 +2219,7 @@ const editActionBtn =
                   <input v-model="reverseLaneOrder" type="checkbox" aria-describedby="lane-order-hint" />
                   <span>Reverse lane order</span>
                 </label>
-                <p id="lane-order-hint" class="lane-order-hint">Only in this browser. Items inside each lane keep their order.</p>
+                <p id="lane-order-hint" class="lane-order-hint">Saved in this browser and included in shared views. Items inside each lane keep their order.</p>
               </div>
             </template>
           </SavedViews>
@@ -2447,6 +2458,7 @@ const editActionBtn =
                     v-for="it in lane.items"
                     :key="it.id"
                     :item="it"
+                    :show-product="showCardProducts"
                     :show-horizon="filters.group === 'product'"
                     :active="selected?.id === it.id"
                     :client="present || IS_PUBLIC"

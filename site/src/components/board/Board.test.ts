@@ -3,6 +3,7 @@ import { mount, type VueWrapper } from '@vue/test-utils';
 import { flushPromises } from '@vue/test-utils';
 import type { ItemVM } from '../../lib/filters';
 import { PRODUCTS } from '../../lib/schema';
+import { BOARD_VIEW_STORAGE_KEY } from '../../lib/boardViewState';
 
 // Board pulls in a lot of real child components (drawer, editors, share dialog); auto-stub
 // them via `global.stubs: true` below so this test only exercises Board's own script:
@@ -72,7 +73,7 @@ async function mountBoard(items: ItemVM[] = [item()]) {
 
 beforeEach(() => {
   localStorage.clear();
-  sessionStorage.clear(); // board-state (horizonFocus/filters) persists here — isolate tests
+  sessionStorage.clear();
   window.history.replaceState(null, '', '/'); // ?horizon=/?item= in the URL leaks between tests
   meMock.mockClear();
   meMock.mockResolvedValue({ editor: true, login: 'octocat' });
@@ -134,6 +135,23 @@ describe('Board — product navigation and view options', () => {
     expect(new URLSearchParams(window.location.search).getAll('horizon')).toEqual(['Now']);
     await navigation.setValue('');
     expect(w.findAllComponents({ name: 'RoadmapCard' })).toHaveLength(2);
+  });
+
+  it('shows product shorthand only when mixed products share horizon lanes', async () => {
+    const w = await mountBoard([item(), item({ id: 'MUSIC-1', product: 'Music App' })]);
+    const cards = () => w.findAllComponents({ name: 'RoadmapCard' });
+    expect(cards().map(card => card.props('showProduct'))).toEqual([true, true]);
+
+    const navigation = w.find('[aria-label="Filter by product"]');
+    await navigation.setValue('Music App');
+    expect(cards().map(card => card.props('showProduct'))).toEqual([false]);
+
+    await navigation.setValue('');
+    await w.get('[aria-label="View options and saved views"]').trigger('click');
+    await w.get('select[name="group"]').setValue('product');
+    expect(cards().map(card => [card.props('showProduct'), card.props('showHorizon')])).toEqual([
+      [false, true], [false, true],
+    ]);
   });
 
   it('restores historical activity from a link, ignores retired resource filters, and clears the activity chip', async () => {
@@ -225,7 +243,8 @@ describe('Board — product navigation and view options', () => {
     expect(toggle.attributes('aria-expanded')).toBe('false');
     await toggle.trigger('click');
     expect((w.find('select[name="sort"]').element as HTMLSelectElement).value).toBe('title');
-    expect(new URLSearchParams(window.location.search).get('sort')).toBe('title');
+    expect(new URLSearchParams(window.location.search).get('sort')).toBeNull();
+    expect(JSON.parse(localStorage.getItem(BOARD_VIEW_STORAGE_KEY)!).sort).toBe('title');
   });
 });
 
@@ -1790,7 +1809,9 @@ describe('Board — IA/UX improvement pass', () => {
     const copied = new URL(writeText.mock.calls[0]![0]);
     expect(copied.searchParams.get('present')).toBe('1');
     expect(copied.searchParams.get('sort')).toBe('updated');
-    expect(copied.searchParams.has('horizon')).toBe(false);
+    expect(copied.searchParams.getAll('horizon')).toEqual(['Now']);
+    expect(copied.searchParams.get('group')).toBe('horizon');
+    expect(copied.searchParams.get('reverse')).toBe('0');
     expect(new URLSearchParams(window.location.search).get('horizon')).toBe('Now');
     expect(copied.searchParams.has('item')).toBe(false);
     expect((w.vm as unknown as { present: boolean }).present).toBe(false);
@@ -1921,13 +1942,30 @@ it('keeps recent changes out of the roadmap until opened from More', async () =>
 });
 
 
-it('leaves the default board URL clean, including restored legacy defaults', async () => {
-  sessionStorage.setItem('rm-board-state', '?timelineGroup=product&scale=months');
+it('restores personal view preferences on a clean URL without exposing them in the address', async () => {
+  localStorage.setItem(BOARD_VIEW_STORAGE_KEY, JSON.stringify({
+    horizons: ['Now'], group: 'product', sort: 'updated', reverseLanes: true,
+  }));
   const w = await mountBoard();
   expect(window.location.pathname).toBe('/');
   expect(window.location.search).toBe('');
-  expect(sessionStorage.getItem('rm-board-state')).toBe('');
-  expect(w.find('[aria-label="Roadmap timeline"]').exists()).toBe(false);
+  const vm = w.vm as unknown as { filters: { group: string }; horizons: string[]; sort: string; reverseLaneOrder: boolean };
+  expect(vm.filters.group).toBe('product');
+  expect(vm.horizons).toEqual(['Now']);
+  expect(vm.sort).toBe('updated');
+  expect(vm.reverseLaneOrder).toBe(true);
+});
+
+it('lets an explicit URL override local preferences without overwriting them on load', async () => {
+  const local = JSON.stringify({ horizons: ['Later'], group: 'product', sort: 'title', reverseLanes: true });
+  localStorage.setItem(BOARD_VIEW_STORAGE_KEY, local);
+  window.history.replaceState(null, '', '/?horizon=Now&group=horizon&sort=manual&reverse=0');
+  const w = await mountBoard();
+  const vm = w.vm as unknown as { filters: { group: string }; horizons: string[]; sort: string; reverseLaneOrder: boolean };
+  expect([vm.horizons, vm.filters.group, vm.sort, vm.reverseLaneOrder]).toEqual([['Now'], 'horizon', 'manual', false]);
+  await w.get('[aria-label="View options and saved views"]').trigger('click');
+  await w.get('select[name="sort"]').setValue('impact');
+  expect(localStorage.getItem(BOARD_VIEW_STORAGE_KEY)).toBe(local);
 });
 
 it('compacts an existing date-filter link without changing the filter', async () => {
@@ -1948,8 +1986,10 @@ it('keeps the default timeline layout explicit without serializing its defaults'
 });
 
 
-it.each(['horizon', 'product'])('reverses %s lanes locally without changing card order or sharing state', async group => {
-  if (group === 'product') window.history.replaceState(null, '', '/?group=product');
+it.each(['horizon', 'product'])('reverses %s lanes locally, preserves card order, and carries the choice into sharing', async group => {
+  if (group === 'product') localStorage.setItem(BOARD_VIEW_STORAGE_KEY, JSON.stringify({
+    horizons: ['Now', 'Next', 'Later'], group: 'product', sort: 'manual', reverseLanes: false,
+  }));
   const w = await mountBoard([
     item({ id: 'first', product: PRODUCTS[0], horizon: 'Now', order: 1 }),
     item({ id: 'second', product: PRODUCTS[0], horizon: 'Now', order: 2 }),
@@ -1957,8 +1997,7 @@ it.each(['horizon', 'product'])('reverses %s lanes locally without changing card
   ]);
   const expected = group === 'product' ? [PRODUCTS[1], PRODUCTS[0]] : ['Later', 'Next', 'Now'];
   const beforeURL = window.location.href;
-  const vm = w.vm as unknown as { shareItems: unknown; shareContext: unknown };
-  const beforeShare = JSON.stringify([vm.shareItems, vm.shareContext]);
+  const vm = w.vm as unknown as { shareItems: unknown; shareContext: { reverseLanes: boolean } };
   await w.get('[aria-label="View options and saved views"]').trigger('click');
   await w.get('.lane-order-setting input').setValue(true);
   await flushPromises();
@@ -1966,14 +2005,14 @@ it.each(['horizon', 'product'])('reverses %s lanes locally without changing card
   const lane = w.get(`section[data-lane-key="${group === 'product' ? PRODUCTS[0] : 'Now'}"]`);
   expect(lane.findAll('[data-item-id]').map(card => card.attributes('data-item-id'))).toEqual(['first', 'second']);
   expect(window.location.href).toBe(beforeURL);
-  expect(JSON.stringify([vm.shareItems, vm.shareContext])).toBe(beforeShare);
-  expect(localStorage.getItem('rm-reverse-lanes')).toBe('1');
+  expect(vm.shareContext.reverseLanes).toBe(true);
+  expect(JSON.parse(localStorage.getItem(BOARD_VIEW_STORAGE_KEY)!).reverseLanes).toBe(true);
   w.unmount();
   const restored = await mountBoard();
   await restored.get('[aria-label="View options and saved views"]').trigger('click');
   expect((restored.get('.lane-order-setting input').element as HTMLInputElement).checked).toBe(true);
   await restored.get('.lane-order-setting input').setValue(false);
-  expect(localStorage.getItem('rm-reverse-lanes')).toBe('0');
+  expect(JSON.parse(localStorage.getItem(BOARD_VIEW_STORAGE_KEY)!).reverseLanes).toBe(false);
 });
 
 it('offers the same local lane-order setting in timeline view', async () => {
