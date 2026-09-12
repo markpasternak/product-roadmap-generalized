@@ -177,16 +177,28 @@ function setCover(asset: typeof allAssets.value[number]) {
   }
   emit('update:cover', imageHref(asset));
   emit('update:coverPosition', '50% 50%');
-  notice.value = 'Card cover selected. It will use the product tint on the roadmap.';
+  expanded.value = asset.id;
+  notice.value = 'Cover selected. Place the focus on the subject that every crop should keep.';
 }
 function coverAxis(axis: 0 | 1): number {
   const values = (props.coverPosition ?? '50% 50%').match(/(100|\d{1,2})% (100|\d{1,2})%/);
   return Number(values?.[axis + 1] ?? 50);
 }
-function setCoverAxis(axis: 0 | 1, value: string) {
-  const next: [number, number] = [coverAxis(0), coverAxis(1)];
-  next[axis] = Math.max(0, Math.min(100, Number(value) || 0));
-  emit('update:coverPosition', `${next[0]}% ${next[1]}%`);
+function setCoverPoint(x: number, y: number) {
+  const clamp = (value: number) => Math.max(0, Math.min(100, Math.round(value)));
+  emit('update:coverPosition', `${clamp(x)}% ${clamp(y)}%`);
+}
+function setCoverPointFromPointer(event: PointerEvent) {
+  if (event.type === 'pointermove' && event.buttons !== 1) return;
+  event.preventDefault();
+  const target = event.currentTarget as HTMLElement;
+  if (event.type === 'pointerdown') target.setPointerCapture?.(event.pointerId);
+  const rect = target.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  setCoverPoint(((event.clientX - rect.left) / rect.width) * 100, ((event.clientY - rect.top) / rect.height) * 100);
+}
+function nudgeCoverPoint(dx: number, dy: number) {
+  setCoverPoint(coverAxis(0) + dx, coverAxis(1) + dy);
 }
 const imageChoices = computed(() => [...allAssets.value
   .filter(a => !a.remove && shownRevision(a).original.mediaType.startsWith('image/') && (props.visibility !== 'Public' || a.visibility === 'Public'))
@@ -937,10 +949,47 @@ onUnmounted(() => {
           <div v-if="expanded === asset.id && !asset.remove" class="resource-inspector">
             <div class="resource-details">
               <fieldset v-if="isCoverAsset(asset)" class="resource-cover-position">
-                <legend>Card cover focus</legend>
-                <label>Horizontal<input type="range" min="0" max="100" step="5" :value="coverAxis(0)" @input="setCoverAxis(0, ($event.target as HTMLInputElement).value)" /></label>
-                <label>Vertical<input type="range" min="0" max="100" step="5" :value="coverAxis(1)" @input="setCoverAxis(1, ($event.target as HTMLInputElement).value)" /></label>
-                <p class="resource-muted">Choose which part of the image stays visible in the shallow card crop.</p>
+                <legend>Cover focus and crops</legend>
+                <p class="resource-cover-guidance">Place the target on the meaningful subject or key UI. This one focus point stays visible across every layout.</p>
+                <button
+                  type="button"
+                  class="resource-cover-focus-map"
+                  :aria-label="`Cover focus at ${coverAxis(0)}% horizontal and ${coverAxis(1)}% vertical. Click or drag to reposition; arrow keys move it.`"
+                  :style="{ '--cover-x': `${coverAxis(0)}%`, '--cover-y': `${coverAxis(1)}%` }"
+                  @pointerdown="setCoverPointFromPointer"
+                  @pointermove="setCoverPointFromPointer"
+                  @keydown.left.prevent="nudgeCoverPoint(-5, 0)"
+                  @keydown.right.prevent="nudgeCoverPoint(5, 0)"
+                  @keydown.up.prevent="nudgeCoverPoint(0, -5)"
+                  @keydown.down.prevent="nudgeCoverPoint(0, 5)"
+                >
+                  <img :src="previewHref(imageHref(asset))" alt="" draggable="false" />
+                  <span class="resource-cover-grid" aria-hidden="true" />
+                  <span class="resource-cover-target" aria-hidden="true"><span /></span>
+                </button>
+                <div class="resource-cover-position-row">
+                  <output>Focus {{ coverAxis(0) }}% · {{ coverAxis(1) }}%</output>
+                  <span>
+                    <button type="button" class="resource-quiet" @click="setCoverPoint(50, 33)">Upper third</button>
+                    <button type="button" class="resource-quiet" @click="setCoverPoint(50, 50)">Center</button>
+                  </span>
+                </div>
+                <div class="resource-cover-crops" aria-label="Crop previews">
+                  <figure>
+                    <div class="resource-cover-crop resource-cover-crop-card">
+                      <img :src="previewHref(imageHref(asset))" alt="" :style="{ objectPosition: `${coverAxis(0)}% ${coverAxis(1)}%` }" />
+                      <span aria-hidden="true" />
+                    </div>
+                    <figcaption>Roadmap card</figcaption>
+                  </figure>
+                  <figure>
+                    <div class="resource-cover-crop resource-cover-crop-reader">
+                      <img :src="previewHref(imageHref(asset))" alt="" :style="{ objectPosition: `${coverAxis(0)}% ${coverAxis(1)}%` }" />
+                      <span aria-hidden="true" />
+                    </div>
+                    <figcaption>Reader header</figcaption>
+                  </figure>
+                </div>
               </fieldset>
               <label>Display name<input :value="asset.name" @change="rename(asset, ($event.target as HTMLInputElement).value)" /></label>
               <label v-for="placement in asset.placements.filter(p => p.image)" :key="placement.start">
@@ -1087,20 +1136,87 @@ onUnmounted(() => {
 }
 .resource-cover-position {
   display: grid;
-  gap: 0.65rem;
+  gap: 0.75rem;
   margin: 0 0 1rem;
-  padding: 0.8rem;
+  padding: 0.9rem;
   border: 1px solid var(--color-border-subtle-default);
-  border-radius: 9px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-surface-subtle-default) 58%, transparent);
 }
 .resource-cover-position legend {
   padding: 0 0.25rem;
   font-size: 0.8rem;
   font-weight: 700;
 }
-.resource-cover-position label {
-  grid-template-columns: 5rem minmax(8rem, 1fr);
-  align-items: center;
+.resource-cover-guidance {
+  max-width: 58ch;
+  margin: 0;
+  color: var(--color-text-subtle-default);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.resource-cover-focus-map {
+  --cover-x: 50%;
+  --cover-y: 50%;
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle-default) 76%, transparent);
+  border-radius: 10px;
+  background: #111214;
+  cursor: crosshair;
+  touch-action: none;
+}
+.resource-cover-focus-map img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 260px;
+  object-fit: contain;
+  user-select: none;
+}
+.resource-cover-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, transparent calc(33.333% - .5px), rgb(255 255 255 / 28%) 33.333%, transparent calc(33.333% + .5px), transparent calc(66.666% - .5px), rgb(255 255 255 / 28%) 66.666%, transparent calc(66.666% + .5px)),
+    linear-gradient(to bottom, transparent calc(33.333% - .5px), rgb(255 255 255 / 28%) 33.333%, transparent calc(33.333% + .5px), transparent calc(66.666% - .5px), rgb(255 255 255 / 28%) 66.666%, transparent calc(66.666% + .5px));
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 22%);
+  pointer-events: none;
+}
+.resource-cover-target {
+  position: absolute;
+  left: var(--cover-x);
+  top: var(--cover-y);
+  width: 30px;
+  height: 30px;
+  border: 2px solid white;
+  border-radius: 999px;
+  box-shadow: 0 2px 12px rgb(0 0 0 / 55%), inset 0 0 0 3px rgb(10 14 20 / 24%);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.resource-cover-target::before,.resource-cover-target::after { content:"";position:absolute;left:50%;top:50%;background:white;box-shadow:0 1px 3px rgb(0 0 0 / 50%);transform:translate(-50%,-50%); }
+.resource-cover-target::before { width:42px;height:1px; }
+.resource-cover-target::after { width:1px;height:42px; }
+.resource-cover-target span { position:absolute;inset:9px;border-radius:999px;background:var(--color-accent-brand-default);box-shadow:0 0 0 2px white; }
+.resource-cover-position-row { display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem; }
+.resource-cover-position-row output { color:var(--color-text-primary-default);font-size:.76rem;font-weight:600;font-variant-numeric:tabular-nums; }
+.resource-cover-position-row > span { display:flex;gap:.35rem; }
+.resource-cover-crops { display:grid;grid-template-columns:minmax(0,.72fr) minmax(0,1.28fr);gap:.65rem;align-items:end; }
+.resource-cover-crops figure { min-width:0;margin:0; }
+.resource-cover-crops figcaption { margin-top:.35rem;color:var(--color-text-subtle-default);font-size:.7rem;font-weight:600; }
+.resource-cover-crop { position:relative;overflow:hidden;border:1px solid var(--color-border-subtle-default);border-radius:8px;background:var(--color-surface-subtle-default); }
+.resource-cover-crop img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover; }
+.resource-cover-crop-card { aspect-ratio:1.12 / 1; }
+.resource-cover-crop-reader { aspect-ratio:3.2 / 1; }
+.resource-cover-crop-card span { position:absolute;left:6%;right:6%;bottom:6%;height:45%;border:1px solid rgb(255 255 255 / 42%);border-radius:6px;background:color-mix(in srgb,var(--color-card) 90%,transparent);box-shadow:0 4px 12px rgb(0 0 0 / 18%);backdrop-filter:blur(5px); }
+.resource-cover-crop-reader span { position:absolute;inset:42% 0 0;background:linear-gradient(to top,var(--color-card),color-mix(in srgb,var(--color-card) 72%,transparent),transparent); }
+@media (max-width: 560px) {
+  .resource-cover-crops { grid-template-columns:1fr; }
 }
 .resource-picker form {
   display: grid;

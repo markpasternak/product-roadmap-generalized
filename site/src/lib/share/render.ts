@@ -156,9 +156,10 @@ function card(it: ProjectedItem, index: number, showProduct: boolean, showHorizo
   const cover = showCover && it.cover && safeResourceUrl(it.cover)
     ? `<span class="share-card-cover" aria-hidden="true"><img src="${escapeHtml(it.cover)}" alt="" loading="lazy" decoding="async" style="object-position:${/^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(it.coverPosition ?? '') ? it.coverPosition : '50% 50%'}"><span></span></span>`
     : '';
-  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card${it.horizon === 'Completed' ? ' share-card-completed' : ''}" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}${showProduct ? `, ${escapeHtml(it.product)}` : ''}">
+  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card${cover ? ' share-card-with-cover' : ''}${it.horizon === 'Completed' ? ' share-card-completed' : ''}" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}${showProduct ? `, ${escapeHtml(it.product)}` : ''}">
     <span class="card-open" aria-hidden="true">↗</span>
     ${cover}
+    <div class="share-card-content${cover ? ' share-card-content-over-cover' : ''}">
     <div class="card-main">
       ${showProduct ? productMark(it.product) : ''}
       <div class="card-copy">
@@ -171,6 +172,7 @@ function card(it: ProjectedItem, index: number, showProduct: boolean, showHorizo
       ${it.horizon !== 'Completed' && it.stage ? `<span class="roadmap-quiet-chip stage-chip"${showHorizon ? '' : ` data-horizon="${escapeHtml(it.horizon)}"`}>${escapeHtml(it.stage)}</span>` : ''}
     </div>` : ''}
     ${scheduleLabel(it) ? `<p class="timeline-range-caption">Planned ${escapeHtml(scheduleLabel(it))}</p>` : ''}
+    </div>
   </button>`;
 }
 
@@ -462,21 +464,39 @@ function css(context: ShareContext): string {
     text-align: left;
     overflow: hidden;
   }
+  .share-card-with-cover {
+    display:flex;
+    min-height:248px;
+    flex-direction:column;
+    justify-content:flex-end;
+    isolation:isolate;
+    padding:12px;
+    background:color-mix(in srgb,var(--roadmap-product-accent) 16%,var(--color-surface-subtle-default));
+  }
   .share-card-cover {
-    position: relative;
+    position:absolute;
+    inset:0;
+    z-index:-1;
     display: block;
-    height: 88px;
-    margin: -14px -14px 14px;
     overflow: hidden;
     background: color-mix(in srgb, var(--roadmap-product-accent) 18%, var(--color-surface-subtle-default));
   }
   .share-card-cover img,
   .share-card-cover span { position:absolute;inset:0;width:100%;height:100%; }
-  .share-card-cover img { object-fit:cover;filter:saturate(.84) contrast(.94); }
-  .share-card-cover span { background:linear-gradient(to bottom,transparent 46%,color-mix(in srgb,var(--color-card) 92%,transparent)),color-mix(in srgb,var(--roadmap-product-accent) 12%,transparent); }
-  [data-theme="dark"] .share-card-cover img { filter:brightness(.76) saturate(.72) contrast(.92); }
-  [data-theme="dark"] .share-card-cover span { background:linear-gradient(to bottom,transparent 42%,color-mix(in srgb,var(--color-card) 96%,transparent)),color-mix(in srgb,var(--roadmap-product-accent) 18%,transparent); }
-  .share-card-completed .share-card-cover img { filter:grayscale(.7) saturate(.35); }
+  .share-card-cover img { object-fit:cover;filter:saturate(.84) contrast(.94);transition:transform 320ms cubic-bezier(.2,.7,.2,1),filter 180ms ease; }
+  .share-card-cover span { background:linear-gradient(to bottom,color-mix(in srgb,var(--roadmap-product-accent) 8%,transparent),rgb(10 14 20 / 24%)),color-mix(in srgb,var(--roadmap-product-accent) 10%,transparent); }
+  [data-theme="dark"] .share-card-cover img { filter:brightness(.72) saturate(.72) contrast(.94); }
+  [data-theme="dark"] .share-card-cover span { background:linear-gradient(to bottom,rgb(3 7 12 / 8%),rgb(3 7 12 / 42%)),color-mix(in srgb,var(--roadmap-product-accent) 16%,transparent); }
+  .share-card-completed .share-card-cover img { filter:grayscale(.45) saturate(.5); }
+  .share-card-content { position:relative;z-index:1;min-width:0; }
+  .share-card-content-over-cover { width:100%;padding:13px;border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent);border-radius:13px;background:linear-gradient(135deg,color-mix(in srgb,var(--roadmap-product-accent) 5%,transparent),transparent 62%),color-mix(in srgb,var(--color-card) 92%,transparent);box-shadow:0 10px 28px rgb(10 14 20 / 18%),inset 0 1px 0 rgb(255 255 255 / 22%);-webkit-backdrop-filter:blur(12px) saturate(.86);backdrop-filter:blur(12px) saturate(.86); }
+  .share-card-content-over-cover .card-copy p { display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden; }
+  [data-theme="dark"] .share-card-content-over-cover { border-color:rgb(255 255 255 / 14%);background:linear-gradient(135deg,color-mix(in srgb,var(--roadmap-product-accent) 7%,transparent),transparent 62%),color-mix(in srgb,var(--color-card) 90%,transparent);box-shadow:0 12px 32px rgb(0 0 0 / 32%),inset 0 1px 0 rgb(255 255 255 / 7%); }
+  @media (hover:hover) and (pointer:fine) { .share-card-with-cover:hover .share-card-cover img { transform:scale(1.025); } }
+  @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))) { .share-card-content-over-cover { background:color-mix(in srgb,var(--color-card) 96%,transparent); } }
+  @media (prefers-reduced-transparency:reduce) { .share-card-content-over-cover { background:color-mix(in srgb,var(--color-card) 98%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none; } }
+  @media (prefers-contrast:more) { .share-card-content-over-cover { border-color:var(--color-text-primary-default);background:var(--color-card);box-shadow:none; } }
+  @media (prefers-reduced-motion:reduce) { .share-card-cover img { transition:none; } }
   .share-card:focus-visible,
   .stat:focus-visible {
     outline: 3px solid rgba(246, 62, 13, .36);
@@ -612,6 +632,11 @@ function css(context: ShareContext): string {
   .detail-masthead.is-completed .detail-cover-media img { filter:grayscale(.28) saturate(.65) contrast(.94); }
   [data-theme="dark"] .detail-masthead.is-completed .detail-cover-media img { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
   .detail-masthead-copy { position:relative; width:100%; max-width:960px; }
+  .detail-masthead.has-cover .detail-masthead-copy { width:fit-content;max-width:min(100%,960px);padding:14px 16px;border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent);border-radius:13px;background:color-mix(in srgb,var(--color-card) 92%,transparent);box-shadow:0 12px 32px rgb(10 14 20 / 18%),inset 0 1px 0 rgb(255 255 255 / 20%);-webkit-backdrop-filter:blur(12px) saturate(.86);backdrop-filter:blur(12px) saturate(.86); }
+  [data-theme="dark"] .detail-masthead.has-cover .detail-masthead-copy { border-color:rgb(255 255 255 / 14%);background:color-mix(in srgb,var(--color-card) 90%,transparent);box-shadow:0 14px 36px rgb(0 0 0 / 34%),inset 0 1px 0 rgb(255 255 255 / 7%); }
+  @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))) { .detail-masthead.has-cover .detail-masthead-copy { background:color-mix(in srgb,var(--color-card) 96%,transparent); } }
+  @media (prefers-reduced-transparency:reduce) { .detail-masthead.has-cover .detail-masthead-copy { background:color-mix(in srgb,var(--color-card) 98%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none; } }
+  @media (prefers-contrast:more) { .detail-masthead.has-cover .detail-masthead-copy { border-color:var(--color-text-primary-default);background:var(--color-card);box-shadow:none; } }
   .detail-title {
     margin: 0;
     max-width:30ch;

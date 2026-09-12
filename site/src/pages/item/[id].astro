@@ -312,6 +312,8 @@ function tagFilterHref(token: string): string {
   .item-page-hero.is-completed .item-page-cover img { filter:grayscale(.28) saturate(.65) contrast(.94); }
   :global(:root[data-theme='dark']) .item-page-hero.is-completed .item-page-cover img { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
   .item-page-hero-copy { position:relative; display:grid; width:100%; grid-template-columns:40px minmax(0,1fr); gap:14px; align-items:start; }
+  .item-page-hero.has-cover .item-page-hero-copy { width:fit-content; max-width:100%; padding:14px 16px; border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent); border-radius:13px; background:color-mix(in srgb,var(--color-card) 92%,transparent); box-shadow:0 12px 32px rgb(10 14 20 / 18%),inset 0 1px 0 rgb(255 255 255 / 20%); -webkit-backdrop-filter:blur(12px) saturate(.86); backdrop-filter:blur(12px) saturate(.86); }
+  :global(:root[data-theme='dark']) .item-page-hero.has-cover .item-page-hero-copy { border-color:rgb(255 255 255 / 14%); background:color-mix(in srgb,var(--color-card) 90%,transparent); box-shadow:0 14px 36px rgb(0 0 0 / 34%),inset 0 1px 0 rgb(255 255 255 / 7%); }
   .item-page-hero h1 { max-width:30ch; margin:0; font-size:clamp(1.8rem,3vw,2.5rem); line-height:1.06; }
   .item-page-status-summary { display:flex; flex-wrap:wrap; gap:10px clamp(24px,4vw,48px); margin:0; padding:14px 0 2px; border-top:1px solid var(--color-border-subtle-default); }
   .item-page-status-summary dt { color:var(--color-text-subtle-default); font-size:11px; font-weight:600; line-height:1.3; }
@@ -324,6 +326,8 @@ function tagFilterHref(token: string): string {
     .item-page-hero h1 { font-size:clamp(1.7rem,8vw,2.1rem); }
     .item-page-status-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
   }
+  @media (prefers-reduced-transparency:reduce) { .item-page-hero.has-cover .item-page-hero-copy { background:color-mix(in srgb,var(--color-card) 98%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none; } }
+  @media (prefers-contrast:more) { .item-page-hero.has-cover .item-page-hero-copy { border-color:var(--color-text-primary-default);background:var(--color-card);box-shadow:none; } }
 </style>
 
 <script>

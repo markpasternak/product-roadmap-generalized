@@ -41,6 +41,8 @@ const props = withDefaults(defineProps<{
   highlightQuery?: string;
   /** View preference. The selected cover itself is item content. */
   showCover?: boolean;
+  /** Non-interactive use of the exact board-card composition, such as the item editor preview. */
+  preview?: boolean;
 }>(), { showCover: true });
 const emit = defineEmits<{
   (e: 'select', item: ItemVM): void;
@@ -168,22 +170,25 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
     class="group roadmap-card roadmap-product-card roadmap-action relative block w-full overflow-hidden rounded-2xl p-3.5 text-left transition duration-150"
     :class="[
       { 'roadmap-card-active': active },
+      { 'roadmap-card-with-cover': !!coverSrc, 'roadmap-card-preview': preview },
       pendingClass,
     ]"
     :style="{ '--roadmap-product-accent': productColor[item.product as keyof typeof productColor] ?? 'var(--color-icons-subtle-default)' }"
-    @click="emit('select', item)"
+    :tabindex="preview ? -1 : 0"
+    :aria-hidden="preview || undefined"
+    @click="!preview && emit('select', item)"
   >
     <span
       v-if="dirty"
       data-test="dirty-dot"
       title="Unpublished changes"
       aria-label="Unpublished changes"
-      class="absolute top-3 left-3 size-2 rounded-full bg-[color:var(--color-accent-brand-default)]"
+      class="absolute top-3 left-3 z-10 size-2 rounded-full bg-[color:var(--color-accent-brand-default)]"
     />
     <PhArrowUpRight
-      v-if="!draggable"
+      v-if="!draggable && !preview"
       :size="14"
-      class="text-icons-subtle-default absolute top-3 right-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+      class="card-open-arrow text-icons-subtle-default absolute top-3 right-3 z-10 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
       aria-hidden="true"
     />
     <span v-if="coverSrc" class="roadmap-card-cover" aria-hidden="true">
@@ -191,6 +196,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
       <span class="roadmap-card-cover-treatment" />
     </span>
 
+    <div class="roadmap-card-content" :class="{ 'roadmap-card-content-over-cover': !!coverSrc }">
     <div class="flex items-start gap-3">
       <ProductMark v-if="showProduct" :product="item.product" :size="36" />
       <div class="min-w-0 flex-1">
@@ -227,7 +233,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
           @keydown="onRenameKeydown"
           @blur="commitRename"
         />
-        <p v-if="item.oneliner" class="text-body-sm text-text-subtle-default mt-1.5 line-clamp-2">
+        <p v-if="item.oneliner" class="roadmap-card-oneliner text-body-sm text-text-subtle-default mt-1.5 line-clamp-2">
           <HighlightedText :text="item.oneliner" :query="highlightQuery" />
         </p>
       </div>
@@ -249,6 +255,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
       </span>
     </div>
     <PlannedDates :start-date="item.startDate" :end-date="item.endDate" compact />
+    </div>
   </button>
   <div
     v-if="dirty || (editing && pending !== 'deleted')"
@@ -308,11 +315,23 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
 .roadmap-card-deleted {
   opacity: 0.55;
 }
+.roadmap-card-preview {
+  pointer-events: none;
+}
+.roadmap-card-with-cover {
+  display: flex;
+  min-height: 248px;
+  flex-direction: column;
+  justify-content: flex-end;
+  isolation: isolate;
+  padding: 0.75rem;
+  background: color-mix(in srgb, var(--roadmap-product-accent) 16%, var(--color-surface-subtle-default));
+}
 .roadmap-card-cover {
-  position: relative;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   display: block;
-  height: 88px;
-  margin: -1rem -1rem 1rem;
   overflow: hidden;
   background: color-mix(in srgb, var(--roadmap-product-accent) 18%, var(--color-surface-subtle-default));
 }
@@ -326,22 +345,75 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
 .roadmap-card-cover img {
   object-fit: cover;
   filter: saturate(0.84) contrast(0.94);
+  transition: transform 320ms cubic-bezier(.2,.7,.2,1), filter 180ms ease;
 }
 .roadmap-card-cover-treatment {
   background:
-    linear-gradient(to bottom, transparent 46%, color-mix(in srgb, var(--color-card) 92%, transparent) 100%),
-    color-mix(in srgb, var(--roadmap-product-accent) 12%, transparent);
+    linear-gradient(to bottom, color-mix(in srgb, var(--roadmap-product-accent) 8%, transparent), rgb(10 14 20 / 24%)),
+    color-mix(in srgb, var(--roadmap-product-accent) 10%, transparent);
 }
 :global(:root[data-theme='dark']) .roadmap-card-cover img {
-  filter: brightness(0.76) saturate(0.72) contrast(0.92);
+  filter: brightness(0.72) saturate(0.72) contrast(0.94);
 }
 :global(:root[data-theme='dark']) .roadmap-card-cover-treatment {
   background:
-    linear-gradient(to bottom, transparent 42%, color-mix(in srgb, var(--color-card) 96%, transparent) 100%),
-    color-mix(in srgb, var(--roadmap-product-accent) 18%, transparent);
+    linear-gradient(to bottom, rgb(3 7 12 / 8%), rgb(3 7 12 / 42%)),
+    color-mix(in srgb, var(--roadmap-product-accent) 16%, transparent);
 }
 .roadmap-card-deleted .roadmap-card-cover img {
-  filter: grayscale(0.7) saturate(0.35);
+  filter: grayscale(0.45) saturate(0.5);
+}
+.roadmap-card-content {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+.roadmap-card-content-over-cover {
+  width: 100%;
+  padding: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle-default) 72%, transparent);
+  border-radius: 13px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--roadmap-product-accent) 5%, transparent), transparent 62%),
+    color-mix(in srgb, var(--color-card) 92%, transparent);
+  box-shadow: 0 10px 28px rgb(10 14 20 / 18%), inset 0 1px 0 rgb(255 255 255 / 22%);
+  -webkit-backdrop-filter: blur(12px) saturate(0.86);
+  backdrop-filter: blur(12px) saturate(0.86);
+}
+.roadmap-card-content-over-cover .roadmap-card-oneliner {
+  -webkit-line-clamp: 1;
+}
+:global(:root[data-theme='dark']) .roadmap-card-content-over-cover {
+  border-color: rgb(255 255 255 / 14%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--roadmap-product-accent) 7%, transparent), transparent 62%),
+    color-mix(in srgb, var(--color-card) 90%, transparent);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 32%), inset 0 1px 0 rgb(255 255 255 / 7%);
+}
+@media (hover:hover) and (pointer:fine) {
+  .roadmap-card-with-cover:hover .roadmap-card-cover img { transform:scale(1.025); }
+}
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .roadmap-card-content-over-cover { background:color-mix(in srgb,var(--color-card) 96%,transparent); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .roadmap-card-content-over-cover { background:color-mix(in srgb,var(--color-card) 98%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none; }
+}
+@media (prefers-contrast: more) {
+  .roadmap-card-content-over-cover { border-color:var(--color-text-primary-default);background:var(--color-card);box-shadow:none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .roadmap-card-cover img { transition:none; }
+}
+.roadmap-card-with-cover .card-open-arrow {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle-default) 60%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-card) 80%, transparent);
+  backdrop-filter: blur(8px);
 }
 
 /* The one and only way to start a drag (SortableJS's `handle` option, set from Board.vue,

@@ -37,6 +37,8 @@ it('renders an explicitly selected cover at its focal point and respects the vie
   const shown = mountCard({ item: covered });
   expect(shown.get('.roadmap-card-cover img').attributes('src')).toContain('/assets/ast_one/rev_one/cover.png');
   expect(shown.get('.roadmap-card-cover img').attributes('style')).toContain('object-position: 35% 70%');
+  expect(shown.get('button').classes()).toContain('roadmap-card-with-cover');
+  expect(shown.get('.roadmap-card-content-over-cover').text()).toContain('Existing item');
   expect(mountCard({ item: covered, showCover: false }).find('.roadmap-card-cover').exists()).toBe(false);
 });
 
