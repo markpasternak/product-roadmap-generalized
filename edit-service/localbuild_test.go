@@ -565,6 +565,87 @@ func TestLocalBuildDependencyCacheDoesNotModifySource(t *testing.T) {
 	}
 }
 
+func TestLocalBuildPreservesHistoryCache(t *testing.T) {
+	g, head := buildFixture(t)
+	if err := writeConfined(g.repoRoot(), "site/scripts/build-item-history.mjs", []byte("trusted history builder")); err != nil {
+		t.Fatal(err)
+	}
+	gitTest(t, g.repoRoot(), "add", "site/scripts/build-item-history.mjs")
+	gitTest(t, g.repoRoot(), "commit", "-m", "history builder")
+	head = gitTest(t, g.repoRoot(), "rev-parse", "HEAD")
+	g.cfg.LocalBuild.BaseSHA = head
+	for attempt := range 2 {
+		err := g.prepareBuild(context.Background(), func(context.Context) (string, error) { return head, nil }, func(_ context.Context, root string, _ []string) error {
+			path := filepath.Join(root, "site/.cache/item-history.json")
+			if attempt == 1 {
+				data, err := os.ReadFile(path)
+				if err != nil || string(data) != "cached history" {
+					t.Fatalf("history cache lost between builds: %s, %v", data, err)
+				}
+			}
+			if err := writeConfined(root, "site/.cache/item-history.json", []byte("cached history")); err != nil {
+				return err
+			}
+			if err := writeConfined(root, "site/dist/index.html", []byte("fixture")); err != nil {
+				return err
+			}
+			return writeJSONAtomic(filepath.Join(root, "site/dist/version.json"), map[string]string{"commit": head})
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.RemoveAll(filepath.Join(g.cfg.StateDir, "local-build/prepared")); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestLocalBuildHistoryCacheInvalidation(t *testing.T) {
+	for _, scenario := range []string{"warm", "builder-changed", "missing", "symlink"} {
+		t.Run(scenario, func(t *testing.T) {
+			root, cache := t.TempDir(), filepath.Join(t.TempDir(), "history")
+			if err := writeConfined(root, "site/scripts/build-item-history.mjs", []byte("v1")); err != nil {
+				t.Fatal(err)
+			}
+			restore := prepareBuildHistory(context.Background(), root, cache)
+			if err := writeConfined(root, "site/.cache/item-history.json", []byte("original")); err != nil {
+				t.Fatal(err)
+			}
+			if err := restore(); err != nil {
+				t.Fatal(err)
+			}
+			stored := filepath.Join(cache, "item-history.json")
+			switch scenario {
+			case "builder-changed":
+				if err := writeConfined(root, "site/scripts/build-item-history.mjs", []byte("v2")); err != nil {
+					t.Fatal(err)
+				}
+			case "missing", "symlink":
+				if err := os.Remove(stored); err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "symlink" {
+					if err := os.Symlink(filepath.Join(root, "site/scripts/build-item-history.mjs"), stored); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			restore = prepareBuildHistory(context.Background(), root, cache)
+			data, err := os.ReadFile(filepath.Join(root, "site/.cache/item-history.json"))
+			if scenario == "warm" {
+				if err != nil || string(data) != "original" {
+					t.Fatalf("warm cache not reused: %s, %v", data, err)
+				}
+			} else if !os.IsNotExist(err) {
+				t.Fatalf("unsafe/stale cache reused: %s, %v", data, err)
+			}
+			if err := restore(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestLocalBuildNotificationRequiresSuccessfulPush(t *testing.T) {
 	g, head := buildFixture(t) // Deliberately has no remote: a push must fail locally.
 	wake := make(chan time.Time, 1)

@@ -381,6 +381,12 @@ func (g *GitHub) prepareBuild(ctx context.Context, latest func(context.Context) 
 		done := trace.step(context.Background(), "cleanup dependencies")
 		done(restoreDependencies())
 	}()
+	restoreHistory := prepareBuildHistory(ctx, wt, filepath.Join(root, "history"))
+	defer func() {
+		trace.endPhase(ctx, result)
+		done := trace.step(context.Background(), "cleanup history cache")
+		done(restoreHistory())
+	}()
 	setStage("content/build/link/date checks")
 	if err := run(ctx, wt, c.Profile.environment(head)); err != nil {
 		return err
@@ -521,6 +527,59 @@ func prepareBuildDependencies(ctx context.Context, root, source, cache string) (
 		return nil, err
 	}
 	return restore, nil
+}
+
+// Preserve only the history builder's private input cache, never generated site
+// output. The builder validates ancestry and refreshes changed/renamed paths;
+// changing its implementation invalidates this cache independently of npm.
+func prepareBuildHistory(ctx context.Context, root, cache string) func() error {
+	noop := func() error { return nil }
+	trace := buildTimingFrom(ctx)
+	script, err := os.ReadFile(filepath.Join(root, "site/scripts/build-item-history.mjs"))
+	if err != nil {
+		return noop
+	}
+	key := stateKey(string(script))
+	var cachedKey string
+	_ = readJSON(filepath.Join(cache, "key.json"), &cachedKey)
+	directory := filepath.Join(root, "site/.cache")
+	for _, dir := range []string{directory, cache} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			trace.emit(buildTimingRecord{Stage: "history cache", Outcome: "unavailable"})
+			return noop
+		}
+		if info, err := os.Lstat(dir); err != nil || !info.IsDir() {
+			trace.emit(buildTimingRecord{Stage: "history cache", Outcome: "unavailable"})
+			return noop
+		}
+	}
+	stored := filepath.Join(cache, "item-history.json")
+	inBuild := filepath.Join(directory, "item-history.json")
+	state := "miss"
+	if cachedKey == key {
+		if info, err := os.Lstat(stored); err == nil && info.Mode().IsRegular() {
+			if os.Rename(stored, inBuild) == nil {
+				state = "hit"
+			}
+		}
+	}
+	trace.emit(buildTimingRecord{Stage: "history cache", Outcome: "success", Cache: state})
+	return func() error {
+		info, err := os.Lstat(inBuild)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return errors.New("history cache must be a regular file")
+		}
+		if err := os.Rename(inBuild, stored); err != nil {
+			return err
+		}
+		return writeJSONAtomic(filepath.Join(cache, "key.json"), key)
+	}
 }
 
 func runLocalBuildCommands(ctx context.Context, root string, env []string) error {
