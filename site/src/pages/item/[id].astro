@@ -45,17 +45,23 @@ export async function getStaticPaths() {
     (entry) => !IS_PUBLIC || entry.data.visibility === 'Public',
   );
   items.sort((a, b) => byHorizonThenOrder(a.data, b.data));
+  // Share one lookup across this route's pages, without a process-global cache
+  // that could retain old titles or visibility after content changes in dev.
+  const docTitleByTarget = new Map<string, string>();
+  for (const { root, entries } of await getVisibleDocCollections())
+    for (const doc of entries)
+      if (doc.data.title) docTitleByTarget.set(`${root}/${doc.id}`.toLowerCase(), doc.data.title);
   return items.map((entry, i) => {
     const sibling = (e: (typeof items)[number] | undefined) =>
       e ? { id: e.data.id, title: e.data.title } : null;
     return {
       params: { id: entry.data.id },
-      props: { entry, prev: sibling(items[i - 1]), next: sibling(items[i + 1]) },
+      props: { entry, prev: sibling(items[i - 1]), next: sibling(items[i + 1]), docTitleByTarget },
     };
   });
 }
 
-const { entry, prev, next } = Astro.props;
+const { entry, prev, next, docTitleByTarget } = Astro.props;
 const d = entry.data;
 const base = import.meta.env.BASE_URL;
 const body = entry.body ?? '';
@@ -84,11 +90,6 @@ const storySections = parseSections(body)
   .filter((s) => !IS_PUBLIC || PUBLIC_SECTIONS.has(s.heading))
   .map((s) => ({ heading: sectionLabel(s.heading), html: renderRichMarkdown(s.raw, base) }));
 
-const docColls = await getVisibleDocCollections();
-const docTitleByTarget = new Map<string, string>();
-for (const { root, entries } of docColls)
-  for (const e of entries)
-    if (e.data.title) docTitleByTarget.set(`${root}/${e.id}`.toLowerCase(), e.data.title);
 const prettifySlug = (s: string): string =>
   (s.split('/').filter(Boolean).pop() ?? '').replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 // Never render a raw URL as flowing text — show the host, keep the full URL on hover.

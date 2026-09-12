@@ -157,6 +157,7 @@ const strippedSections =
 export default defineConfig({
   // Preserve spacing between inline elements across the Astro 7 upgrade.
   compressHTML: true,
+  build: { concurrency: 2 },
   site: process.env.SITE_URL || 'https://roadmapdemo.canvas-drop.com',
   base,
   trailingSlash: 'ignore',
