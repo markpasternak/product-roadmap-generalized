@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { computed, ref, onMounted, onUnmounted, watch } from "vue";
+import type { DraftChoices } from '../../composables/useDraftSync';
 import { trapFocus, isTopFocusTrap } from "../../lib/focusTrap";
 import type { Draft } from "../../lib/edit/store";
 const props = defineProps<{
@@ -8,7 +9,10 @@ const props = defineProps<{
   fields: string[];
   titles: Record<string, string>;
 }>();
-const emit = defineEmits<{ resolve: [keepLocal: boolean]; close: [] }>();
+const emit = defineEmits<{ resolve: [choices: DraftChoices]; close: [] }>();
+const choices = ref<DraftChoices>({});
+watch(() => props.fields, () => { choices.value = {}; });
+const ready = computed(() => props.fields.every(field => !!choices.value[field]));
 const panel = ref<HTMLElement>();
 let release: (() => void) | undefined;
 function key(event: KeyboardEvent) {
@@ -82,31 +86,29 @@ function value(draft: Draft | null, path: string) {
           </button>
         </header>
         <p>
-          Review the overlapping changes and choose the complete draft to
-          continue with. A recovery copy of both versions is kept on this
-          device.
+          Choose a version for each overlapping change. Independent changes from
+          both devices will be kept. We’ll also try to keep a device backup of both versions.
         </p>
         <div class="draft-comparison-rows">
-          <article v-for="field in fields" :key="field">
+          <article v-for="(field, index) in fields" :key="field">
             <h3>{{ label(field) }}</h3>
             <div class="draft-comparison-columns">
               <section>
                 <h4>This device</h4>
                 <pre>{{ value(mine, field) }}</pre>
+                <label><input v-model="choices[field]" type="radio" :name="`draft-choice-${index}`" value="local" /> Keep this change</label>
               </section>
               <section>
                 <h4>Saved to your account</h4>
                 <pre>{{ value(remote, field) }}</pre>
+                <label><input v-model="choices[field]" type="radio" :name="`draft-choice-${index}`" value="remote" /> Use this change</label>
               </section>
             </div>
           </article>
         </div>
         <footer>
-          <button type="button" @click="emit('resolve', false)">
-            Use the saved draft</button
-          ><button type="button" @click="emit('resolve', true)">
-            Keep this device’s draft
-          </button>
+          <p>{{ Object.keys(choices).length }} of {{ fields.length }} choices made</p>
+          <button type="button" :disabled="!ready" @click="emit('resolve', choices)">Continue with these choices</button>
         </footer>
       </section>
     </div></Teleport
@@ -186,6 +188,8 @@ function value(draft: Draft | null, path: string) {
   padding: 0.6rem 0.8rem;
   border-radius: 8px;
 }
+.draft-comparison label { display:flex; align-items:center; gap:.5rem; min-height:44px; cursor:pointer; }
+.draft-comparison button:disabled { opacity:.5; cursor:default; }
 .draft-comparison footer button:last-child {
   background: var(--color-accent-brand-default);
   color: var(--color-text-on-accent-default, #fff);

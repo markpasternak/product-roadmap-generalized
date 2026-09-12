@@ -166,22 +166,8 @@ func (s *Server) handleItems(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "github error", http.StatusBadGateway)
 		return
 	}
-	type outItem struct {
-		ID          string            `json:"id"`
-		Path        string            `json:"path"`
-		Sha         string            `json:"sha"`
-		Git         ItemGitMetadata   `json:"git"`
-		Frontmatter map[string]string `json:"frontmatter"`
-		Body        string            `json:"body"`
-		Content     string            `json:"content"`
-	}
-	var out []outItem
-	for id, rf := range files {
-		d := ParseDoc(rf.Content)
-		out = append(out, outItem{ID: id, Path: rf.Path, Sha: rf.Sha, Git: rf.Git, Frontmatter: d.FM, Body: d.Body, Content: rf.Content})
-	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
+	json.NewEncoder(w).Encode(apiItems(files))
 }
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {

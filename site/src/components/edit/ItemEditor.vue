@@ -5,7 +5,9 @@
 // main area. Presentational + store-agnostic, like SectionEditor: the controller wires
 // this to the edit store (reading current values, persisting on every `field` /
 // `update:body` emit) so it can be built and tested in isolation.
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { fieldLabel, fieldTarget } from '../../lib/edit/fieldLabels';
+import type { FieldError } from '../../lib/edit/validate';
 import Select from '../ui/Select.vue';
 import RoadmapCard from '../board/RoadmapCard.vue';
 import SectionEditor from './SectionEditor.vue';
@@ -50,6 +52,8 @@ const props = withDefaults(
   defineProps<{
     item: ItemEditorItem;
     editorLogin?: string;
+    validationErrors?: FieldError[];
+    focusRequest?: { field: string; sequence: number };
     /** Raw markdown body — bound into the SectionEditor. */
     body: string;
     /** True when the item hasn't been persisted yet (hides the Delete action). No longer
@@ -212,6 +216,17 @@ const changed = computed<Record<ChangeKey, boolean>>(() => {
   }
   return out;
 });
+const errorAttrs = (field: string) => props.validationErrors?.some(issue => issue.field === field)
+  ? { 'aria-invalid': 'true' as const, 'aria-describedby': `item-error-${field}` } : {};
+watch(() => props.focusRequest, async request => {
+  if (!request) return;
+  await nextTick();
+  const target = fieldTarget(request.field);
+  const el = panel.value?.querySelector<HTMLElement>(`#${target}, [data-test="${target}"]`);
+  el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const control = el?.matches('input, select, textarea, button, [tabindex]') ? el : el?.querySelector<HTMLElement>('input, select, textarea, button, [tabindex]');
+  control?.focus();
+}, { immediate: true });
 function resetField(key: ChangeKey) {
   emit('resetField', key);
 }
@@ -398,7 +413,7 @@ const historyRows = computed(() => [
               </template>
             </div>
             <input
-              id="item-editor-title-field"
+              id="item-editor-title-field" v-bind="errorAttrs('title')"
               ref="titleInput"
               v-model="titleModel"
               type="text"
@@ -428,7 +443,7 @@ const historyRows = computed(() => [
                    would need the file relocated to a new folder + a new (product-prefixed) id
                    server-side. To move an existing item, duplicate it into the target product
                    and delete the original. -->
-              <Select v-if="isNew" id="item-editor-product" v-model="productModel" :options="PRODUCT_OPTIONS" aria-label="Product" />
+              <Select v-if="isNew" id="item-editor-product" v-bind="errorAttrs('product')" v-model="productModel" :options="PRODUCT_OPTIONS" aria-label="Product" />
               <div v-else class="flex items-center gap-2 text-single-sm-medium text-text-primary-default" data-test="product-readonly">
                 <span class="h-3.5 w-1 shrink-0 rounded-full" :style="{ background: productColor[item.product as keyof typeof productColor] }" aria-hidden="true" />
                 <span>{{ item.product }}</span>
@@ -454,7 +469,7 @@ const historyRows = computed(() => [
               </template>
             </div>
             <div class="mt-1.5 [&_select]:min-h-10">
-              <Select id="item-editor-horizon" v-model="horizonModel" :options="HORIZON_OPTIONS" aria-label="Horizon" />
+              <Select id="item-editor-horizon" v-bind="errorAttrs('horizon')" v-model="horizonModel" :options="HORIZON_OPTIONS" aria-label="Horizon" />
             </div>
           </div>
 
@@ -475,7 +490,7 @@ const historyRows = computed(() => [
               </template>
             </div>
             <div class="mt-1.5 [&_select]:min-h-10">
-              <Select id="item-editor-stage" v-model="stageModel" :options="STAGE_OPTIONS" aria-label="Stage" />
+              <Select id="item-editor-stage" v-bind="errorAttrs('stage')" v-model="stageModel" :options="STAGE_OPTIONS" aria-label="Stage" />
             </div>
           </div>
 
@@ -497,7 +512,7 @@ const historyRows = computed(() => [
             </div>
             <div class="mt-1.5">
               <OwnerInput
-                id="item-editor-owner"
+                id="item-editor-owner" v-bind="errorAttrs('owner')"
                 :model-value="item.owner ?? ''"
                 :suggestions="allOwners"
                 data-test="owner-field"
@@ -523,7 +538,7 @@ const historyRows = computed(() => [
               </template>
             </div>
             <div class="mt-1.5 [&_select]:min-h-10">
-              <Select id="item-editor-impact" v-model="impactModel" :options="LEVEL_OPTIONS" aria-label="Impact" />
+              <Select id="item-editor-impact" v-bind="errorAttrs('impact')" v-model="impactModel" :options="LEVEL_OPTIONS" aria-label="Impact" />
             </div>
           </div>
 
@@ -544,7 +559,7 @@ const historyRows = computed(() => [
               </template>
             </div>
             <div class="mt-1.5 [&_select]:min-h-10">
-              <Select id="item-editor-effort" v-model="effortModel" :options="LEVEL_OPTIONS" aria-label="Effort" />
+              <Select id="item-editor-effort" v-bind="errorAttrs('effort')" v-model="effortModel" :options="LEVEL_OPTIONS" aria-label="Effort" />
             </div>
           </div>
 
@@ -565,7 +580,7 @@ const historyRows = computed(() => [
               </template>
             </div>
             <div class="mt-1.5 [&_select]:min-h-10">
-              <Select id="item-editor-visibility" v-model="visibilityModel" :options="VISIBILITY_OPTIONS" aria-label="Visibility" />
+              <Select id="item-editor-visibility" v-bind="errorAttrs('visibility')" v-model="visibilityModel" :options="VISIBILITY_OPTIONS" aria-label="Visibility" />
             </div>
           </div>
 
@@ -574,8 +589,8 @@ const historyRows = computed(() => [
               <h3>Planned work window</h3>
               <p>Optional dates for the timeline. They do not change the horizon or stage.</p>
               <div class="planned-editor-fields">
-                <label for="item-planned-start">Planned start<input id="item-planned-start" v-model="startDateModel" type="date" /></label>
-                <label for="item-planned-end">Planned end<input id="item-planned-end" v-model="endDateModel" type="date" :aria-invalid="planIssue === 'End before start'" /></label>
+                <label for="item-planned-start">Planned start<input id="item-planned-start" v-bind="errorAttrs('startDate')" v-model="startDateModel" type="date" /></label>
+                <label for="item-planned-end">Planned end<input id="item-planned-end" v-bind="errorAttrs('endDate')" v-model="endDateModel" type="date" :aria-invalid="planIssue === 'End before start' || !!errorAttrs('endDate')['aria-invalid']" /></label>
               </div>
               <p v-if="planIssue === 'End before start'" role="alert">End must be on or after the start date.</p>
               <PlannedDates :start-date="item.startDate" :end-date="item.endDate" />
@@ -598,7 +613,7 @@ const historyRows = computed(() => [
             </div>
             <div class="mt-1.5">
               <TagInput
-                id="item-editor-tags"
+                id="item-editor-tags" v-bind="errorAttrs('tags')"
                 :model-value="item.tags ?? []"
                 :suggestions="allTags"
                 data-test="tags-field"
@@ -615,6 +630,9 @@ const historyRows = computed(() => [
     </div>
 
 
+    <div v-if="validationErrors?.length" class="sr-only">
+      <p v-for="issue in validationErrors" :id="`item-error-${issue.field}`" :key="issue.field">{{ fieldLabel(issue.field) }} · {{ issue.message }}</p>
+    </div>
     <slot name="save-status" />
 
     <!-- Teleported to <body>: keeps RewriteWithAi's DOM entirely OUTSIDE this panel's

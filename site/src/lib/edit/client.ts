@@ -1,4 +1,5 @@
 // Browser client for the Go edit-service (GitHub-gated in-app editing).
+import { requestWithTimeout } from './request';
 export const EDIT_API = (import.meta.env.PUBLIC_EDIT_API ?? '').trim();
 const KEY = 'rm-edit-token';
 const RETURN_KEY = 'rm-edit-return';
@@ -63,7 +64,7 @@ export function loginUrl(): string {
 }
 
 async function authed(path: string, init: RequestInit = {}, tok = getToken()) {
-  return fetch(EDIT_API + path, {
+  return requestWithTimeout(EDIT_API + path, {
     ...init,
     headers: { ...(init.headers || {}), ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
   });
@@ -117,6 +118,9 @@ export async function fetchItems(at?: string): Promise<ApiItem[]> {
 }
 export type SyncResult = {
   ok: boolean;
+  /** Exact committed delta. Older services/recovered receipts may omit it. */
+  items?: ApiItem[] | null;
+  deletedIds?: string[];
   createdIds?: Record<string, string>;
   state?: string;
   sha?: string;
@@ -196,5 +200,9 @@ export async function sync(changeset: unknown): Promise<SyncResult> {
 
 export async function publicationStatus(id: string): Promise<SyncResult> {
   const res = await authed(`/api/publications/${encodeURIComponent(id)}`);
+  if (res.status === 401) {
+    clearToken();
+    return { ok: false, authError: true, errors: ['Your session expired'] };
+  }
   return res.json();
 }

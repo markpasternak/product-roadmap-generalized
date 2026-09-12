@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"os/exec"
 	"path"
@@ -20,6 +21,8 @@ import (
 const maxPushAttempts = 3
 
 type syncOutcome struct {
+	Items           []APIItem
+	DeletedIDs      []string
 	SHA             string
 	Errors          []string
 	Conflicts       []string
@@ -385,6 +388,13 @@ func (g *GitHub) listItemsFromGit(ctx context.Context) (map[string]RepoFile, err
 	if err := g.fetchMainLocked(ctx, token); err != nil {
 		return nil, err
 	}
+	head, err := g.headSHALocked(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if files, ok := g.cachedItems(head); ok {
+		return files, nil
+	}
 	wt, err := g.addWorktreeLocked(ctx, token)
 	if err != nil {
 		return nil, err
@@ -395,10 +405,13 @@ func (g *GitHub) listItemsFromGit(ctx context.Context) (map[string]RepoFile, err
 		return nil, err
 	}
 	g.attachItemGitMetadata(ctx, token, wt, files)
+	g.cacheItems(head, files)
 	return files, nil
 }
 
 func (g *GitHub) syncChangeset(ctx context.Context, cs Changeset, msg, login string) (syncOutcome, error) {
+	started := time.Now()
+	defer func() { log.Printf("publication repository duration=%s", time.Since(started)) }()
 	token, err := g.installationToken(ctx)
 	if err != nil {
 		return syncOutcome{}, err
@@ -504,5 +517,24 @@ func (g *GitHub) applyCommitPush(ctx context.Context, token, wt string, cs Chang
 	if pushErr != nil {
 		return syncOutcome{}, pushOut, pushErr, nil
 	}
-	return syncOutcome{SHA: strings.TrimSpace(string(shaOut)), SkippedReorders: skippedReorders, CreatedIDs: createdIDs}, nil, nil, nil
+	out := syncOutcome{SHA: strings.TrimSpace(string(shaOut)), SkippedReorders: skippedReorders, CreatedIDs: createdIDs}
+	// Reuse the committed worktree and read history only for changed items. A
+	// post-push read failure must never turn a successful commit into a failure;
+	// clients can fall back to the immutable commit endpoint.
+	if committed, err := readItemsFromDir(wt); err == nil {
+		changed := make(map[string]RepoFile)
+		for id, file := range committed {
+			if old, exists := current[id]; !exists || old.Sha != file.Sha || old.Path != file.Path {
+				changed[id] = file
+			}
+		}
+		for id := range current {
+			if _, exists := committed[id]; !exists {
+				out.DeletedIDs = append(out.DeletedIDs, id)
+			}
+		}
+		g.attachItemGitMetadata(ctx, token, wt, changed)
+		out.Items = apiItems(changed)
+	}
+	return out, nil, nil, nil
 }

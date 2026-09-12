@@ -60,6 +60,8 @@ import PublicationConflicts from '../edit/PublicationConflicts.vue';
 import type { ApiItem } from '../../lib/edit/client';
 import DraftConflicts from '../edit/DraftConflicts.vue';
 import SaveStatus from '../edit/SaveStatus.vue';
+import DraftRecovery from '../edit/DraftRecovery.vue';
+import { fieldLabel, type ChangeSummary } from '../../lib/edit/fieldLabels';
 import { useDraftSync } from '../../composables/useDraftSync';
 import PresenceIndicator from './PresenceIndicator.vue';
 import { useBackend } from '../../composables/useBackend';
@@ -240,6 +242,14 @@ function signIn() {
 
 const editStore = useEditStore();
 const draftSync = useDraftSync(editStore);
+const recoveryOpen = ref(false);
+const validationIssues = ref<FieldError[]>([]);
+const focusRequest = ref<{ field: string; sequence: number }>();
+function reviewChange(id: string, field?: string) {
+  openEditor(id);
+  focusRequest.value = { field: field ?? 'title', sequence: (focusRequest.value?.sequence ?? 0) + 1 };
+}
+const namedValidationIssues = computed(() => validationIssues.value.map(issue => ({ ...issue, title: displayNameFor(issue.id, editStore.changeset()) })));
 
 const syncPending = ref(false);
 const syncResult = ref<{ sha: string } | null>(null);
@@ -507,7 +517,9 @@ function formatValidationErrors(errors: FieldError[], cs: ReturnType<typeof edit
 
 async function acceptPublication(res: Awaited<ReturnType<typeof sync>>, sent: any) {
   // Read the exact committed tree before advancing any item's editing base.
-  const api = await fetchItems(res.sha || undefined);
+  const delta = Array.isArray(res.items);
+  const api = delta ? res.items! : await fetchItems(res.sha || undefined);
+  if (boardStopped) return;
   if (sent.created?.some((item: any) => !res.createdIds?.[item.id]))
     throw new Error('Publication receipt is missing created item IDs');
   const skippedNames = (res.skippedReorders ?? []).map((id) => byId.value.get(id)?.title ?? id);
@@ -520,9 +532,18 @@ async function acceptPublication(res: Awaited<ReturnType<typeof sync>>, sent: an
         item.content,
         sent.updated?.some((e: any) => e.id === item.id) || Object.values(res.createdIds ?? {}).includes(item.id),
       );
-  liveItems.value = itemsFromApi(api, props.base ?? '/');
-  rawBodies.value = new Map(api.map((i) => [i.id, i.body]));
-  baseShaMap.value = new Map(api.filter((i) => i.sha).map((i) => [i.id, i.sha!]));
+  if (delta) {
+    const removed = new Set<string>(res.deletedIds ?? sent.deletedIds ?? []);
+    const changed = new Set(api.map(item => item.id));
+    liveItems.value = [...liveItems.value.filter(item => !removed.has(item.id) && !changed.has(item.id)), ...itemsFromApi(api, props.base ?? '/')];
+    for (const id of removed) { rawBodies.value.delete(id); baseShaMap.value.delete(id); }
+    for (const item of api) { rawBodies.value.set(item.id, item.body); if (item.sha) baseShaMap.value.set(item.id, item.sha); }
+  } else {
+    liveItems.value = itemsFromApi(api, props.base ?? '/');
+    rawBodies.value = new Map(api.map((i) => [i.id, i.body]));
+    baseShaMap.value = new Map(api.filter((i) => i.sha).map((i) => [i.id, i.sha!]));
+  }
+  validationIssues.value = [];
   if (editingId.value && res.createdIds?.[editingId.value]) editingId.value = res.createdIds[editingId.value]!;
   syncedJson.value = JSON.stringify(sent);
   syncError.value = null;
@@ -544,6 +565,8 @@ async function doSync() {
     return;
   }
   if (syncPending.value || draftSync.conflict.value || resourceTransferCount.value) return;
+  clearTimeout(publicationRecoveryTimer);
+  publicationRecoveryAttempt = 0;
   if (!baseVersionLoaded.value) {
     syncError.value = 'Still loading your workspace. Try again in a moment.';
     return;
@@ -551,24 +574,21 @@ async function doSync() {
   sessionExpired.value = false;
   const existing = editStore.snapshot().requestPayload;
   const candidate = existing ?? editStore.changeset(baseShaMap.value);
-  const errors = validateChangeset(candidate);
-  for (const item of existing ? [] : projected.value) {
-    if (candidate.updated.some((u: {id:string}) => u.id === item.id) || candidate.created.some((u: {id:string}) => u.id === item.id)) {
-      if (item.startDate && item.endDate && item.endDate < item.startDate)
-        errors.push({ id:item.id, field:'endDate', message:'Planned end must be on or after planned start' });
-    }
-  }
+  const errors = publicationValidation(candidate, !!existing);
   if (errors.length) {
+    validationIssues.value = errors;
     interruptKind.value = 'validationBlocked';
     syncError.value = `Review these fields: ${formatValidationErrors(errors, candidate)}`;
     return;
   }
   const sent = editStore.preparePublication(baseShaMap.value);
+  validationIssues.value = [];
   syncPending.value = true;
   syncError.value = null;
   interruptKind.value = null;
   try {
     const res = await sync(sent);
+    if (boardStopped) return;
     if (res.ok) await acceptPublication(res, sent);
     else if (res.authError) {
       editStore.releasePublication();
@@ -590,13 +610,43 @@ async function doSync() {
       if (recovered.ok) await acceptPublication(recovered, sent);
       else
         syncError.value =
-          'Could not confirm publication. Your draft is kept. Retry safely to check and finish this publication.';
+          'Could not confirm publication yet. Your draft is kept; checking automatically. Retrying is safe.';
     } catch {
-      syncError.value = 'Connection interrupted. Your draft is kept. Retrying this publication is safe.';
+      syncError.value = 'Connection interrupted. Your draft is kept; checking publication automatically. Retrying is safe.';
     }
   } finally {
     syncPending.value = false;
+    schedulePublicationRecovery();
   }
+}
+let publicationRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
+let publicationRecoveryAttempt = 0;
+let boardStopped = false;
+function schedulePublicationRecovery() {
+  clearTimeout(publicationRecoveryTimer);
+  if (boardStopped || !editStore.snapshot().requestPayload || sessionExpired.value || publicationRecoveryAttempt >= 12) return;
+  publicationRecoveryTimer = setTimeout(async () => {
+    if (syncPending.value || boardStopped) return;
+    const sent = editStore.snapshot().requestPayload;
+    if (!sent) return;
+    publicationRecoveryAttempt++;
+    syncPending.value = true;
+    try {
+      const result = await publicationStatus(sent.requestId);
+      if (boardStopped) return;
+      if (result.ok) { await acceptPublication(result, sent); publicationRecoveryAttempt = 0; }
+      else if (result.authError) {
+        sessionExpired.value = true;
+        syncError.value = 'Sign in again to confirm publication. Your draft is kept.';
+      }
+      else if (result.state === 'conflict' || result.state === 'invalid') {
+        editStore.releasePublication();
+        if (result.conflict?.length) { conflictIds.value = result.conflict; conflictsOpen.value = true; }
+        syncError.value = result.errors?.join(' · ') || 'Review overlapping changes before publishing.';
+      }
+    } catch { /* Keep the same receipt and retry status, never submit a new publication. */ }
+    finally { syncPending.value = false; schedulePublicationRecovery(); }
+  }, Math.min(2000 * (publicationRecoveryAttempt + 1), 10000));
 }
 const draftConflictOpen = ref(false);
 watch(draftSync.conflict, (value) => {
@@ -723,6 +773,13 @@ const rawBodies = ref<Map<string, string>>(new Map());
 // base-version map on reload" convergence requirement — no extra bookkeeping needed here.
 const baseShaMap = ref<Map<string, string>>(new Map());
 const baseVersionLoaded = ref(false);
+const workspaceError = ref(false);
+const restoringCommit = ref<string | null>(null);
+const publishBlockedReason = computed(() => draftSync.conflict.value ? 'Resolve overlapping draft changes to publish.'
+  : conflictIds.value.length ? 'Review the conflicting items to publish.'
+    : resourceTransferCount.value ? 'Finish or cancel file uploads to publish.'
+      : !baseVersionLoaded.value ? workspaceError.value ? 'Could not load your workspace. Your draft is kept.' : 'Loading the latest item versions…'
+        : '');
 let rawBodiesRequested = false;
 // Shared by both the edit-mode-entry watcher below and the U10 (R11) view-mode mount check —
 // the one authed call that fetches raw bodies + base shas, and re-reconciles the draft with
@@ -731,8 +788,14 @@ let rawBodiesRequested = false;
 async function loadRawBodies() {
   if (rawBodiesRequested) return;
   rawBodiesRequested = true;
+  workspaceError.value = false;
   try {
-    const items = (await fetchItems()) as { id: string; body: string; sha?: string }[];
+    const items = restoringCommit.value ? await fetchItems(restoringCommit.value) : await fetchItems();
+    if (boardStopped) return;
+    if (restoringCommit.value) {
+      liveItems.value = itemsFromApi(items, props.base ?? '/');
+      restoringCommit.value = null;
+    }
     rawBodies.value = new Map(items.map((it) => [it.id, it.body]));
     baseShaMap.value = new Map(
       items.filter((it): it is { id: string; body: string; sha: string } => !!it.sha).map((it) => [it.id, it.sha]),
@@ -747,6 +810,7 @@ async function loadRawBodies() {
       if (!editStore.snapshot().requestPayload) editStore.reconcile(liveItems.value, rawBodies.value);
     }
   } catch {
+    workspaceError.value = true;
     // Degrade gracefully for the body-editor fallback (DetailDrawer falls back to its
     // parsed-sections reconstruction) — but baseVersionLoaded deliberately stays false here:
     // R1 is fail-closed, so doSync keeps refusing to send updates/deletes until a later
@@ -761,6 +825,10 @@ async function loadRawBodies() {
     // keep it true so a landed fetch isn't redundantly re-requested.
     rawBodiesRequested = false;
   }
+}
+async function retryWorkspace() {
+  await loadRawBodies();
+  if (baseVersionLoaded.value) syncError.value = null;
 }
 watch(editMode, (on) => {
   if (on) void loadRawBodies();
@@ -1198,22 +1266,39 @@ const byId = computed(() => new Map(liveItems.value.map((i) => [i.id, i])));
 // before clicking Sync, instead of taking the changeset (all ids/temp-ids) on faith.
 // Names resolve through `byId` (the published board) since the changeset itself only
 // ever carries ids.
-type ChangeSummary = {
-  edited: { id: string; title: string }[];
-  created: { title: string; product: string }[];
-  deleted: { id: string; title: string }[];
-  reorderLanes: number;
-  resources: number;
-};
 const changeSummary = computed<ChangeSummary>(() => {
   const cs = editStore.changeset();
   return {
-    edited: cs.updated.map((u) => ({ id: u.id, title: byId.value.get(u.id)?.title ?? u.id })),
-    created: cs.created.map((c) => ({ title: c.title, product: c.product })),
+    edited: cs.updated.map((u) => ({ id: u.id, title: byId.value.get(u.id)?.title ?? u.id,
+      changes: [
+        ...Object.entries(u.frontmatter).map(([key, after]) => ({ label: fieldLabel(key), before: String((byId.value.get(u.id) as unknown as Record<string, unknown>)?.[key] ?? ''), after })),
+        ...(u.bodySet ? [{ label: 'Write-up', before: rawBodies.value.get(u.id) ?? '', after: u.body }] : []),
+      ],
+    })),
+    created: cs.created.map((c) => ({ id: c.id, title: c.title })),
     deleted: cs.deletedIds.map((id) => ({ id, title: byId.value.get(id)?.title ?? id })),
     resources: cs.assets.attach.length + cs.assets.update.length,
     reorderLanes: Object.values(cs.reorder).reduce((n, lanes) => n + Object.keys(lanes).length, 0),
   };
+});
+function publicationValidation(candidate: ReturnType<typeof editStore.changeset>, frozen = false): FieldError[] {
+  const errors = validateChangeset(candidate);
+  if (!frozen) {
+    const changed = new Set([...candidate.updated, ...candidate.created].map(item => item.id));
+    for (const item of projected.value) {
+      if (changed.has(item.id) && item.startDate && item.endDate && item.endDate < item.startDate)
+        errors.push({ id: item.id, field: 'endDate', message: 'Planned end must be on or after planned start' });
+    }
+  }
+  return errors;
+}
+watch(editStore.revision, () => {
+  if (!validationIssues.value.length || editStore.snapshot().requestPayload) return;
+  validationIssues.value = publicationValidation(editStore.changeset(baseShaMap.value));
+  if (!validationIssues.value.length && interruptKind.value === 'validationBlocked') {
+    interruptKind.value = null;
+    syncError.value = null;
+  }
 });
 
 // Real tag suggestions for the editor's TagInput reuse-autocomplete, drawn from every
@@ -1922,7 +2007,12 @@ onMounted(async () => {
   // an edit whose value now matches, a delete that's gone), so a stale "new"/"edited" card
   // never reappears after a reload, whether that's a plain browser refresh or the in-app
   // Reload button (see reloadToLatest).
-  editStore.reconcile(liveItems.value);
+  if (canEdit.value && editStore.committedSha.value) {
+    restoringCommit.value = editStore.committedSha.value;
+    await loadRawBodies();
+  }
+  // A stale deployed page must never reconcile away work on newly committed items.
+  if (!restoringCommit.value) editStore.reconcile(liveItems.value);
   // R5 (KTD4): a committed-but-not-yet-live sha survives a reload during the build window —
   // resume "awaiting build"/"building"/etc. rather than showing a phantom "unsynced" or
   // "clean". `committedSnapshot` seeds `syncedJson` too, so `unsynced` (which compares the
@@ -1972,6 +2062,7 @@ onMounted(async () => {
     } catch {
       /* retry remains available */
     }
+    schedulePublicationRecovery();
   }
   // U9: only real editors (who might have a draft worth preserving) need to know a
   // fresher build has landed.
@@ -1981,6 +2072,8 @@ onMounted(async () => {
     });
 });
 onUnmounted(() => {
+  boardStopped = true;
+  clearTimeout(publicationRecoveryTimer);
   removeTitleTooltips?.();
   document.removeEventListener('fullscreenchange', onFsChange);
   document.removeEventListener('keydown', onSheetKey);
@@ -2251,6 +2344,7 @@ const editActionBtn =
                 More<span class="disclosure-caret" aria-hidden="true"></span>
               </button>
               <div v-if="moreOpen" id="board-more-actions" class="control-popover board-more-panel">
+                <button v-if="canEdit" type="button" @click="recoveryOpen = true; closeMore(false)">Draft recovery copies</button>
                 <button type="button" @click="openRecentChanges">Recent changes</button>
                 <button type="button" aria-label="Start presentation" @click="startPresentation">
                   Start presentation
@@ -2584,6 +2678,8 @@ const editActionBtn =
       v-if="canEdit && editMode && editingItem"
       :item="editingItem"
       :editor-login="editorLogin"
+      :validation-errors="validationIssues.filter(issue => issue.id === editingId)"
+      :focus-request="focusRequest"
       :body="editingBody"
       :is-new="editingIsNew"
       :all-tags="allTags"
@@ -2613,6 +2709,11 @@ const editActionBtn =
           :publication="visiblePublication"
           @dismiss="dismissPublication"
           :summary="changeSummary"
+          :issues="namedValidationIssues"
+          :blocked-reason="publishBlockedReason"
+          :workspace-error="workspaceError"
+          @retry-workspace="retryWorkspace"
+          @review="reviewChange"
           :blocked="!!draftSync.conflict.value || !baseVersionLoaded || !!resourceTransferCount || !!conflictIds.length"
           @publish="doSync"
           @discard="onDiscardAll"
@@ -2642,6 +2743,11 @@ const editActionBtn =
       :publication="visiblePublication"
           @dismiss="dismissPublication"
       :summary="changeSummary"
+      :issues="namedValidationIssues"
+      :blocked-reason="publishBlockedReason"
+      :workspace-error="workspaceError"
+      @retry-workspace="retryWorkspace"
+      @review="reviewChange"
       :blocked="!!draftSync.conflict.value || !baseVersionLoaded || !!resourceTransferCount || !!conflictIds.length"
       @publish="doSync"
       @discard="onDiscardAll"
@@ -2663,10 +2769,11 @@ const editActionBtn =
       :titles="Object.fromEntries(liveItems.map((i) => [i.id, i.title]))"
       @resolve="
         draftSync.resolve($event);
-        draftConflictOpen = false;
+        draftConflictOpen = !!draftSync.conflict.value;
       "
       @close="draftConflictOpen = false"
     />
+    <DraftRecovery v-if="recoveryOpen" :copies="draftSync.recoveryCopies.value" :error="draftSync.recoveryError.value" @close="recoveryOpen = false" />
     <button
       v-if="conflictIds.length && !conflictsOpen"
       type="button"

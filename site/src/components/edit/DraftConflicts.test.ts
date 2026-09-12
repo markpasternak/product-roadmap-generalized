@@ -21,17 +21,20 @@ describe('account draft comparison', () => {
     expect(w.emitted('resolve')).toBeUndefined();
     w.unmount();
   });
-  it('emits an explicit whole-draft choice', () => {
+  it('requires a choice for each overlap and emits only those choices', async () => {
     const store = createEditStore();
     store.clear();
     const w = mount(DraftConflicts, {
       props: { mine: store.snapshot(), remote: store.snapshot(), fields: ['created'], titles: {} },
       attachTo: document.body,
     });
-    Array.from(document.querySelectorAll('button'))
-      .find((b) => b.textContent?.trim() === 'Keep this device’s draft')!
-      .click();
-    expect(w.emitted('resolve')).toEqual([[true]]);
+    const confirm = document.querySelector<HTMLButtonElement>('footer button')!;
+    expect(confirm.disabled).toBe(true);
+    document.querySelector<HTMLInputElement>('input[value="local"]')!.click();
+    await w.vm.$nextTick();
+    expect(confirm.disabled).toBe(false);
+    confirm.click();
+    expect(w.emitted('resolve')).toEqual([[{ created: 'local' }]]);
     w.unmount();
   });
 });

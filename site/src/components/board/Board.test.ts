@@ -96,6 +96,21 @@ afterEach(() => {
 });
 
 describe('Board — product navigation and view options', () => {
+  it('restores the committed content before reconciling newer edits on reopening', async () => {
+    const { fetchItems } = await import('../../lib/edit/client');
+    const store = useEditStore();
+    const sha = 'a'.repeat(40);
+    store.recordCommit(sha, '{}');
+    store.setBody('TALK-NEW', 'More work after publication');
+    vi.mocked(fetchItems).mockResolvedValueOnce([{
+      id: 'TALK-NEW', path: 'content/items/new.md', sha: 'blob-new', content: 'original', body: 'Published body',
+      frontmatter: { title: 'Just published', product: PRODUCTS[0], horizon: 'Now', stage: 'Building', owner: 'Alice', visibility: 'Internal' },
+    }]);
+    const w = await mountBoard();
+    expect(fetchItems).toHaveBeenCalledWith(sha);
+    expect(w.text()).toContain('Just published');
+    expect(store.bodyValue('TALK-NEW')).toBe('More work after publication');
+  });
   it('distinguishes an empty roadmap from a filter with no matches', async () => {
     const w = await mountBoard([]);
     expect(w.text()).toContain('No roadmap items yet');
@@ -1160,6 +1175,43 @@ describe('Board — unpublished-work indicator in view mode (fix #5)', () => {
 });
 
 describe('Board — session-expiry re-auth path (fix #2)', () => {
+  it('applies the committed delta without refetching the full roadmap', async () => {
+    localStorage.setItem('rm-edit-mode', '1');
+    const { fetchItems } = await import('../../lib/edit/client');
+    const w = await mountBoard([item({ id: 'QA-DELTA' })]);
+    const reads = vi.mocked(fetchItems).mock.calls.length;
+    useEditStore().setField('QA-DELTA', 'title', 'Committed title');
+    syncMock.mockResolvedValueOnce({
+      ok: true, sha: 'c'.repeat(40), items: [{
+        id: 'QA-DELTA', sha: 'new-blob', content: 'committed', body: 'Published body',
+        frontmatter: { title: 'Committed title', product: PRODUCTS[0], horizon: 'Now', stage: 'Building', visibility: 'Internal' },
+      }],
+    });
+    await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
+    await flushPromises();
+    expect(vi.mocked(fetchItems).mock.calls.length).toBe(reads);
+    expect(w.text()).toContain('Committed title');
+    expect(useEditStore().dirtyCount.value).toBe(0);
+  });
+
+  it('recovers a lost response automatically without a second publication POST', async () => {
+    localStorage.setItem('rm-edit-mode', '1');
+    const { publicationStatus } = await import('../../lib/edit/client');
+    const w = await mountBoard();
+    useEditStore().setField('TALK-1', 'title', 'Recover this');
+    syncMock.mockRejectedValueOnce(new Error('lost connection'));
+    vi.mocked(publicationStatus).mockResolvedValueOnce({ ok: false });
+    vi.mocked(publicationStatus).mockResolvedValueOnce({ ok: true, sha: 'd'.repeat(40), items: [] });
+    vi.useFakeTimers();
+    try {
+      await (w.vm as unknown as { doSync: () => Promise<void> }).doSync();
+      await vi.advanceTimersByTimeAsync(2100);
+      expect(syncMock).toHaveBeenCalledTimes(1);
+      expect(useEditStore().snapshot().requestPayload).toBeNull();
+      expect(useEditStore().dirtyCount.value).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
+
   it('surfaces a "Sign in again" action in the banner when sync reports an auth error', async () => {
     localStorage.setItem('rm-edit-mode', '1');
     syncMock.mockResolvedValueOnce({ ok: false, authError: true, errors: ['Your session expired'] });
@@ -1469,8 +1521,8 @@ describe('Board — change summary for review (fix #8)', () => {
 
     // Edited names resolve to the PUBLISHED title (from byId), not the locally-edited
     // value — that's what "what's about to change" should read as.
-    expect(summary.edited).toEqual([{ id: 'TALK-1', title: 'First item' }]);
-    expect(summary.created).toEqual([{ title: 'A brand new item', product: 'Podcasts & Audiobooks' }]);
+    expect(summary.edited).toEqual([{ id: 'TALK-1', title: 'First item', changes: [{ label: 'Title', before: 'First item', after: 'First item edited' }] }]);
+    expect(summary.created).toEqual([{ id: newId, title: 'A brand new item' }]);
     expect(summary.deleted).toEqual([{ id: 'TALK-2', title: 'Second item' }]);
     expect(summary.reorderLanes).toBe(1);
     expect(newId).toMatch(/^new-/);
@@ -1832,7 +1884,7 @@ describe('Board — IA/UX improvement pass', () => {
     expect((w.vm as unknown as { present: boolean }).present).toBe(false);
   });
 
-  it('dismisses More with Escape and outside clicks', async () => {
+  it('dismisses the Actions menu with Escape and outside clicks', async () => {
     const w = await mountBoard();
     const toggle = w.get('[aria-controls="board-more-actions"]');
     const focus = vi.spyOn(toggle.element as HTMLButtonElement, 'focus');
@@ -1926,7 +1978,7 @@ it('restores timeline settings across remounts without losing the incoming layou
   expect(window.location.search).toContain('at=2026-09-01');
 });
 
-it('keeps recent changes out of the roadmap until opened from More', async () => {
+it('keeps recent changes out of the roadmap until opened from Actions', async () => {
   window.history.replaceState(null, '', '/?layout=timeline&scale=weeks');
   const w = await mountBoard();
   const before = window.location.search;

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue';
+import type { ChangeSummary } from '../../lib/edit/fieldLabels';
 const props = withDefaults(defineProps<{
   detail?: string;
   dirty?: number;
@@ -7,12 +8,15 @@ const props = withDefaults(defineProps<{
   error?: string | null;
   saveState?: string;
   publication?: { sha?: string; stage?: string; htmlUrl?: string } | null;
-  summary?: { edited: { title: string }[]; created: { title: string }[]; deleted: { title: string }[]; reorderLanes: number; resources?: number };
+  summary?: ChangeSummary;
+  issues?: { id: string; field: string; message: string; title: string }[];
+  blockedReason?: string;
+  workspaceError?: boolean;
   blocked?: boolean;
   discardBlocked?: boolean;
   authExpired?: boolean;
 }>(), { detail: 'Saved on this device', dirty: 0, pending: false, error: null, publication: null, blocked: false, discardBlocked: false, saveState: 'saved' });
-const emit = defineEmits<{ dismiss: []; publish: []; discard: []; retry: []; signin: []; 'retry-save': [] }>();
+const emit = defineEmits<{ dismiss: []; publish: []; discard: []; retry: []; signin: []; 'retry-save': []; 'retry-workspace': []; review: [id: string, field?: string] }>();
 const dismissed = ref(false);
 function dismiss() { dismissed.value = true; emit('dismiss'); }
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -25,7 +29,12 @@ onUnmounted(() => clearTimeout(timer));
 const showPublication = computed(() => !!props.publication && !dismissed.value);
 const saving = computed(() => props.saveState === 'saving');
 const localOnly = computed(() => props.saveState === 'local');
-const visible = computed(() => props.dirty || props.pending || props.error || showPublication.value || saving.value || localOnly.value || props.saveState === 'conflict');
+const visible = computed(() => props.dirty || props.pending || props.error || props.workspaceError || showPublication.value || saving.value || localOnly.value || props.saveState === 'conflict');
+const scope = computed(() => {
+  if (!props.summary) return `${props.dirty} ${props.dirty === 1 ? 'change' : 'changes'}`;
+  const count = props.summary.edited.length + props.summary.created.length + props.summary.deleted.length;
+  return [count ? `${count} ${count === 1 ? 'item' : 'items'}` : '', props.summary.resources ? `${props.summary.resources} file changes` : '', props.summary.reorderLanes ? 'priorities' : ''].filter(Boolean).join(' · ');
+});
 const publicationText = computed(() => props.publication?.stage === 'live'
   ? 'Your changes are live'
   : props.publication?.stage === 'failed'
@@ -45,9 +54,13 @@ const primary = computed(() => props.pending ? 'Publishing your changes…'
       <p role="status" aria-live="polite" class="save-status-primary">{{ primary }}</p>
       <p v-if="dirty && !pending" class="save-status-secondary">{{ detail.replace(/[.…]+$/, '') }}. Publish to update the roadmap.</p>
       <p v-else-if="localOnly" class="save-status-secondary">{{ detail }}. The account copy has not updated yet.</p>
-      <p v-if="error" data-test="save-error" role="alert" class="save-status-error">
+      <p v-if="error" data-test="save-error" role="alert" class="save-status-error" :class="{ 'sr-only': issues?.length }">
         {{ error }}
       </p>
+      <ul v-if="issues?.length" class="save-status-issues" aria-label="Fields to fix">
+        <li v-for="issue in issues" :key="`${issue.id}:${issue.field}`"><button type="button" class="save-status-link" @click="emit('review', issue.id, issue.field)">{{ issue.title }} · {{ issue.message }}</button></li>
+      </ul>
+      <p v-if="blockedReason && !pending" class="save-status-secondary">{{ blockedReason }} <button v-if="workspaceError" type="button" class="save-status-link" @click="emit('retry-workspace')">Retry loading workspace</button></p>
       <div v-if="showPublication && !pending" class="save-status-secondary publication-status">
         <span v-if="dirty">{{ publicationText }}</span>
         <span v-if="publication?.stage === 'no_build'">Your changes are safe. You can keep working.</span>
@@ -56,10 +69,13 @@ const primary = computed(() => props.pending ? 'Publishing your changes…'
         <button type="button" class="save-status-link" aria-label="Dismiss publication status" @click="dismiss">Dismiss</button>
       </div>
       <details v-if="dirty && summary" class="save-status-review">
-        <summary>Review changes</summary>
+        <summary>Review all changes · {{ scope }}</summary>
         <div class="save-status-review-body">
-          <p v-for="(item, i) in summary.edited" :key="`e-${i}`">Edited · {{ item.title }}</p>
-          <p v-for="(item, i) in summary.created" :key="`c-${i}`">New · {{ item.title || 'Untitled item' }}</p>
+          <article v-for="item in summary.edited" :key="item.id">
+            <button type="button" class="save-status-link" @click="emit('review', item.id)">Edited · {{ item.title }}</button>
+            <dl v-for="change in item.changes" :key="change.label"><dt>{{ change.label }}</dt><dd><span class="save-status-before">{{ change.before || 'Empty' }}</span><span aria-hidden="true"> → </span><span>{{ change.after || 'Empty' }}</span></dd></dl>
+          </article>
+          <p v-for="item in summary.created" :key="item.id"><button type="button" class="save-status-link" @click="emit('review', item.id)">New · {{ item.title || 'Untitled item' }}</button></p>
           <p v-for="(item, i) in summary.deleted" :key="`d-${i}`">Will delete · {{ item.title }}</p>
           <p v-if="summary.reorderLanes">Priority changed in {{ summary.reorderLanes }} {{ summary.reorderLanes === 1 ? 'lane' : 'lanes' }}</p>
           <p v-if="summary.resources">{{ summary.resources }} file {{ summary.resources === 1 ? 'change' : 'changes' }}</p>
@@ -69,8 +85,8 @@ const primary = computed(() => props.pending ? 'Publishing your changes…'
     <div class="save-status-actions">
       <button v-if="authExpired" type="button" class="save-status-publish" data-test="sign-in-again" :disabled="pending" @click="$emit('signin')">Sign in with GitHub</button>
       <button v-if="localOnly && !authExpired" type="button" class="save-status-link" @click="$emit('retry-save')">Retry saving</button>
-      <button v-if="dirty" type="button" class="save-status-discard" :disabled="pending || discardBlocked" :title="discardBlocked ? 'Finish uploads or resolve the pending publication or draft conflict first' : undefined" @click="$emit('discard')">Discard draft…</button>
-      <button v-if="(dirty || error) && !authExpired" type="button" data-test="sync" class="save-status-publish" :disabled="pending || blocked" @click="$emit('publish')">{{ pending ? 'Publishing…' : error ? 'Retry publication' : 'Publish changes' }}</button>
+      <button v-if="dirty" type="button" class="save-status-discard" :disabled="pending || discardBlocked" :title="discardBlocked ? 'Finish uploads or resolve the pending publication or draft conflict first' : undefined" @click="$emit('discard')">Discard all draft changes…</button>
+      <button v-if="(dirty || error) && !authExpired" type="button" data-test="sync" class="save-status-publish" :disabled="pending || blocked" @click="$emit('publish')">{{ pending ? 'Publishing…' : error ? 'Retry publication' : `Publish all changes · ${scope}` }}</button>
     </div>
   </div>
 </template>
@@ -88,6 +104,13 @@ const primary = computed(() => props.pending ? 'Publishing your changes…'
 .save-status-review summary { cursor:pointer; width:fit-content; min-height:28px; }
 .save-status-review-body { padding:.4rem 0; max-height:12rem; overflow:auto; }
 .save-status-review-body p { padding:.15rem 0; }
+.save-status-review-body article { margin:.5rem 0; }
+.save-status-review-body dl { margin:.4rem 0; padding-left:.6rem; border-left:2px solid var(--color-border-subtle-default); }
+.save-status-review-body dt { font-weight:600; }
+.save-status-review-body dd { white-space:pre-wrap; overflow-wrap:anywhere; }
+.save-status-before { color:var(--color-text-subtle-default); }
+.save-status-issues { margin:.5rem 0; padding:0; list-style:none; max-height:min(24dvh,12rem); overflow:auto; }
+.save-status-issues button { text-align:left; padding:.3rem 0; }
 .save-status-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.65rem; }
 .save-status-publish,.save-status-discard { min-height:40px; padding:.6rem .9rem; border-radius:8px; border:1px solid var(--color-border-subtle-default); background:transparent; color:var(--color-text-primary-default); font-size:inherit; font-weight:500; cursor:pointer; }
 .save-status-publish { border-color:var(--color-accent-brand-default); background:var(--color-accent-brand-default); color:var(--color-text-primary-inverted-default); }

@@ -26,6 +26,12 @@ The older `/api/sync` endpoint remains compatible for existing clients. New clie
 
 Independent changes to item fields can merge using authenticated original blob content. Overlapping fields or body edits require a user decision. Never replace a saved base SHA merely to bypass a conflict.
 
+Successful publications can return an `items` array containing the exact committed changed items, plus `deletedIds`. Clients apply this delta without fetching the whole roadmap again. When `items` is absent or null (including older or recovered receipts), read `/api/items?at=<sha>` before advancing editing bases. An empty array is a valid delta, not a missing snapshot.
+
+Item snapshots are cached by immutable commit SHA, with at most eight snapshots per service instance. Returned maps and history slices are copied so callers cannot mutate the cache. Publication history is read only for changed items; repository transaction duration is logged without draft content.
+
+The UI bounds JSON requests to 15 seconds, retains a timed-out publication's request ID, and automatically checks its receipt before offering a safe retry. Reopening while a build is pending restores the exact committed snapshot before reconciling newer local edits. Account drafts retain independent edits when users resolve individual overlapping fields, with recovery copies available on that device.
+
 ## Original files in Git
 
 ```text

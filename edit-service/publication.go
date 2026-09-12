@@ -37,6 +37,9 @@ func (g *GitHub) itemsAt(ctx context.Context, sha string) (map[string]RepoFile, 
 	if !gitSHA.MatchString(sha) {
 		return nil, fmt.Errorf("invalid commit")
 	}
+	if files, ok := g.cachedItems(sha); ok {
+		return files, nil
+	}
 	var files map[string]RepoFile
 	err := g.withRepository(ctx, func(root string) error {
 		token, err := g.installationToken(ctx)
@@ -55,6 +58,9 @@ func (g *GitHub) itemsAt(ctx context.Context, sha string) (map[string]RepoFile, 
 		}
 		return err
 	})
+	if err == nil {
+		g.cacheItems(sha, files)
+	}
 	return files, err
 }
 
@@ -66,6 +72,8 @@ type PublicationReceipt struct {
 	CommittedAt string            `json:"committedAt"`
 }
 type PublicationResult struct {
+	Items           []APIItem         `json:"items"`
+	DeletedIDs      []string          `json:"deletedIds,omitempty"`
 	OK              bool              `json:"ok"`
 	SHA             string            `json:"sha"`
 	NoChanges       bool              `json:"noChanges,omitempty"`
@@ -184,6 +192,7 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	msg := fmt.Sprintf("Update roadmap by %s\n\nRoadmap-Publication: %s", cleanGitIdent(login), cs.RequestID)
 	out, err := s.gh.syncChangeset(ctx, cs, msg, login)
 	res := PublicationResult{OK: err == nil && len(out.Errors) == 0 && len(out.Conflicts) == 0, SHA: out.SHA, CreatedIDs: out.CreatedIDs, Errors: out.Errors, Conflict: out.Conflicts, SkippedReorders: out.SkippedReorders, NoChanges: out.NoChanges}
+	res.Items, res.DeletedIDs = out.Items, out.DeletedIDs
 	status := 200
 	if err != nil {
 		res.Errors = []string{"Could not confirm publication. Check status or retry these same changes."}

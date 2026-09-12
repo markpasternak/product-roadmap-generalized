@@ -20,6 +20,13 @@ it('keeps an unconfigured checkout read-only without contacting an editing servi
 });
 
 describe('edit token', () => {
+  it('returns a recoverable auth error for an expired publication receipt session', async () => {
+    const { publicationStatus } = await import('./client');
+    saveToken('expired');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('Unauthorized', { status: 401 })));
+    expect(await publicationStatus('request-id')).toEqual({ ok: false, authError: true, errors: ['Your session expired'] });
+    expect(getToken()).toBeNull();
+  });
   it('stores and clears', () => {
     saveToken('abc');
     expect(getToken()).toBe('abc');

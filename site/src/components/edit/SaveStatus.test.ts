@@ -3,6 +3,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import SaveStatus from './SaveStatus.vue';
 afterEach(() => vi.useRealTimers());
 describe('save status lifecycle', () => {
+  it('names the whole publication scope and links changes and validation to their items', async () => {
+    const w = mount(SaveStatus, { props: { dirty: 2, summary: {
+      edited: [{ id: 'A', title: 'First', changes: [{ label: 'Title', before: 'Old', after: 'New' }] }],
+      created: [{ id: 'B', title: 'Second' }], deleted: [], resources: 0, reorderLanes: 0,
+    }, issues: [{ id: 'B', title: 'Second', field: 'title', message: 'Title is required' }] } });
+    expect(w.get('[data-test="sync"]').text()).toBe('Publish all changes · 2 items');
+    expect(w.text()).toContain('Old');
+    expect(w.text()).toContain('New');
+    await w.get('.save-status-issues button').trigger('click');
+    expect(w.emitted('review')).toEqual([['B', 'title']]);
+    w.unmount();
+  });
+  it('offers a workspace retry even when there are no draft changes yet', async () => {
+    const w = mount(SaveStatus, { props: { workspaceError: true, blocked: true, blockedReason: 'Could not load your workspace.' } });
+    const retry = w.findAll('button').find(button => button.text() === 'Retry loading workspace')!;
+    await retry.trigger('click');
+    expect(w.emitted('retry-workspace')).toHaveLength(1);
+    w.unmount();
+  });
   it('does not claim a clean workspace has a saved draft', () => {
     const w = mount(SaveStatus, { props: { detail: 'Private draft saved' } });
     expect(w.find('[data-test="save-status"]').exists()).toBe(false);

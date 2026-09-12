@@ -33,6 +33,21 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe("account draft saving", () => {
+  it('resolves only overlapping fields and keeps independent edits from both devices', async () => {
+    const { store, sync } = setup();
+    const baseline = store.snapshot();
+    request.mockResolvedValueOnce(response(1, baseline));
+    await sync.start('alice');
+    store.setField('A', 'title', 'Local title');
+    store.setBody('B', 'Independent local text');
+    const remote = { ...baseline, fields: { A: { title: 'Remote title', owner: 'Bob' } } };
+    request.mockResolvedValueOnce(response(2, remote, 409));
+    await sync.flush();
+    sync.resolve({ 'fields.A.title': 'remote' });
+    expect(store.snapshot().fields.A).toEqual({ title: 'Remote title', owner: 'Bob' });
+    expect(store.bodyValue('B')).toBe('Independent local text');
+    expect(sync.recoveryCopies.value).toHaveLength(1);
+  });
   it("combines independent fields but retains overlapping text for a choice", () => {
     const base = {
       fields: { A: { title: "A", owner: "Alice" } },
