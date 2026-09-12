@@ -67,7 +67,7 @@ describe('ItemEditor', () => {
     const w = mountEditor({ contentReady: false, loadError: true });
 
     expect(w.find('[data-test="item-editor"]').attributes('aria-busy')).toBe('true');
-    expect(w.find('[data-test="item-editor-loading"]').text()).toContain('Could not load CM-013');
+    expect(w.find('[data-test="item-editor-loading"]').text()).toContain('Could not load TALK-013');
     expect(w.find('.item-editor-layout').attributes('inert')).toBe('');
     expect(w.find('[data-test="spine-oneliner"]').exists()).toBe(false);
 

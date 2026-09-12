@@ -10,6 +10,6 @@ export function repositoryRoot() {
   ].filter((candidate): candidate is string => !!candidate);
 
   return candidates.find((candidate) =>
-    existsSync(resolve(candidate, "content/assets")),
+    existsSync(resolve(candidate, "content/items")),
   ) ?? resolve(process.cwd(), "..");
 }
