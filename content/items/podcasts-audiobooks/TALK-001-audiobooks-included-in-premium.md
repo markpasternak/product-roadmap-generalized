@@ -3,7 +3,7 @@ id: TALK-001
 title: Audiobooks included in Premium
 product: Podcasts & Audiobooks
 horizon: Completed
-stage: Shipped
+stage: Pilot
 owner: Priya Venkatesan
 tags: audiobooks, premium, theme:spoken-word
 impact: High
