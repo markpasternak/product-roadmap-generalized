@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "node scripts/sync-presentations.mjs",
     "dev": "astro dev",
-    "prebuild": "node scripts/sync-presentations.mjs && node scripts/gen-version.mjs",
+    "prebuild": "node scripts/sync-presentations.mjs && node scripts/gen-version.mjs && node scripts/build-item-history.mjs",
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check && vue-tsc --noEmit",

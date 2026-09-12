@@ -343,15 +343,17 @@ const toastShortSha = computed(() => toastSha.value.slice(0, 7));
 // through building → live, or reveal build-failed/superseded/no-build. Deliberately
 // lightweight (a later unit, U12, is the full unified status surface): this only makes these
 // states real and legible, it doesn't try to own every lifecycle state.
-const DEPLOY_POLL_INTERVALS_MS = [3000, 5000, 8000, 13000, 21000, 30000];
-// Bound for "we've never even seen a run carrying our commit" — a commit that only touches
-// path-filtered files (deploy.yml's path filter) triggers no run at all, so without a bound
-// this would poll forever waiting for something that will never arrive (KTD4).
+const DEPLOY_POLL_INTERVALS_MS = [10000, 15000, 30000];
+const LIVE_VERSION_POLL_MS = 4000;
+const DEPLOY_MAX_DURATION_MS = 30 * 60 * 1000;
+// Stop waiting if Actions never starts a run carrying this commit.
 const DEPLOY_NO_RUN_TIMEOUT_MS = 2 * 60 * 1000;
 // A hard safety cap on total attempts regardless of state, so a stuck poll (e.g. a
 // `superseded` loop that never resolves) can't run forever in a long-lived tab.
 const DEPLOY_MAX_POLL_ATTEMPTS = 60;
 let deployPollTimer: ReturnType<typeof setTimeout> | null = null;
+let liveVersionTimer: ReturnType<typeof setTimeout> | null = null;
+let liveVersionFailures = 0;
 let deployPollSha = '';
 let deployPollAttempt = 0;
 let deployPollStartedAt = 0;
@@ -375,8 +377,33 @@ let deployPollEpoch = 0;
 
 function stopDeployPoll() {
   if (deployPollTimer) clearTimeout(deployPollTimer);
+  if (liveVersionTimer) clearTimeout(liveVersionTimer);
   deployPollTimer = null;
+  liveVersionTimer = null;
   deployPollEpoch += 1;
+}
+
+// The static version marker is cheap. Check it independently of the slower Actions
+// status endpoint, so a live release need not wait for the next 30-second status tick.
+async function pollLiveVersion(epoch: number) {
+  if (epoch !== deployPollEpoch || !publishing.value) return;
+  if (Date.now() - deployPollStartedAt >= DEPLOY_MAX_DURATION_MS) {
+    publishing.value = { ...publishing.value, stage: 'no_build' };
+    stopDeployPoll();
+    return;
+  }
+  if (!document.hidden) {
+    const deployed = await fetchDeployedCommit();
+    if (epoch !== deployPollEpoch) return;
+    if (deployed === deployPollSha) {
+      applyDeployRun({ status: 'completed', conclusion: 'success', live: true } as DeployStatus);
+      stopDeployPoll();
+      return;
+    }
+    liveVersionFailures = deployed === null ? Math.min(liveVersionFailures + 1, 3) : 0;
+  }
+  const delay = Math.min(LIVE_VERSION_POLL_MS * 2 ** liveVersionFailures, 30000);
+  liveVersionTimer = setTimeout(() => void pollLiveVersion(epoch), delay);
 }
 
 // Maps one `/api/status` run onto `publishing.value.stage` (KTD4's building/live/failed/
@@ -408,6 +435,10 @@ async function pollDeployOnce(epoch: number) {
   // since this attempt was scheduled; bail rather than run alongside/instead of the current one.
   if (epoch !== deployPollEpoch) return;
   if (!publishing.value || publishing.value.sha !== deployPollSha) return;
+  if (document.hidden) {
+    deployPollTimer = setTimeout(() => void pollDeployOnce(epoch), 30000);
+    return;
+  }
   const deployed = await fetchDeployedCommit();
   if (epoch !== deployPollEpoch) return;
   if (deployed === deployPollSha) {
@@ -445,8 +476,7 @@ async function pollDeployOnce(epoch: number) {
     return;
   }
   if (!deployPollSawOwnRun && Date.now() - deployPollStartedAt > DEPLOY_NO_RUN_TIMEOUT_MS) {
-    // No run ever carried our commit — most likely a path-filtered commit that triggers none
-    // at all (KTD4) — stop waiting instead of polling indefinitely.
+    // No run ever carried our commit; stop waiting instead of polling indefinitely.
     publishing.value = { ...publishing.value, stage: 'no_build' };
     stopDeployPoll();
     return;
@@ -473,7 +503,10 @@ function startDeployPoll(sha: string) {
   deployPollAttempt = 0;
   deployPollStartedAt = Date.now();
   deployPollSawOwnRun = false;
-  void pollDeployOnce(deployPollEpoch);
+  liveVersionFailures = 0;
+  const epoch = deployPollEpoch;
+  liveVersionTimer = setTimeout(() => void pollLiveVersion(epoch), LIVE_VERSION_POLL_MS);
+  void pollDeployOnce(epoch);
 }
 
 // Joins up to `max` names for a concise validation/error message, appending "+N more"
@@ -854,6 +887,10 @@ const editingBody = computed(() =>
   editingId.value ? (editStore.bodyValue(editingId.value) ?? rawBodies.value.get(editingId.value) ?? '') : '',
 );
 const editingIsNew = computed(() => !!editingId.value && editingId.value.startsWith('new-'));
+const editingContentReady = computed(() => {
+  const id = editingId.value;
+  return !id || id.startsWith('new-') || editStore.bodyValue(id) !== undefined || rawBodies.value.has(id);
+});
 function openEditor(id: string) {
   editingId.value = id;
 }
@@ -2701,6 +2738,8 @@ const editActionBtn =
       :validation-errors="validationIssues.filter(issue => issue.id === editingId)"
       :focus-request="focusRequest"
       :body="editingBody"
+      :content-ready="editingContentReady"
+      :load-error="workspaceError"
       :is-new="editingIsNew"
       :all-tags="allTags"
       :all-owners="allOwners"
@@ -2716,6 +2755,7 @@ const editActionBtn =
       @close="onEditorClose"
       @reset-field="onEditorResetField"
       @rewrite-accept="onEditorRewriteAccept"
+      @retry="retryWorkspace"
       ><template #save-status
         ><SaveStatus
           :detail="resourceTransferCount ? 'Finish or cancel file uploads before publishing' : draftSync.detail.value"

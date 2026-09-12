@@ -64,6 +64,7 @@ vi.mock("../../lib/edit/version", () => ({
 
 import Board from "./Board.vue";
 import { useEditStore, KEY } from "../../lib/edit/store";
+import { fetchDeployedCommit } from "../../lib/edit/version";
 
 const item = (over: Partial<ItemVM> = {}): ItemVM => ({
   id: "TALK-1",
@@ -115,6 +116,7 @@ beforeEach(() => {
   syncMock.mockReset();
   deployStatusMock.mockReset();
   deployStatusMock.mockResolvedValue(null);
+  vi.mocked(fetchDeployedCommit).mockReset().mockResolvedValue(null);
   watchForNewVersionMock.mockClear();
   newVersionCb = null;
   vi.spyOn(window.location, "reload").mockImplementation(() => {});
@@ -128,6 +130,8 @@ afterEach(() => {
   localStorage.clear();
   sessionStorage.clear();
   vi.restoreAllMocks();
+  vi.useRealTimers();
+  Object.defineProperty(document, 'hidden', {value: false, configurable: true});
 });
 
 describe("account drafts and recoverable publication", () => {
@@ -318,6 +322,67 @@ describe("account drafts and recoverable publication", () => {
     await flushPromises();
     expect(status(w).text()).toContain("Your changes are live");
     expect(useEditStore().committedSha.value).toBeNull();
+  });
+  it('confirms live within four seconds without waiting for a stalled status request', async () => {
+    const w = await editing();
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout', 'Date']});
+    deployStatusMock.mockImplementationOnce(() => new Promise(() => {}));
+    useEditStore().setField('TALK-1', 'title', 'Mine');
+    syncMock.mockResolvedValueOnce({ok: true, sha: 'a'.repeat(40)});
+    await send(w);
+    await flushPromises();
+    vi.mocked(fetchDeployedCommit).mockResolvedValue('a'.repeat(40));
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(status(w).text()).toContain('Your changes are live');
+    expect(deployStatusMock).toHaveBeenCalledTimes(1);
+    const count = vi.mocked(fetchDeployedCommit).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(fetchDeployedCommit).toHaveBeenCalledTimes(count);
+  });
+  it('pauses publication requests in a hidden tab and backs off version failures', async () => {
+    const w = await editing();
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout', 'Date']});
+    useEditStore().setField('TALK-1', 'title', 'Mine');
+    syncMock.mockResolvedValueOnce({ok: true, sha: 'a'.repeat(40)});
+    await send(w);
+    await flushPromises();
+    vi.mocked(fetchDeployedCommit).mockClear();
+    deployStatusMock.mockClear();
+    Object.defineProperty(document, 'hidden', {value: true, configurable: true});
+    await vi.advanceTimersByTimeAsync(32000);
+    expect(fetchDeployedCommit).not.toHaveBeenCalled();
+    expect(deployStatusMock).not.toHaveBeenCalled();
+    Object.defineProperty(document, 'hidden', {value: false, configurable: true});
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(fetchDeployedCommit).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(fetchDeployedCommit).toHaveBeenCalledTimes(1);
+    vi.mocked(fetchDeployedCommit).mockResolvedValue('a'.repeat(40));
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(status(w).text()).toContain('Your changes are live');
+  });
+  it('ignores a late live response after a newer publication starts', async () => {
+    const w = await editing();
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout', 'Date']});
+    useEditStore().setField('TALK-1', 'title', 'Mine');
+    syncMock.mockResolvedValueOnce({ok: true, sha: 'a'.repeat(40)});
+    await send(w);
+    await flushPromises();
+    let resolveOld!: (value: string) => void;
+    vi.mocked(fetchDeployedCommit).mockImplementationOnce(() => new Promise(resolve => {resolveOld = resolve;}));
+    await vi.advanceTimersByTimeAsync(4000);
+    useEditStore().setField('TALK-1', 'title', 'Newer');
+    syncMock.mockResolvedValueOnce({ok: true, sha: 'b'.repeat(40)});
+    await send(w);
+    await flushPromises();
+    resolveOld('a'.repeat(40));
+    await flushPromises();
+    expect(status(w).text()).not.toContain('Your changes are live');
+    expect(useEditStore().committedSha.value).toBe('b'.repeat(40));
+    w.unmount();
+    const count = vi.mocked(fetchDeployedCommit).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(fetchDeployedCommit).toHaveBeenCalledTimes(count);
   });
   it("keeps a dismissed receipt hidden when changing editor surfaces", async () => {
     const w = await editing();

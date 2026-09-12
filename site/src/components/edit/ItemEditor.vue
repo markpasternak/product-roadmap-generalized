@@ -74,12 +74,16 @@ const props = withDefaults(
     published?: ItemVM | null;
     /** Raw published markdown, used for section-level change navigation and review. */
     publishedBody?: string;
+    /** The parent has loaded the complete markdown source for this item. */
+    contentReady?: boolean;
+    /** Loading the complete item failed and can be retried. */
+    loadError?: boolean;
     /** Current board context, so this preview is the same card the editor replaced. */
     previewShowProduct?: boolean;
     previewShowHorizon?: boolean;
     previewShowCover?: boolean;
   }>(),
-  { allTags: () => [], allOwners: () => [], published: null, previewShowCover: true },
+  { allTags: () => [], allOwners: () => [], published: null, previewShowCover: true, contentReady: true },
 );
 
 const emit = defineEmits<{
@@ -94,7 +98,17 @@ const emit = defineEmits<{
    * never touches the edit store itself — Board.vue (which already owns `onEditorBody`/
    * `onEditorField`) is the one handler that writes to it. */
   (e: 'rewriteAccept', payload: { body: string; frontmatter: Record<string, string> }): void;
+  (e: 'retry'): void;
 }>();
+
+const resourcesReady = ref(false);
+const hasLoadedContent = computed(() => props.contentReady !== false);
+const editorReady = computed(() => hasLoadedContent.value && resourcesReady.value);
+watch(() => props.item.id, () => { resourcesReady.value = false; });
+watch(hasLoadedContent, (ready) => { if (!ready) resourcesReady.value = false; });
+function onResourcesReady() {
+  resourcesReady.value = true;
+}
 
 // U5 (R6, R14): the trigger is gated on AI Backend availability — hidden (not
 // disabled/erroring) when the canvas Backend/AI isn't present, same feature-detection
@@ -331,12 +345,12 @@ onMounted(() => {
   document.addEventListener('pointerdown', closeActions);
   document.addEventListener('focusin', closeActions);
   if (panel.value) releaseFocus = trapFocus(panel.value);
-  // trapFocus above moves focus to the first focusable element in the panel (the
-  // Close button, which precedes the metadata column in DOM order). Move it to the
-  // Title field instead — the more useful landing spot for both +Add (type a title
-  // immediately) and editing an existing item — after the DOM has settled.
-  void nextTick(() => titleInput.value?.focus());
 });
+watch(editorReady, (ready) => {
+  // Do not place a typing cursor into a partial item. Once its source and resources
+  // are ready, move focus to the title as the editor did before this loading gate.
+  if (ready) void nextTick(() => titleInput.value?.focus());
+}, { immediate: true });
 onUnmounted(() => {
   document.removeEventListener('keydown', onKey);
   document.removeEventListener('pointerdown', closeActions);
@@ -388,6 +402,7 @@ const historyRows = computed(() => [
     aria-modal="true"
     aria-labelledby="item-editor-title"
     tabindex="-1"
+    :aria-busy="!editorReady"
     class="roadmap-field roadmap-drawer-field roadmap-product-detail fixed inset-0 z-50 flex flex-col outline-none"
     :style="{ '--roadmap-product-accent': productColor[item.product as keyof typeof productColor] ?? 'var(--color-icons-subtle-default)' }"
     data-test="item-editor"
@@ -403,6 +418,7 @@ const historyRows = computed(() => [
           type="button"
           class="item-review-trigger"
           data-test="item-review-trigger"
+          :disabled="!editorReady"
           @click="reviewOpen = true"
         >
           <PhListChecks :size="16" /> {{ editorChangeCount }} changed
@@ -414,12 +430,13 @@ const historyRows = computed(() => [
           aria-label="Rewrite this item with AI"
           title="Rewrite with AI"
           data-test="rewrite-with-ai-button"
+          :disabled="!editorReady"
           @click="rewriteOpen = true"
         >
           <PhSparkle :size="15" />
           <span class="hidden sm:inline">Rewrite with AI</span>
         </button>
-        <details class="relative shrink-0" data-test="item-actions">
+        <details class="relative shrink-0" data-test="item-actions" :inert="!editorReady">
           <summary class="roadmap-action cursor-pointer rounded-lg px-3 py-2 text-sm">Item actions</summary>
           <div class="roadmap-panel absolute right-0 top-full z-20 mt-2 grid min-w-48 gap-1 rounded-lg border border-border-subtle-default p-2 shadow-lg">
             <button v-if="!isNew" type="button" class="rounded-md px-3 py-2 text-left text-sm" :style="{ color: toneText.red }" :disabled="!!resourceTransferCount" data-test="delete-button" @click="onDelete">Delete item…</button>
@@ -448,8 +465,15 @@ const historyRows = computed(() => [
       </div>
     </header>
 
-    <div class="item-editor-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-      <div class="item-editor-layout grid min-h-full gap-5 p-4 sm:p-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+    <div class="item-editor-scroll relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+      <div v-if="!editorReady" class="item-editor-loading" role="status" aria-live="polite" data-test="item-editor-loading">
+        <span class="item-editor-loading-spinner" aria-hidden="true" />
+        <p class="roadmap-label">{{ loadError ? 'Item unavailable' : 'Loading item' }}</p>
+        <h2>{{ loadError ? `Could not load ${item.id}` : `Preparing ${item.id}…` }}</h2>
+        <p>{{ loadError ? 'Your draft is safe. Try loading the item again.' : 'Loading its sections, cover, and resources.' }}</p>
+        <button v-if="loadError" type="button" class="roadmap-action" @click="$emit('retry')">Try again</button>
+      </div>
+      <div class="item-editor-layout grid min-h-full gap-5 p-4 sm:p-6 lg:grid-cols-[320px_minmax(0,1fr)]" :inert="!editorReady" :aria-hidden="!editorReady">
         <aside class="item-editor-rail roadmap-panel min-w-0 shrink-0 rounded-xl p-4" data-test="metadata-panel">
           <!-- Reuse the production card so cover crop, hierarchy, truncation and board context
                cannot drift from what the editor is actually changing. -->
@@ -700,7 +724,7 @@ const historyRows = computed(() => [
         </aside>
 
         <div class="min-h-[420px] min-w-0 overflow-x-auto lg:min-h-0">
-          <ResourceEditor :item-id="item.id" :editor-login="editorLogin" v-model:body="bodyModel" v-model:cover="coverModel" v-model:cover-position="coverPositionModel" v-model:cover-framing="coverFramingModel" :visibility="visibilityModel" v-slot="resources"><SectionEditor v-model="bodyModel" :published-value="publishedBody" managed-resources :managed-resource-hrefs="resources.managedResourceHrefs" /></ResourceEditor>
+          <ResourceEditor v-if="hasLoadedContent" :item-id="item.id" :editor-login="editorLogin" v-model:body="bodyModel" v-model:cover="coverModel" v-model:cover-position="coverPositionModel" v-model:cover-framing="coverFramingModel" :visibility="visibilityModel" @ready="onResourcesReady" v-slot="resources"><SectionEditor v-model="bodyModel" :published-value="publishedBody" managed-resources :managed-resource-hrefs="resources.managedResourceHrefs" /></ResourceEditor>
         </div>
       </div>
     </div>
@@ -766,6 +790,8 @@ const historyRows = computed(() => [
 <style scoped>
 .item-editor-header{position:relative;z-index:8;flex-shrink:0;border-bottom:1px solid color-mix(in srgb,var(--color-border-subtle-default) 66%,transparent);background:color-mix(in srgb,var(--color-card) 92%,transparent);box-shadow:0 12px 28px rgb(0 0 0 / 5%);-webkit-backdrop-filter:blur(18px) saturate(.9);backdrop-filter:blur(18px) saturate(.9)}
 .item-editor-header-main{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.65rem 1rem .45rem}
+.item-editor-header :is(button:disabled,[inert]){opacity:.45;cursor:wait}
+.item-editor-loading{position:absolute;inset:0;z-index:7;display:grid;place-content:center;justify-items:center;gap:.65rem;padding:2rem;text-align:center;background:color-mix(in srgb,var(--color-background) 92%,transparent);-webkit-backdrop-filter:blur(12px) saturate(.8);backdrop-filter:blur(12px) saturate(.8)}.item-editor-loading h2{margin:0;font-family:var(--font-display,inherit);font-size:clamp(1.45rem,3vw,2.1rem);font-weight:600}.item-editor-loading>p:last-of-type{max-width:36ch;color:var(--color-text-subtle-default);font-size:.9rem}.item-editor-loading button{min-height:40px;margin-top:.35rem;padding:.55rem .9rem;border:1px solid color-mix(in srgb,var(--roadmap-product-accent) 45%,var(--color-border-subtle-default));border-radius:9px;background:var(--color-card);color:var(--color-text-primary-default);font-weight:650}.item-editor-loading-spinner{width:34px;height:34px;border:3px solid color-mix(in srgb,var(--roadmap-product-accent) 22%,var(--color-border-subtle-default));border-top-color:var(--roadmap-product-accent);border-radius:50%;animation:item-editor-spin .8s linear infinite}@keyframes item-editor-spin{to{transform:rotate(360deg)}}
 .item-decision-strip{display:flex;gap:.35rem;padding:0 1rem .65rem;overflow-x:auto;scrollbar-width:none}
 .item-decision-strip::-webkit-scrollbar{display:none}.item-decision-strip>span{display:flex;flex:0 0 auto;align-items:baseline;gap:.4rem;min-height:28px;padding:.28rem .58rem;border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 70%,transparent);border-radius:999px;background:color-mix(in srgb,var(--roadmap-product-accent) 6%,var(--color-card));white-space:nowrap}.item-decision-strip small{color:var(--color-text-subtle-default);font-size:.62rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em}.item-decision-strip b{font-size:.72rem;font-weight:600;color:var(--color-text-primary-default)}
 .item-review-trigger{display:inline-flex;align-items:center;gap:.4rem;min-height:36px;padding:.4rem .7rem;border:1px solid color-mix(in srgb,var(--roadmap-product-accent) 38%,var(--color-border-subtle-default));border-radius:9px;background:color-mix(in srgb,var(--roadmap-product-accent) 10%,var(--color-card));color:var(--color-text-primary-default);font-size:.75rem;font-weight:650;cursor:pointer}
@@ -774,6 +800,6 @@ const historyRows = computed(() => [
 .item-change-review-shell{position:fixed;inset:0;z-index:90;display:flex;justify-content:flex-end}.item-change-review-backdrop{position:absolute;inset:0;border:0;background:rgb(8 10 14 / 54%);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);cursor:default}.item-change-review{position:relative;display:flex;width:min(520px,94vw);height:100%;flex-direction:column;border-left:1px solid var(--color-border-subtle-default);background:var(--color-card);box-shadow:-24px 0 64px rgb(0 0 0 / 28%);animation:item-review-in 220ms cubic-bezier(.2,.8,.2,1)}.item-change-review>header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1.25rem;border-bottom:1px solid var(--color-border-subtle-default)}.item-change-review h2{margin:.2rem 0 0;font-family:var(--font-display,inherit);font-size:1.55rem}.item-change-review-body{display:grid;gap:.6rem;overflow:auto;padding:1rem;flex:1}.item-change-row{display:grid;gap:.7rem;width:100%;padding:.85rem;text-align:left;border:1px solid var(--color-border-subtle-default);border-radius:12px;background:color-mix(in srgb,var(--color-card) 88%,var(--color-surface-subtle-default));color:var(--color-text-primary-default);cursor:pointer}.item-change-row:hover{border-color:color-mix(in srgb,var(--roadmap-product-accent) 52%,var(--color-border-subtle-default));transform:translateY(-1px)}.item-change-row>span:first-child{display:flex;justify-content:space-between;gap:1rem}.item-change-row small{color:var(--color-accent-brand-default);font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em}.item-change-values{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:.5rem;color:var(--color-text-subtle-default);font-size:.76rem;line-height:1.4}.item-change-values :is(del,ins){overflow-wrap:anywhere;text-decoration:none}.item-change-values del{opacity:.7}.item-change-values ins{color:var(--color-text-primary-default);font-weight:600}.item-change-review>footer{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.25rem;border-top:1px solid var(--color-border-subtle-default);font-size:.78rem}.item-change-review>footer button{min-height:38px;border:0;border-radius:8px;padding:.5rem .8rem;background:var(--color-accent-brand-default);color:var(--color-text-primary-inverted-default);font-weight:600;cursor:pointer}@keyframes item-review-in{from{transform:translateX(22px);opacity:0}}
 @media(max-width:1023px){.item-editor-rail{position:relative;top:auto;max-height:none;overflow:visible}.item-editor-layout{grid-template-columns:1fr}.item-editor-rail{display:grid;grid-template-columns:minmax(220px,320px) minmax(0,1fr);gap:0 1rem}.item-editor-rail>[data-test="editor-preview"],.item-editor-rail>[data-test="history-metadata"]{grid-column:1}.item-editor-rail>div:not([data-test="editor-preview"]):not([data-test="history-metadata"]){grid-column:2}}
 @media(max-width:700px){.item-editor-header-main{gap:.4rem;padding-inline:.75rem}.item-editor-header-main details summary{font-size:0;width:38px}.item-editor-header-main details summary::after{content:'•••';font-size:14px}.item-review-trigger{font-size:0;padding:.4rem}.item-review-trigger svg{width:18px;height:18px}.item-decision-strip{padding-inline:.75rem}.item-editor-layout{padding:0}.item-editor-rail{display:block;border-radius:0;border-inline:0;padding:1rem}.item-editor-scroll>div>div:last-child{padding:1rem}.planned-editor-fields{grid-template-columns:1fr}.item-change-review{width:100vw}.item-change-review-backdrop{display:none}}
-@media(prefers-reduced-motion:reduce){.item-change-review{animation:none}.item-change-row:hover{transform:none}}
+@media(prefers-reduced-motion:reduce){.item-change-review{animation:none}.item-change-row:hover{transform:none}.item-editor-loading-spinner{animation:none;border-top-color:color-mix(in srgb,var(--roadmap-product-accent) 22%,var(--color-border-subtle-default))}}
 @media(prefers-reduced-transparency:reduce){.item-editor-header{background:var(--color-card);-webkit-backdrop-filter:none;backdrop-filter:none}.item-change-review-backdrop{-webkit-backdrop-filter:none;backdrop-filter:none}}
 </style>

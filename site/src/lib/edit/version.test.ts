@@ -25,6 +25,18 @@ describe('BUILD_COMMIT', () => {
 });
 
 describe('fetchDeployedCommit', () => {
+  it('aborts a stalled version request and clears its timer', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.stubGlobal('fetch', vi.fn((_url, options) => new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('aborted')));
+      })));
+      const result = fetchDeployedCommit();
+      await vi.advanceTimersByTimeAsync(3000);
+      await expect(result).resolves.toBeNull();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
   it('returns the deployed commit on a successful response', async () => {
     mockFetchOnce(() => Promise.resolve(new Response(JSON.stringify({ commit: 'abc123' }), { status: 200 })));
     await expect(fetchDeployedCommit()).resolves.toBe('abc123');

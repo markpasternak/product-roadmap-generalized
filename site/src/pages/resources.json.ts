@@ -1,7 +1,7 @@
 import { getVisibleDocCollections } from "../lib/docs";
 import { IS_PUBLIC } from "../lib/audience";
+import { repositoryRoot } from "../lib/server/repositoryRoot";
 import { assetCatalog } from "../../scripts/managed-assets.mjs";
-import { fileURLToPath } from "node:url";
 export async function GET() {
   const documents = (await getVisibleDocCollections()).flatMap(
     ({ root, entries }) =>
@@ -11,7 +11,7 @@ export async function GET() {
       })),
   );
   const assets = (
-    await assetCatalog(fileURLToPath(new URL("../../../", import.meta.url)))
+    await assetCatalog(repositoryRoot())
   )
     .filter((a: any) => !IS_PUBLIC || a.visibility === "Public")
     .map((a: any) => ({

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { nextTick } from 'vue';
-import { mount, type VueWrapper } from '@vue/test-utils';
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import ItemEditor, { type ItemEditorItem } from './ItemEditor.vue';
 import type { ItemVM } from '../../lib/filters';
 
@@ -43,6 +43,8 @@ function mountEditor(
     allTags?: string[];
     allOwners?: string[];
     published?: ItemVM | null;
+    contentReady?: boolean;
+    loadError?: boolean;
     previewShowProduct?: boolean;
     previewShowHorizon?: boolean;
     previewShowCover?: boolean;
@@ -61,6 +63,25 @@ afterEach(() => {
 });
 
 describe('ItemEditor', () => {
+  it('blocks editing until the complete item and its resources are ready', async () => {
+    const w = mountEditor({ contentReady: false, loadError: true });
+
+    expect(w.find('[data-test="item-editor"]').attributes('aria-busy')).toBe('true');
+    expect(w.find('[data-test="item-editor-loading"]').text()).toContain('Could not load TALK-013');
+    expect(w.find('.item-editor-layout').attributes('inert')).toBe('');
+    expect(w.find('[data-test="spine-oneliner"]').exists()).toBe(false);
+
+    await w.find('[data-test="item-editor-loading"] button').trigger('click');
+    expect(w.emitted('retry')).toEqual([[]]);
+
+    await w.setProps({ contentReady: true, loadError: false });
+    await flushPromises();
+    await nextTick();
+    expect(w.find('[data-test="item-editor"]').attributes('aria-busy')).toBe('false');
+    expect(w.find('[data-test="item-editor-loading"]').exists()).toBe(false);
+    expect(w.find('[data-test="spine-oneliner"]').exists()).toBe(true);
+  });
+
   it("renders the item's current values in the metadata fields and the body in the SectionEditor", () => {
     const w = mountEditor();
 
@@ -277,7 +298,7 @@ describe('ItemEditor', () => {
   it('moves focus to the title field once mounted', async () => {
     const w = mount(ItemEditor, { props: { item: ITEM, body: BODY }, attachTo: document.body });
     wrappers.push(w);
-    await nextTick();
+    await flushPromises();
     await nextTick();
 
     expect(document.activeElement).toBe(w.find('[data-test="title-field"]').element);
@@ -402,7 +423,7 @@ describe('ItemEditor', () => {
     expect(document.activeElement).toBe(opener);
 
     const w = mount(ItemEditor, { props: { item: ITEM, body: BODY }, attachTo: document.body });
-    await nextTick();
+    await flushPromises();
     await nextTick();
     expect(document.activeElement).toBe(w.find('[data-test="title-field"]').element);
 

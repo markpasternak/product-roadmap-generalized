@@ -680,7 +680,7 @@ const primaryCls =
               <div v-if="previewOpen" ref="previewViewport" class="mt-3 overflow-hidden rounded-lg bg-surface-subtle-default p-1">
                 <p v-if="resourceError" role="alert" class="p-2 text-sm">{{ resourceError }}</p><p v-if="!previewAssets || (!previewResources && !resourceError)" role="status" class="p-2 text-single-sm-medium text-text-subtle-default">{{ previewAssetError ? 'Design assets could not load.' : 'Loading fonts and artwork…' }}</p>
                 <button v-if="previewAssetError" type="button" class="min-h-11 px-2 text-sm underline" @click="loadPreviewAssets">Retry preview</button>
-                <div v-if="previewAssets" class="mx-auto" :style="{ height: `${560 * previewScale}px`, width: `${previewDocumentWidth * previewScale}px` }">
+                <div v-if="previewHtml" class="mx-auto" :style="{ height: `${560 * previewScale}px`, width: `${previewDocumentWidth * previewScale}px` }">
                   <iframe title="Recipient roadmap preview" sandbox="allow-scripts" :srcdoc="previewHtml"
                     class="block h-[560px] origin-top-left border-0" :style="{ width: `${previewDocumentWidth}px`, transform: `scale(${previewScale})` }" />
                 </div>

@@ -17,16 +17,11 @@ name: Deploy roadmap site
 on:
   push:
     branches: [main]
-    paths:
-      - '.github/workflows/deploy.yml'
-      - 'site/**'
-      - 'content/**'
-      - '!content/sources/**'   # raw tooling inputs, not rendered by the site
-      - 'presentations/**'
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: canvas-drop-deploy
@@ -38,40 +33,34 @@ env:
 
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: site/package-lock.json
-
-      # Cache the installed node_modules, keyed by the lockfile. On a hit we skip
-      # `npm ci` — the ~30s bulk of this job — so a normal content-only deploy
-      # doesn't reinstall deps at all. Only a dependency change (lockfile change)
-      # misses the cache, reinstalls, and repopulates it for next time.
-      - name: Cache node_modules
-        id: node-modules
+      - uses: ./.github/actions/setup-site
+      - name: Classify changes since the last verified deployment
+        id: changes
+        run: node tooling/ci/changes.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Cache item history
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: site/node_modules
-          key: node-modules-${{ runner.os }}-node24-${{ hashFiles('site/package-lock.json') }}
-
-      - name: Install dependencies (skipped on cache hit)
-        if: steps.node-modules.outputs.cache-hit != 'true'
-        working-directory: site
-        run: npm ci --no-audit --no-fund
+          path: site/.cache/item-history.json
+          key: history-${{ runner.os }}-${{ hashFiles('site/scripts/build-item-history.mjs', 'site/src/lib/itemHistory.server.ts') }}-${{ github.sha }}
+          restore-keys: history-${{ runner.os }}-${{ hashFiles('site/scripts/build-item-history.mjs', 'site/src/lib/itemHistory.server.ts') }}-
+      - name: Validate content
+        run: python3 tooling/validate_items.py
 
       # Full internal build. Served at the canvas subdomain root, so base = "/".
       - name: Build the roadmap site
+        working-directory: site
+        run: npm run build
         env:
           PUBLIC_EDIT_API: https://roadmapdemoapi.canvas-drop.com
           PUBLIC_CANVAS_BACKEND: "true"
-        working-directory: site
-        run: npm run build
 
       - name: Verify source document links
         run: node site/scripts/check-document-links.mjs
@@ -79,8 +68,13 @@ jobs:
         run: node site/scripts/check-item-history.mjs
 
       - name: Verify fictional demo content
-        working-directory: site
-        run: node scripts/check-demo.mjs
+        run: node site/scripts/check-demo.mjs
+
+      # The public demo retains its secret-history scan for every release.
+      - name: Require successful application checks before publishing
+        run: node tooling/ci/changes.mjs wait
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       # canvas-drop expects a zip whose root is the site root (index.html at top).
       - name: Package the static site
