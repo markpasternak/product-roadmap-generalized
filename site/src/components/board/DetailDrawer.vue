@@ -8,7 +8,7 @@ import { installItemToc } from '../../lib/itemToc';
 import '../../styles/item-toc.css';
 import '../../styles/image-viewer.css';
 import '../../styles/reading-toolbar.css';
-import { isImageResource } from '../../lib/resources';
+import { isImageResource, repositoryAssetPath, resourceHref } from '../../lib/resources';
 import { resourcePreviewURLs } from '../../lib/edit/resourceClient';
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { animate, type AnimationPlaybackControlsWithThen } from 'motion';
@@ -153,6 +153,14 @@ const decoratedLinks = computed(() =>
     display: linkDisplay(ln.label, ln.target, ln.title),
   })),
 );
+const detailCoverSrc = computed(() => {
+  if (!props.item?.cover) return '';
+  const path = repositoryAssetPath(props.item.cover);
+  return (path && resourcePreviewURLs.value[path]) || resourceHref(props.item.cover, boardBase);
+});
+const detailCoverPosition = computed(() => /^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(props.item?.coverPosition ?? '')
+  ? props.item!.coverPosition!
+  : '50% 50%');
 
 const panel = ref<HTMLElement>();
 const expanded = ref(false);
@@ -523,8 +531,6 @@ onUnmounted(() => {
 });
 
 const label = 'text-single-sm-medium font-semibold uppercase tracking-wide text-text-subtle-default';
-const actionBtn =
-  'roadmap-action border-border-subtle-default bg-card/80 text-single-sm-medium text-text-primary-default hover:bg-card inline-flex h-10 items-center gap-2 rounded-lg border px-3.5 transition-colors';
 
 
 function historyValue(at: string | undefined, date: string | undefined): string {
@@ -626,29 +632,35 @@ watch(() => props.item?.id, () => {
 
         <div ref="scrollArea" class="flex-1 overflow-y-auto" data-reading-scroll>
           <Transition :name="drawerItemTransitionName" mode="out-in">
-          <div :key="item.id" class="drawer-reading-content px-4 pb-5 sm:px-6 sm:pb-6" data-reading-layout>
-            <div data-reading-body>
-            <div>
-              <div class="min-w-0">
+          <div :key="item.id" class="drawer-reading-content px-4 pb-5 sm:px-6 sm:pb-6">
+            <header class="detail-masthead" :class="{ 'has-cover': detailCoverSrc, 'is-completed': item.horizon === 'Completed' }">
+              <div v-if="detailCoverSrc" class="detail-cover-media" aria-hidden="true">
+                <img :src="detailCoverSrc" alt="" decoding="async" :style="{ objectPosition: detailCoverPosition }" />
+                <span />
+              </div>
+              <div class="detail-masthead-copy min-w-0">
                 <h2 data-reading-title id="drawer-title" tabindex="-1" aria-live="polite" class="roadmap-display roadmap-title text-[1.75rem] sm:text-[2.1rem]">
                   {{ item.title }}
                 </h2>
                 <PlannedDates :start-date="item.startDate" :end-date="item.endDate" />
-                <p class="roadmap-muted mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
-                  <span class="inline-flex items-center gap-2">
-                    <span class="h-4 w-1 rounded-full" :style="{ background: horizonDot[item.horizon as keyof typeof horizonDot] }" /> {{ item.horizon }}
-                  </span>
+              </div>
+            </header>
+
+            <div class="detail-summary">
+              <dl class="detail-status-summary">
+                <div>
+                  <dt>Horizon</dt>
+                  <dd><span class="detail-status-dot" :style="{ background: horizonDot[item.horizon as keyof typeof horizonDot] }" />{{ item.horizon }}</dd>
+                </div>
+                <div><dt>Stage</dt><dd>{{ item.stage }}</dd></div>
+                <div v-if="!client"><dt>Impact</dt><dd>{{ item.impact || 'Not scored' }}</dd></div>
+                <div v-if="!client"><dt>Effort</dt><dd>{{ item.effort || 'Not scoped' }}</dd></div>
+              </dl>
+
+              <div class="detail-utility-row">
+                <p class="detail-provenance roadmap-muted">
                   <span v-if="item.owner && !client" class="inline-flex items-center gap-2">
                     <PhUser :size="17" /> {{ item.owner }}
-                  </span>
-                  <span v-if="historyValue(item.createdAt, item.created) && !client" class="inline-flex items-center gap-2">
-                    <PhCalendarBlank :size="17" /> Created
-                    <time
-                      :datetime="historyDatetime(item.createdAt, item.created)"
-                      :title="historyTitle(item.createdAt, item.createdBy, item.createdSubject)"
-                    >
-                      {{ historyValue(item.createdAt, item.created) }}
-                    </time>
                   </span>
                   <span v-if="historyValue(item.updatedAt, item.updated) && !client" class="inline-flex items-center gap-2">
                     <PhCalendarBlank :size="17" /> Updated
@@ -664,10 +676,11 @@ watch(() => props.item?.id, () => {
                   </span>
                 </p>
 
-                <div v-if="!client" class="mt-4 flex flex-wrap items-center gap-2.5">
+                <div v-if="!client" class="detail-actions">
                   <a
+                    v-if="!expanded"
                     :href="item.href"
-                    class="roadmap-action border border-border-subtle-default bg-card inline-flex h-10 items-center gap-2 rounded-lg px-4 text-single-sm-medium"
+                    class="roadmap-action detail-action"
                   >
                     Open full page <PhArrowSquareOut :size="18" />
                   </a>
@@ -676,7 +689,7 @@ watch(() => props.item?.id, () => {
                     :href="item.editUrl"
                     target="_blank"
                     rel="noopener"
-                    :class="actionBtn"
+                    class="roadmap-action detail-action"
                     title="Open this item's markdown file in GitHub's editor"
                   >
                     <PhGithubLogo :size="18" class="text-icons-subtle-default" /> Edit on GitHub
@@ -687,6 +700,9 @@ watch(() => props.item?.id, () => {
 
             <p v-if="copyError" role="alert" class="mt-3 text-sm text-text-subtle-default">{{ copyError }}</p>
             <p v-else-if="copied" role="status" class="sr-only">Item link copied.</p>
+
+            <div class="detail-reading-grid" data-reading-layout>
+            <div data-reading-body>
 
             <div v-if="edit && !client" class="roadmap-panel mt-4 rounded-xl p-3.5" data-test="edit-panel">
               <div class="flex items-center justify-between gap-3">
@@ -789,12 +805,6 @@ watch(() => props.item?.id, () => {
               </div>
             </div>
 
-            <dl v-if="!client" class="item-facts mt-5">
-              <div><dt>Stage</dt><dd>{{ item.stage }}</dd></div>
-              <div><dt>Impact</dt><dd>{{ item.impact || 'Not scored' }}</dd></div>
-              <div><dt>Effort</dt><dd>{{ item.effort || 'Not scoped' }}</dd></div>
-            </dl>
-
             <p v-if="item.oneliner" class="mt-5 max-w-4xl text-base leading-relaxed text-text-primary-default">
               {{ item.oneliner }}
             </p>
@@ -865,6 +875,14 @@ watch(() => props.item?.id, () => {
               </span>
             </div>
 
+            <p v-if="historyValue(item.createdAt, item.created) && !client" class="detail-created roadmap-muted">
+              Created
+              <time
+                :datetime="historyDatetime(item.createdAt, item.created)"
+                :title="historyTitle(item.createdAt, item.createdBy, item.createdSubject)"
+              >{{ historyValue(item.createdAt, item.created) }}</time>
+            </p>
+
             <div v-if="decoratedLinks.length && !client" class="mt-5">
               <h3 :class="label" data-toc-heading>Related resources</h3>
               <div class="mt-3 grid gap-2">
@@ -898,6 +916,7 @@ watch(() => props.item?.id, () => {
             </div>
             <nav class="item-toc" data-item-toc aria-label="On this page" hidden></nav>
           </div>
+          </div>
           </Transition>
         </div>
       </aside>
@@ -915,6 +934,57 @@ watch(() => props.item?.id, () => {
 .drawer-reading-content { padding-top: 12px; }
 .detail-expanded .drawer-reading-content { width: 100%; max-width: 1200px; margin-inline: auto; }
 .detail-expanded :deep(.item-reading-section p) { max-width: 75ch; }
+.detail-masthead { position:relative; padding:10px 0 18px; overflow:hidden; }
+.detail-masthead.has-cover {
+  display:flex;
+  min-height:210px;
+  margin:-12px -1rem 0;
+  padding:28px 1rem 22px;
+  align-items:flex-end;
+  isolation:isolate;
+}
+.detail-cover-media,.detail-cover-media img,.detail-cover-media span { position:absolute; inset:0; width:100%; height:100%; }
+.detail-cover-media { z-index:-1; overflow:hidden; background:color-mix(in srgb,var(--roadmap-product-accent) 18%,var(--color-surface-subtle-default)); }
+.detail-cover-media img { object-fit:cover; filter:saturate(.82) contrast(.94); }
+.detail-cover-media span {
+  background:
+    linear-gradient(to top,var(--color-card) 0%,color-mix(in srgb,var(--color-card) 96%,transparent) 18%,color-mix(in srgb,var(--color-card) 62%,transparent) 52%,color-mix(in srgb,var(--color-card) 14%,transparent) 100%),
+    color-mix(in srgb,var(--roadmap-product-accent) 14%,transparent);
+}
+:global(:root[data-theme='dark']) .detail-cover-media img { filter:brightness(.7) saturate(.68) contrast(.92); }
+:global(:root[data-theme='dark']) .detail-cover-media span {
+  background:
+    linear-gradient(to top,var(--color-card) 0%,color-mix(in srgb,var(--color-card) 97%,transparent) 20%,color-mix(in srgb,var(--color-card) 68%,transparent) 54%,color-mix(in srgb,var(--color-card) 20%,transparent) 100%),
+    color-mix(in srgb,var(--roadmap-product-accent) 20%,transparent);
+}
+.detail-masthead.is-completed .detail-cover-media img { filter:grayscale(.28) saturate(.65) contrast(.94); }
+:global(:root[data-theme='dark']) .detail-masthead.is-completed .detail-cover-media img { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
+.detail-masthead-copy { position:relative; width:100%; max-width:960px; }
+.detail-masthead .roadmap-title { max-width:28ch; font-size:clamp(1.75rem,2.6vw,2.25rem); line-height:1.08; }
+.detail-summary { padding:14px 0; border-bottom:1px solid var(--color-border-subtle-default); }
+.detail-status-summary { display:flex; flex-wrap:wrap; gap:10px clamp(24px,4vw,48px); margin:0; }
+.detail-status-summary dt { color:var(--color-text-subtle-default); font-size:11px; font-weight:600; line-height:1.3; }
+.detail-status-summary dd { display:flex; align-items:center; gap:7px; margin:4px 0 0; color:var(--color-text-primary-default); font-size:14px; font-weight:600; line-height:1.35; }
+.detail-status-dot { width:4px; height:16px; border-radius:999px; }
+.detail-utility-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px 20px; margin-top:13px; padding-top:12px; border-top:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent); }
+.detail-provenance { display:flex; flex:1 1 360px; flex-wrap:wrap; align-items:center; gap:7px 18px; margin:0; font-size:13px; }
+.detail-actions { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.detail-action { display:inline-flex; min-height:34px; align-items:center; gap:7px; padding:0 9px; border-radius:7px; color:var(--color-text-subtle-default); font-size:13px; font-weight:500; }
+.detail-action:hover { color:var(--color-text-primary-default); background:color-mix(in srgb,var(--roadmap-ink) 6%,transparent); }
+.detail-reading-grid { margin-top:20px; }
+.detail-created { display:flex; flex-wrap:wrap; gap:5px; margin:24px 0 0; font-size:12px; }
+.detail-created time { color:var(--color-text-primary-default); }
+.detail-expanded .detail-masthead.has-cover { min-height:clamp(190px,26vh,260px); }
+.detail-expanded .detail-masthead .roadmap-title { max-width:30ch; font-size:clamp(2rem,3.2vw,2.5rem); line-height:1.06; }
+@media (min-width:640px) {
+  .detail-masthead.has-cover { margin-inline:-1.5rem; padding-inline:1.5rem; }
+}
+@media (max-width:560px) {
+  .detail-masthead.has-cover { min-height:165px; }
+  .detail-masthead .roadmap-title { font-size:clamp(1.7rem,8vw,2.1rem); }
+  .detail-status-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; }
+  .detail-utility-row { align-items:flex-start; }
+}
 .drawer-enter-active,
 .drawer-leave-active {
   transition: opacity 0.2s ease;

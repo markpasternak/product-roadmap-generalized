@@ -107,7 +107,11 @@ describe('renderShareHtml', () => {
     const shown = renderShareHtml(ctx, [covered]);
     expect(shown).toContain('class="share-card-cover"');
     expect(shown).toContain('object-position:40% 65%');
-    expect(renderShareHtml({ ...ctx, showCovers: false }, [covered])).not.toContain('class="share-card-cover"');
+    const hiddenOnBoard = renderShareHtml({ ...ctx, showCovers: false }, [covered]);
+    expect(hiddenOnBoard).not.toContain('class="share-card-cover"');
+    expect(hiddenOnBoard).toContain('data-detail-cover');
+    const detailData = JSON.parse(hiddenOnBoard.match(/id="roadmap-data">([\s\S]*?)<\/script>/)![1]);
+    expect(detailData[0]).toMatchObject({ cover: 'assets/ast_one/rev_one/cover.png', coverPosition: '40% 65%' });
   });
 
   it('identifies products with shorthand on mixed horizon boards without repeating marks for one product', () => {

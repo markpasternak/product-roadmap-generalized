@@ -110,6 +110,7 @@ function shareItemData(items: ProjectedItem[]) {
     stage: it.stage,
     horizon: it.horizon,
     status: statusLabel(it),
+    ...(it.cover && safeResourceUrl(it.cover) ? { cover: it.cover, coverPosition: /^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(it.coverPosition ?? '') ? it.coverPosition : '50% 50%' } : {}),
     themes: [...it.themes],
     resources: (it.resources ?? [])
       .filter((r) => safeResourceUrl(r.href))
@@ -214,21 +215,26 @@ function detailShell(): string {
         </div>
       </div>
       <div class="drawer-scroll" data-reading-scroll>
-        <div class="drawer-content" data-detail-content data-reading-layout>
-          <div data-reading-body>
+        <div class="drawer-content" data-detail-content>
           <p data-copy-status role="status" hidden></p>
           <input data-copy-fallback aria-label="Item link; select and copy" readonly hidden />
-          <div class="detail-hero">
-            <div class="detail-heading">
-              <h2 class="roadmap-display roadmap-title detail-title" id="detail-title" data-reading-title tabindex="-1" aria-live="polite"></h2>
-              <p class="roadmap-muted detail-meta" id="detail-meta"></p>
+          <header class="detail-masthead" data-detail-masthead>
+            <div class="detail-cover-media" data-detail-cover aria-hidden="true" hidden><img data-detail-cover-image alt="" decoding="async"><span></span></div>
+            <div class="detail-masthead-copy"><h2 class="roadmap-display roadmap-title detail-title" id="detail-title" data-reading-title tabindex="-1" aria-live="polite"></h2></div>
+          </header>
+          <dl class="detail-status-summary">
+            <div><dt>Horizon</dt><dd><span class="detail-status-dot"></span><span id="detail-horizon"></span></dd></div>
+            <div data-detail-stage><dt>Stage</dt><dd id="detail-stage"></dd></div>
+            <div data-detail-plan hidden><dt>Plan</dt><dd id="detail-plan"></dd></div>
+          </dl>
+          <div class="detail-reading-grid" data-reading-layout>
+            <div data-reading-body>
+              <p class="detail-lede" id="detail-lede"></p>
+              <div class="detail-sections" id="detail-sections"></div>
+              <div class="detail-themes" id="detail-themes"></div>
             </div>
+            <nav class="item-toc" data-item-toc aria-label="On this page" hidden></nav>
           </div>
-          <p class="detail-lede" id="detail-lede"></p>
-          <div class="detail-sections" id="detail-sections"></div>
-          <div class="detail-themes" id="detail-themes"></div>
-          </div>
-          <nav class="item-toc" data-item-toc aria-label="On this page" hidden></nav>
         </div>
       </div>
     </aside>
@@ -594,40 +600,32 @@ function css(context: ShareContext): string {
   .drawer-content {
     padding: 12px 24px 24px;
   }
-  .detail-hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-    align-items: start;
-  }
-  .detail-hero .product-mark {
-    width: 42px;
-    height: 42px;
-  }
+  .detail-masthead { position:relative; padding:10px 0 18px; overflow:hidden; }
+  .detail-masthead.has-cover { display:flex; min-height:210px; margin:-12px -24px 0; padding:28px 24px 22px; align-items:flex-end; isolation:isolate; }
+  .detail-cover-media,.detail-cover-media img,.detail-cover-media span { position:absolute; inset:0; width:100%; height:100%; }
+  .detail-cover-media { z-index:-1; overflow:hidden; background:color-mix(in srgb,var(--roadmap-product-accent) 18%,var(--color-surface-subtle-default)); }
+  .detail-cover-media[hidden] { display:none; }
+  .detail-cover-media img { object-fit:cover; filter:saturate(.82) contrast(.94); }
+  .detail-cover-media span { background:linear-gradient(to top,var(--color-card) 0%,color-mix(in srgb,var(--color-card) 96%,transparent) 18%,color-mix(in srgb,var(--color-card) 62%,transparent) 52%,color-mix(in srgb,var(--color-card) 14%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 14%,transparent); }
+  [data-theme="dark"] .detail-cover-media img { filter:brightness(.7) saturate(.68) contrast(.92); }
+  [data-theme="dark"] .detail-cover-media span { background:linear-gradient(to top,var(--color-card) 0%,color-mix(in srgb,var(--color-card) 97%,transparent) 20%,color-mix(in srgb,var(--color-card) 68%,transparent) 54%,color-mix(in srgb,var(--color-card) 20%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 20%,transparent); }
+  .detail-masthead.is-completed .detail-cover-media img { filter:grayscale(.28) saturate(.65) contrast(.94); }
+  [data-theme="dark"] .detail-masthead.is-completed .detail-cover-media img { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
+  .detail-masthead-copy { position:relative; width:100%; max-width:960px; }
   .detail-title {
     margin: 0;
-    font-size: clamp(1.75rem, 4vw, 2.1rem);
+    max-width:30ch;
+    font-size: clamp(1.75rem, 3vw, 2.5rem);
+    line-height:1.06;
   }
-  .detail-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 12px;
-    margin: 8px 0 0;
-    font-size: 14px;
-  }
-  .detail-meta span {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-  }
-  .dot {
-    width: 4px;
-    height: 16px;
-    border-radius: 999px;
-  }
+  .detail-status-summary { display:flex; flex-wrap:wrap; gap:10px clamp(24px,4vw,48px); margin:0; padding:14px 0; border-bottom:1px solid var(--color-border-subtle-default); }
+  .detail-status-summary dt { color:var(--color-text-subtle-default); font-size:11px; font-weight:600; line-height:1.3; }
+  .detail-status-summary dd { display:flex; align-items:center; gap:7px; margin:4px 0 0; color:var(--color-text-primary-default); font-size:14px; font-weight:600; line-height:1.35; }
+  .detail-status-dot { width:4px; height:16px; border-radius:999px; background:var(--roadmap-product-accent); }
+  .detail-reading-grid { margin-top:20px; }
   .detail-lede {
     max-width: 64rem;
-    margin: 20px 0 0;
+    margin: 0;
     color: var(--color-text-primary-default);
     font-size: 1rem;
     line-height: 1.7;
@@ -700,7 +698,7 @@ function css(context: ShareContext): string {
     .lane { width: 100%; min-width: 0; }
   }
   @media (max-width: 1023px) {
-    .detail-hero { grid-template-columns: 1fr; }
+    .detail-masthead.has-cover { min-height:190px; }
   }
   @media (max-width: 640px) {
     .board-root { padding: 16px; }
@@ -715,6 +713,9 @@ function css(context: ShareContext): string {
     .detail-shell { padding: 12px; }
     .drawer-panel { max-height: calc(100dvh - 24px); }
     .drawer-content { padding-inline: 16px; }
+    .detail-masthead.has-cover { min-height:165px; margin-inline:-16px; padding:24px 16px 18px; }
+    .detail-title { font-size:clamp(1.7rem,8vw,2.1rem); }
+    .detail-status-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
   }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
@@ -736,7 +737,14 @@ function js(): string {
   const panel = document.querySelector('[data-detail-panel]');
   const title = document.getElementById('detail-title');
   const product = document.getElementById('detail-product');
-  const meta = document.getElementById('detail-meta');
+  const masthead = document.querySelector('[data-detail-masthead]');
+  const cover = document.querySelector('[data-detail-cover]');
+  const coverImage = document.querySelector('[data-detail-cover-image]');
+  const horizon = document.getElementById('detail-horizon');
+  const stageGroup = document.querySelector('[data-detail-stage]');
+  const stage = document.getElementById('detail-stage');
+  const plan = document.querySelector('[data-detail-plan]');
+  const planValue = document.getElementById('detail-plan');
   const lede = document.getElementById('detail-lede');
   const sections = document.getElementById('detail-sections');
   const themes = document.getElementById('detail-themes');
@@ -795,9 +803,20 @@ function js(): string {
     title.textContent = item.title;
     updateHeader();
     panel.style.setProperty('--roadmap-product-accent', productMeta[item.product]?.color || 'var(--color-icons-subtle-default)');
-    meta.replaceChildren();
-    if (item.planned) meta.append(el('span', '', 'Planned ' + item.planned));
-    meta.append(el('span', '', item.status));
+    const hasCover = !!item.cover;
+    masthead.classList.toggle('has-cover', hasCover);
+    masthead.classList.toggle('is-completed', item.horizon === 'Completed');
+    cover.hidden = !hasCover;
+    if (hasCover) {
+      coverImage.src = item.cover;
+      coverImage.style.objectPosition = item.coverPosition || '50% 50%';
+    } else coverImage.removeAttribute('src');
+    horizon.textContent = item.horizon;
+    horizon.previousElementSibling.style.background = 'var(--roadmap-horizon-' + item.horizon.toLowerCase() + ')';
+    stageGroup.hidden = item.horizon === 'Completed';
+    stage.textContent = item.horizon === 'Completed' ? '' : item.stage;
+    plan.hidden = !item.planned;
+    planValue.textContent = item.planned || '';
     lede.hidden = !item.oneliner;
     lede.textContent = item.oneliner || '';
 

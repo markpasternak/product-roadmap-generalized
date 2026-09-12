@@ -46,7 +46,7 @@ describe('standalone share interaction', () => {
       expect(detail.textContent).not.toContain('Building');
       expect([...detail.querySelectorAll('h3')].map(heading => heading.textContent)).toEqual(['Target outcome', 'Scope', 'Bottom line']);
       expect(detail.querySelectorAll('.detail-sections img')).toHaveLength(1);
-      expect(detail.querySelector('img')?.getAttribute('alt')).toBe('Production screen');
+      expect(detail.querySelector('.detail-sections img')?.getAttribute('alt')).toBe('Production screen');
       expect(detail.querySelector('.shared-inline-image')?.previousElementSibling?.textContent).toBe('Before');
       expect(detail.querySelector('.shared-inline-image')?.nextElementSibling?.textContent).toBe('After');
       expect(scroller.scrollTop).toBe(0);
