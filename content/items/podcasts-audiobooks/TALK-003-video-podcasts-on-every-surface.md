@@ -6,7 +6,7 @@ horizon: Now
 startDate: 2026-08-17
 endDate: 2026-10-30
 stage: Building
-owner: Kwame Mensah
+owner: Ben Thomson
 tags: video, podcasts, theme:spoken-word
 impact: High
 effort: High
