@@ -168,6 +168,16 @@ def main():
                 err("coverPosition must contain horizontal and vertical percentages")
             if position and not cover:
                 err("coverPosition requires cover")
+            framing = fm.get("coverFraming", "")
+            if framing:
+                try:
+                    framing_value = float(framing)
+                    if framing_value < -1 or framing_value > 1:
+                        raise ValueError()
+                except ValueError:
+                    err("coverFraming must be a number from -1 to 1")
+            if framing and not cover:
+                err("coverFraming requires cover")
             visibility = fm.get("visibility", "Internal")
             if visibility not in VISIBILITIES:
                 err(f"invalid visibility '{visibility}' (want Internal/Public)")

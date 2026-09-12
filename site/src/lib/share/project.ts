@@ -38,6 +38,7 @@ export interface ProjectedItem {
   endDate?: string | null;
   cover?: string | null;
   coverPosition?: string | null;
+  coverFraming?: number | null;
   resources?: import('./resources').SharedResource[];
   id: string;
   title: string;
@@ -55,7 +56,7 @@ export function projectForShare(item: ItemVM): ProjectedItem {
   return {
     ...(item.startDate ? { startDate: item.startDate } : {}),
     ...(item.endDate ? { endDate: item.endDate } : {}),
-    ...(item.cover ? { cover: item.cover, coverPosition: item.coverPosition || '50% 50%' } : {}),
+    ...(item.cover ? { cover: item.cover, coverPosition: item.coverPosition || '50% 50%', coverFraming: item.coverFraming ?? 0 } : {}),
     id: item.id,
     title: item.title,
     oneliner: item.oneliner,

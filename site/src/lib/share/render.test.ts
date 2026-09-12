@@ -103,15 +103,34 @@ describe('renderShareHtml', () => {
   });
 
   it('renders frozen cover images by default and honors the shared view toggle', () => {
-    const covered = { ...item, cover: 'assets/ast_one/rev_one/cover.png', coverPosition: '40% 65%' };
+    const covered = { ...item, cover: 'assets/ast_one/rev_one/cover.png', coverPosition: '40% 65%', coverFraming: -0.8 };
     const shown = renderShareHtml(ctx, [covered]);
-    expect(shown).toContain('class="share-card-cover"');
-    expect(shown).toContain('object-position:40% 65%');
+    expect(shown).toContain('class="share-card-cover roadmap-cover-media"');
+    expect(shown).toContain('--cover-position:40% 65%');
+    expect(shown).toContain('class="roadmap-cover-reveal"');
     const hiddenOnBoard = renderShareHtml({ ...ctx, showCovers: false }, [covered]);
-    expect(hiddenOnBoard).not.toContain('class="share-card-cover"');
+    expect(hiddenOnBoard).not.toContain('class="share-card-cover roadmap-cover-media"');
     expect(hiddenOnBoard).toContain('data-detail-cover');
     const detailData = JSON.parse(hiddenOnBoard.match(/id="roadmap-data">([\s\S]*?)<\/script>/)![1]);
-    expect(detailData[0]).toMatchObject({ cover: 'assets/ast_one/rev_one/cover.png', coverPosition: '40% 65%' });
+    expect(detailData[0]).toMatchObject({ cover: 'assets/ast_one/rev_one/cover.png', coverPosition: '40% 65%', coverFraming: -0.8 });
+  });
+
+  it('bakes the complete view contract and shared reader primitives into the standalone page', () => {
+    const baked = renderShareHtml({ ...ctx, group: 'product', sort: 'impact', reverseLanes: true, showCovers: false }, [item]);
+    expect(baked).toContain('data-share-view="board"');
+    expect(baked).toContain('data-share-group="product"');
+    expect(baked).toContain('data-share-sort="impact"');
+    expect(baked).toContain('data-share-reverse-lanes="true"');
+    expect(baked).toContain('data-share-covers="false"');
+    expect(baked).toContain('item-section-surface');
+    expect(baked).toContain('resource-reading-grid');
+  });
+
+  it('normalizes invalid cover focus consistently in card and reader data', () => {
+    const baked = renderShareHtml(ctx, [{ ...item, cover: 'assets/ast_one/rev_one/cover.png', coverPosition: 'somewhere' }]);
+    expect(baked).toContain('--cover-position:50% 50%');
+    const data = JSON.parse(baked.match(/id="roadmap-data">([\s\S]*?)<\/script>/)![1]);
+    expect(data[0].coverPosition).toBe('50% 50%');
   });
 
   it('identifies products with shorthand on mixed horizon boards without repeating marks for one product', () => {
@@ -163,6 +182,15 @@ describe('renderShareHtml', () => {
     expect(html).toContain('Why it matters');
     expect(html).toContain('data-detail-prev');
     expect(html).toContain('data-detail-next');
+  });
+
+  it('ships valid interaction code and keeps long-section controls outside the faded body', () => {
+    const long = renderShareHtml(ctx, [{ ...item, sections: [{ heading: 'Why it matters', text: 'Reason '.repeat(100) }] }]);
+    const scripts = [...long.matchAll(/<script(?: [^>]*)?>([\s\S]*?)<\/script>/g)];
+    expect(() => new Function(scripts.at(-1)![1])).not.toThrow();
+    expect(long).toContain('detail-section-body-collapsed');
+    expect(long).toContain("wrap.append(body);");
+    expect(long).toContain("wrap.append(toggle);");
   });
 
   it('can render a dark share', () => {

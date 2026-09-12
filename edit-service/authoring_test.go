@@ -168,6 +168,9 @@ func TestAtomicPublicationAndDurableReceipt(t *testing.T) {
 	if out.CreatedIDs["new-client-123"] != "TALK-001" {
 		t.Fatal("missing stable create identity", out.CreatedIDs)
 	}
+	if len(out.Items) != 1 || out.Items[0].ID != "TALK-001" || out.Items[0].Sha == "" || out.Items[0].Git.UpdatedCommit != out.SHA {
+		t.Fatal("publication must return the exact committed item and metadata", out.Items)
+	}
 	tree := gitTest(t, root, "show", "--name-only", "--format=", out.SHA)
 	for _, path := range []string{u.RepoPath, assetPath(u.AssetID), publicationPath("alice", cs.RequestID), "content/items/podcasts-audiobooks/TALK-001"} {
 		if !strings.Contains(tree, path) {

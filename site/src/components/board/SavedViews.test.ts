@@ -58,6 +58,26 @@ describe('saved view picker', () => {
     expect(w.get('[role="status"]').text()).toContain('Saved');
   });
 
+  it('searches a long saved-view list', async () => {
+    localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(Array.from({ length: 6 }, (_, index) => ({ ...weekly(), name: `Review ${index + 1}` }))));
+    const w = mountViews();
+    await picker(w).trigger('click');
+    await w.get('input[aria-label="Find a saved view"]').setValue('Review 5');
+    expect(w.findAll('.view-saved-row')).toHaveLength(1);
+    expect(w.get('.view-saved-row').text()).toContain('Review 5');
+  });
+
+  it('dismisses save feedback after a short standard toast window', async () => {
+    vi.useFakeTimers();
+    const w = mountViews();
+    await create(w, 'Quarterly');
+    expect(w.get('[role="status"]').text()).toContain('Saved');
+    vi.advanceTimersByTime(3200);
+    await w.vm.$nextTick();
+    expect(w.find('[role="status"]').exists()).toBe(false);
+    vi.useRealTimers();
+  });
+
   it('keeps edits unsaved until Save changes updates the selected view in place', async () => {
     localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify([weekly()]));
     const w = mountViews(weekly());

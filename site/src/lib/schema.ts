@@ -56,9 +56,11 @@ export const itemSchema = z.object({
   confidence: z.enum(CONFIDENCES).optional(),
   cover: coverPathSchema.optional(),
   coverPosition: coverPositionSchema.optional(),
+  coverFraming: z.coerce.number().min(-1).max(1).optional(),
 })
   .refine(v => !v.startDate || !v.endDate || v.endDate >= v.startDate, { message: 'Planned end must be on or after planned start', path: ['endDate'] })
-  .refine(v => !v.coverPosition || !!v.cover, { message: 'Cover position requires a cover', path: ['coverPosition'] });
+  .refine(v => !v.coverPosition || !!v.cover, { message: 'Cover position requires a cover', path: ['coverPosition'] })
+  .refine(v => v.coverFraming === undefined || !!v.cover, { message: 'Cover framing requires a cover', path: ['coverFraming'] });
 export type ItemFrontmatter = z.infer<typeof itemSchema>;
 
 // Docs (PRD / technical-design / research) carry a lighter, varied frontmatter.

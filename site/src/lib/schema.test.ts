@@ -49,10 +49,12 @@ describe('itemSchema', () => {
 
   it('accepts managed card covers and rejects external or malformed cover metadata', () => {
     const cover = '../../assets/ast_one/rev_one/cover.png';
-    expect(itemSchema.parse({ ...base, cover, coverPosition: '35% 70%' })).toMatchObject({ cover, coverPosition: '35% 70%' });
+    expect(itemSchema.parse({ ...base, cover, coverPosition: '35% 70%', coverFraming: '-0.75' })).toMatchObject({ cover, coverPosition: '35% 70%', coverFraming: -0.75 });
     expect(() => itemSchema.parse({ ...base, cover: 'https://example.com/cover.png' })).toThrow();
     expect(() => itemSchema.parse({ ...base, cover, coverPosition: 'left top' })).toThrow();
     expect(() => itemSchema.parse({ ...base, coverPosition: '50% 50%' })).toThrow();
+    expect(() => itemSchema.parse({ ...base, cover, coverFraming: 1.1 })).toThrow();
+    expect(() => itemSchema.parse({ ...base, coverFraming: -1 })).toThrow();
   });
 });
 

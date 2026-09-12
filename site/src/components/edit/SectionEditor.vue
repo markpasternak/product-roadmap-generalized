@@ -46,7 +46,7 @@ import {
 } from '@phosphor-icons/vue';
 import { toneSurfaceStrong, toneText, type Tone } from '../../lib/display';
 
-const props = defineProps<{ managedResources?: boolean; managedResourceHrefs?: string[] }>();
+const props = defineProps<{ managedResources?: boolean; managedResourceHrefs?: string[]; publishedValue?: string }>();
 const model = defineModel<string>({ default: '' });
 const requestImage = inject(insertImageKey, undefined);
 
@@ -125,6 +125,7 @@ function emitUpdate() {
 // `spine-${i}` for the canonical bodies (i >= 1; the One-liner at i === 0 stays a plain
 // `<input>` and never participates in this), `opt-${row.id}` for optional sections.
 const editingKey = ref<string | null>(null);
+const expandedReadKeys = ref(new Set<string>());
 
 function spineKey(i: number): string {
   return `spine-${i}`;
@@ -134,6 +135,42 @@ function optKey(id: number): string {
 }
 function isBlank(body: string): boolean {
   return body.trim() === '';
+}
+function isLong(body: string): boolean {
+  return body.trim().length > 360 || body.trim().split('\n').length > 7;
+}
+function readExpanded(key: string, body: string): boolean {
+  return editingKey.value === key || !isLong(body) || expandedReadKeys.value.has(key);
+}
+function toggleRead(key: string) {
+  const next = new Set(expandedReadKeys.value);
+  if (next.has(key)) next.delete(key); else next.add(key);
+  expandedReadKeys.value = next;
+}
+const publishedSectionBodies = computed(() => {
+  if (props.publishedValue === undefined) return null;
+  return new Map(parseSections(props.publishedValue).sections.map(section => [sectionLabel(section.heading).toLowerCase(), section.body.trim()]));
+});
+function sectionChanged(heading: string, body: string): boolean {
+  const published = publishedSectionBodies.value;
+  if (!published) return false;
+  return (published.get(sectionLabel(heading).toLowerCase()) ?? '') !== body.trim();
+}
+const visibleOutline = computed(() => [
+  ...canonicalHeadings.value.map((heading, i) => ({ key: spineKey(i), heading, changed: sectionChanged(heading, canonicalBodies.value[i]) })),
+  ...optional.value.filter(row => !managedSection(row)).map(row => ({ key: optKey(row.id), heading: row.heading, changed: sectionChanged(row.heading, row.body) })),
+]);
+function goToSection(key: string) {
+  const root = structuredRef.value?.querySelector<HTMLElement>(`[data-section-key="${key}"]`);
+  root?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  root?.focus({ preventScroll: true });
+}
+function expandAll() {
+  expandedReadKeys.value = new Set(visibleOutline.value.map(row => row.key));
+}
+function collapseAll() {
+  expandedReadKeys.value = new Set();
+  editingKey.value = null;
 }
 
 function enterEdit(key: string) {
@@ -431,14 +468,22 @@ function onToolbarKeydown(e: KeyboardEvent) {
       </button>
     </div>
 
-    <div v-if="mode === 'structured'" ref="structuredRef" class="flex flex-col gap-6 pr-1" data-test="structured-fields">
+    <div v-if="mode === 'structured'" ref="structuredRef" class="section-editor-canvas flex flex-col gap-5 pr-1" data-test="structured-fields">
+      <nav class="section-overview" aria-label="Item sections">
+        <div class="section-overview-links">
+          <button v-for="entry in visibleOutline" :key="entry.key" type="button" :class="{ changed: entry.changed, active: editingKey === entry.key }" @click="goToSection(entry.key)">
+            <span v-if="entry.changed" aria-hidden="true" />{{ entry.heading }}
+          </button>
+        </div>
+        <div class="section-overview-actions"><button type="button" @click="expandAll">Expand all</button><button type="button" @click="collapseAll">Collapse long</button></div>
+      </nav>
       <!-- Pinned spine: always present, canonical order, not removable/reorderable. Styled
            to read like the published item's own headings + prose (see DetailDrawer's
            storyBlocks) rather than a form: a small tone-tinted icon + a display-font
            heading, then a borderless field in the same prose typography as the rendered
            page, with only a quiet hover/focus tint marking it editable. -->
-      <div class="flex flex-col gap-5" data-test="spine">
-        <div v-for="(heading, i) in CANONICAL_SECTIONS" :key="heading" data-test="spine-field" class="flex flex-col gap-1.5">
+      <div class="flex flex-col gap-3" data-test="spine">
+        <section v-for="(heading, i) in CANONICAL_SECTIONS" :key="heading" data-test="spine-field" :data-section-key="spineKey(i)" tabindex="-1" class="section-surface item-section-surface flex flex-col gap-1.5" :class="{ 'is-editing': editingKey === spineKey(i), 'is-changed': sectionChanged(heading, canonicalBodies[i]) }">
           <div class="flex items-center justify-between gap-2">
             <div class="flex items-center gap-2">
               <span
@@ -449,6 +494,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
                 <component :is="sectionIcon(heading)" :size="13" />
               </span>
               <label class="roadmap-section-heading" data-test="spine-label" :for="`spine-${i}`">{{ heading }}</label>
+              <span v-if="sectionChanged(heading, canonicalBodies[i])" class="section-changed-badge">Changed</span>
             </div>
             <!-- Fix #7: a quiet nudge, not a limit — the One-liner is meant to be one short
                  sentence, so the count flips from muted to a brand-accent tone past the soft
@@ -527,6 +573,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
               v-else
               data-test="spine-display"
               class="resource-markdown se-display roadmap-prose w-full cursor-text"
+              :class="{ 'section-body-collapsed': !readExpanded(spineKey(i), canonicalBodies[i]) }"
               role="button"
               tabindex="0"
               :aria-label="`Edit ${heading}`"
@@ -536,8 +583,9 @@ function onToolbarKeydown(e: KeyboardEvent) {
               <span v-if="isBlank(canonicalBodies[i])" class="se-placeholder">Click to add detail…</span>
               <div v-else v-html="renderMarkdown(canonicalBodies[i])" />
             </div>
+            <button v-if="editingKey !== spineKey(i) && isLong(canonicalBodies[i])" type="button" class="section-show-more" :aria-expanded="readExpanded(spineKey(i), canonicalBodies[i])" @click="toggleRead(spineKey(i))">{{ readExpanded(spineKey(i), canonicalBodies[i]) ? 'Show less' : 'Show more' }}</button>
           </template>
-        </div>
+        </section>
       </div>
 
       <div class="border-border-subtle-default/50 border-t" />
@@ -552,10 +600,14 @@ function onToolbarKeydown(e: KeyboardEvent) {
           v-show="!managedSection(row)"
           data-test="optional-field"
           draggable="true"
-          class="group/row relative -mx-2 flex flex-col gap-1.5 rounded-lg border-t-2 border-transparent px-2 py-2.5 transition-colors duration-150"
+          :data-section-key="optKey(row.id)"
+          tabindex="-1"
+          class="section-surface item-section-surface group/row relative flex flex-col gap-1.5 transition-colors duration-150"
           :class="[
             dragIndex === i ? 'opacity-40' : '',
             dragOverIndex === i && dragIndex !== i ? '!border-[color:var(--color-accent-brand-default)]' : '',
+            editingKey === optKey(row.id) ? 'is-editing' : '',
+            sectionChanged(row.heading, row.body) ? 'is-changed' : '',
           ]"
           @dragstart="onDragStart(i, $event)"
           @dragover="onDragOverRow(i, $event)"
@@ -581,6 +633,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
               <span data-test="optional-label" class="font-display roadmap-title truncate text-[1.05rem]">
                 {{ row.heading }}
               </span>
+              <span v-if="sectionChanged(row.heading, row.body)" class="section-changed-badge">Changed</span>
             </div>
             <div class="section-actions flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100">
               <button
@@ -658,6 +711,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
             v-else
             data-test="optional-display"
             class="resource-markdown se-display roadmap-prose w-full cursor-text"
+            :class="{ 'section-body-collapsed': !readExpanded(optKey(row.id), row.body) }"
             role="button"
             tabindex="0"
             :aria-label="`Edit ${row.heading}`"
@@ -667,6 +721,7 @@ function onToolbarKeydown(e: KeyboardEvent) {
             <span v-if="isBlank(row.body)" class="se-placeholder">Click to add detail…</span>
             <div v-else v-html="renderMarkdown(row.body)" />
           </div>
+          <button v-if="editingKey !== optKey(row.id) && isLong(row.body)" type="button" class="section-show-more" :aria-expanded="readExpanded(optKey(row.id), row.body)" @click="toggleRead(optKey(row.id))">{{ readExpanded(optKey(row.id), row.body) ? 'Show less' : 'Show more' }}</button>
         </div>
       </div>
 
@@ -700,6 +755,8 @@ function onToolbarKeydown(e: KeyboardEvent) {
 </template>
 
 <style scoped>
+.section-editor-canvas{container-type:inline-size}.section-overview{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:0 0 .25rem;padding:.55rem;border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent);border-radius:12px;background:color-mix(in srgb,var(--color-card) 90%,transparent);box-shadow:0 10px 24px rgb(0 0 0 / 6%);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}.section-overview-links{display:flex;min-width:0;gap:.25rem;overflow-x:auto;scrollbar-width:none}.section-overview-links::-webkit-scrollbar{display:none}.section-overview button{min-height:32px;border:0;border-radius:8px;padding:.35rem .6rem;background:transparent;color:var(--color-text-subtle-default);font-size:.72rem;white-space:nowrap;cursor:pointer}.section-overview-links button{display:inline-flex;align-items:center;gap:.35rem}.section-overview-links button>span{width:6px;height:6px;border-radius:99px;background:var(--color-accent-brand-default)}.section-overview button:hover,.section-overview button.active{background:var(--color-surface-primary-hover);color:var(--color-text-primary-default)}.section-overview-actions{display:flex;flex:0 0 auto}.section-overview-actions button{font-size:.68rem}
+.section-surface{position:relative;padding:1rem;border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent);border-radius:14px;background:color-mix(in srgb,var(--color-card) 84%,var(--color-surface-subtle-default));box-shadow:0 8px 22px rgb(0 0 0 / 4%);transition:border-color 180ms ease,box-shadow 180ms ease,transform 180ms ease,opacity 180ms ease}.section-surface.is-editing{border-color:color-mix(in srgb,var(--roadmap-product-accent,var(--color-accent-brand-default)) 52%,var(--color-border-subtle-default));box-shadow:0 18px 42px rgb(0 0 0 / 10%);transform:translateY(-1px)}.section-surface.is-changed::before{content:'';position:absolute;top:14px;right:auto;bottom:auto;left:-2px;width:4px;height:24px;border-radius:99px;background:var(--color-accent-brand-default)}.section-changed-badge{display:inline-flex;align-items:center;min-height:20px;padding:.15rem .45rem;border-radius:999px;background:color-mix(in srgb,var(--color-accent-brand-default) 12%,transparent);color:var(--color-accent-brand-default);font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em}.section-body-collapsed{position:relative;max-height:9.5rem;overflow:hidden;mask-image:linear-gradient(to bottom,#000 66%,transparent);-webkit-mask-image:linear-gradient(to bottom,#000 66%,transparent)}.section-show-more{align-self:flex-start;min-height:30px;margin-top:.15rem;border:0;border-radius:7px;padding:.3rem .55rem;background:color-mix(in srgb,var(--roadmap-product-accent,var(--color-accent-brand-default)) 8%,transparent);color:var(--color-text-primary-default);font-size:.72rem;font-weight:600;cursor:pointer}.section-show-more:hover{background:color-mix(in srgb,var(--roadmap-product-accent,var(--color-accent-brand-default)) 14%,transparent)}
 /* Quiet editable affordance for the WYSIWYG structured fields: at rest a field is
    transparent and flush with the surrounding prose (no grey box), so the editor reads
    as a styled document rather than a form. Hovering hints it's editable with a faint
@@ -747,6 +804,9 @@ function onToolbarKeydown(e: KeyboardEvent) {
   opacity: 0.7;
   font-style: italic;
 }
+@container(max-width:720px){.section-overview{align-items:stretch;flex-direction:column}.section-overview-actions{align-self:flex-end}.section-surface{padding:.85rem}}
+@media(prefers-reduced-motion:reduce){.section-surface{transition:none}.section-surface.is-editing{transform:none}}
+@media(prefers-reduced-transparency:reduce){.section-overview{background:var(--color-card);-webkit-backdrop-filter:none;backdrop-filter:none}}
 </style>
 
 <style scoped>

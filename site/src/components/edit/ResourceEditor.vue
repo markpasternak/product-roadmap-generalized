@@ -31,11 +31,14 @@ import {
   type ResourceUpload,
   isImageResource,
 } from "../../lib/resources";
-const props = defineProps<{ body: string; visibility: string; itemId?: string; editorLogin?: string; cover?: string; coverPosition?: string }>();
+import { trapFocus } from '../../lib/focusTrap';
+import { coverFramingLabel, coverPresentationStyle, normalizeCoverFraming } from '../../lib/coverPresentation';
+const props = defineProps<{ body: string; visibility: string; itemId?: string; editorLogin?: string; cover?: string; coverPosition?: string; coverFraming?: number | string }>();
 const emit = defineEmits<{
   "update:body": [body: string];
   "update:cover": [cover: string];
   "update:coverPosition": [position: string];
+  "update:coverFraming": [framing: string];
 }>();
 const store = useEditStore();
 const locked = computed(() => !!store.snapshot().requestPayload);
@@ -54,6 +57,8 @@ const library = ref<ResourceAsset[]>([]),
   uploads = ref<ResourceUpload[]>([]);
 const fileInput = ref<HTMLInputElement>();
 const addResourceButton = ref<HTMLButtonElement>();
+const authoringRoot = ref<HTMLElement>();
+let releaseInspectorFocus: (() => void) | null = null;
 const linkName = ref(""),
   linkURL = ref(""),
   selectedExisting = ref(""),
@@ -138,6 +143,12 @@ async function closeAdd() {
   if (restoreFocus) addResourceButton.value?.focus();
 }
 function toggleResource(id: string) { expanded.value = expanded.value === id ? null : id; }
+function onResourceKey(event: KeyboardEvent) {
+  if (!expanded.value || event.key !== 'Escape') return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  expanded.value = null;
+}
 async function removePlacement(placement: typeof placements.value[number], event?: Event) {
   const row = (event?.currentTarget as HTMLElement | null)?.closest('.resource-row');
   const shelf = row?.closest('.resource-shelf');
@@ -149,6 +160,7 @@ async function removePlacement(placement: typeof placements.value[number], event
     if (!stillAttached) {
       emit('update:cover', '');
       emit('update:coverPosition', '');
+      emit('update:coverFraming', '');
     }
   }
   notice.value = repositoryAssetPath(placement.href) ? 'Removed from this item. The original file is still in your library.' : 'Link removed from this item.';
@@ -172,11 +184,13 @@ function setCover(asset: typeof allAssets.value[number]) {
   if (isCoverAsset(asset)) {
     emit('update:cover', '');
     emit('update:coverPosition', '');
+    emit('update:coverFraming', '');
     notice.value = 'Card cover removed.';
     return;
   }
   emit('update:cover', imageHref(asset));
   emit('update:coverPosition', '50% 50%');
+  emit('update:coverFraming', '0');
   expanded.value = asset.id;
   notice.value = 'Cover selected. Place the focus on the subject that every crop should keep.';
 }
@@ -199,6 +213,12 @@ function setCoverPointFromPointer(event: PointerEvent) {
 }
 function nudgeCoverPoint(dx: number, dy: number) {
   setCoverPoint(coverAxis(0) + dx, coverAxis(1) + dy);
+}
+const coverFraming = computed(() => normalizeCoverFraming(props.coverFraming));
+const coverFramingText = computed(() => coverFramingLabel(coverFraming.value));
+const coverStyle = computed(() => coverPresentationStyle(`${coverAxis(0)}% ${coverAxis(1)}%`, coverFraming.value));
+function setCoverFraming(event: Event) {
+  emit('update:coverFraming', String(normalizeCoverFraming((event.target as HTMLInputElement).value)));
 }
 const imageChoices = computed(() => [...allAssets.value
   .filter(a => !a.remove && shownRevision(a).original.mediaType.startsWith('image/') && (props.visibility !== 'Public' || a.visibility === 'Public'))
@@ -456,6 +476,7 @@ async function runUpload(job: Pending) {
         else {
           emit('update:cover', '');
           emit('update:coverPosition', '');
+          emit('update:coverFraming', '');
         }
       }
       notice.value =
@@ -736,16 +757,25 @@ async function download(asset: ResourceAsset & { placements?: typeof placements.
   } catch { error.value = "Could not download this file. Please try again."; }
 }
 onMounted(async () => {
-  await load();
-  try {
-    const res = await fetch(`${import.meta.env.BASE_URL}resources.json`);
-    if (res.ok) documents.value = (await res.json()).documents ?? [];
-  } catch {
-    /* linked documents can still be pasted */
-  }
+  document.addEventListener('keydown', onResourceKey, true);
+  await Promise.allSettled([
+    load(),
+    fetch(`${import.meta.env.BASE_URL}resources.json`).then(async res => {
+      if (res.ok) documents.value = (await res.json()).documents ?? [];
+    }),
+  ]);
 });
 watch(locked, (value, old) => {
+  if (value) expanded.value = null;
   if (old && !value) void load();
+});
+watch(expanded, async (value) => {
+  releaseInspectorFocus?.();
+  releaseInspectorFocus = null;
+  if (!value) return;
+  await nextTick();
+  const inspector = authoringRoot.value?.querySelector<HTMLElement>('.resource-inspector');
+  if (inspector) releaseInspectorFocus = trapFocus(inspector);
 });
 watch(
   () => store.snapshot().assets.attach.length,
@@ -754,14 +784,18 @@ watch(
   },
 );
 onUnmounted(() => {
+  document.removeEventListener('keydown', onResourceKey, true);
   clearTimeout(noticeTimer);
   loadEpoch++;
   pending.value.forEach((p) => p.controller.abort());
   resourceTransferCount.value = 0;
+  releaseInspectorFocus?.();
+  releaseInspectorFocus = null;
 });
 </script>
 <template>
   <div
+    ref="authoringRoot"
     class="resource-authoring"
     @paste.capture="paste"
     @drop.capture="drop"
@@ -927,15 +961,16 @@ onUnmounted(() => {
         {{ error }} <button type="button" @click="load">Try again</button>
       </p>
       <p v-if="notice" role="status" class="resource-muted">{{ notice }}</p>
-        <p v-if="loading" role="status" class="resource-muted">Loading resources…</p>
+        <div v-if="loading" role="status" aria-label="Loading resources" class="resource-skeleton-grid"><span v-for="i in 3" :key="i"><i /><b /><em /></span></div>
         <p v-else-if="!rows.length && !external.length && !picker" class="resource-empty">Add files or links to this item.</p>
-        <article v-for="asset in rows" :key="asset.id" class="resource-row" :class="{ 'resource-row-expanded': expanded === asset.id }">
+        <div v-if="rows.length" class="resource-grid" aria-label="Attached files">
+        <article v-for="asset in rows" :key="asset.id" class="resource-row" :class="{ 'resource-row-expanded': expanded === asset.id, 'resource-row-image': shownRevision(asset).original.mediaType.startsWith('image/') }">
           <div class="resource-row-main">
             <ImageThumbnail v-if="shownRevision(asset).original.mediaType.startsWith('image/')" :href="imageHref(asset)" authenticated />
             <span v-else class="resource-kind">{{ shownRevision(asset).original.path.split('.').pop()?.toUpperCase() }}</span>
             <div class="resource-identity"><strong>{{ asset.name }} <span v-if="isCoverAsset(asset)" class="resource-cover-badge">Cover</span></strong>
               <p class="resource-muted">{{ readableBytes(shownRevision(asset).original.bytes) }} · {{ fileStatus(asset) }}
-                <span v-if="!asset.placements.length"> · Not used here</span>
+                <span v-if="asset.placements.length"> · {{ asset.placements.length }} {{ asset.placements.length === 1 ? 'use' : 'uses' }}</span><span v-else> · Not used here</span>
               </p>
             </div>
             <button v-if="shownRevision(asset).original.mediaType.startsWith('image/') && asset.placements.length" type="button" class="resource-quiet" :aria-pressed="isCoverAsset(asset)" @click="setCover(asset)">{{ isCoverAsset(asset) ? 'Remove cover' : 'Use as cover' }}</button>
@@ -946,7 +981,15 @@ onUnmounted(() => {
           <p v-if="visibility === 'Public' && asset.visibility !== 'Public'" class="resource-error">
             This file is internal. <button type="button" @click="makePublic(asset)">Make file public</button>
           </p>
-          <div v-if="expanded === asset.id && !asset.remove" class="resource-inspector">
+          <div v-if="expanded === asset.id && !asset.remove" class="resource-inspector-shell">
+            <button type="button" class="resource-inspector-backdrop" aria-label="Close resource details" @click="expanded = null" />
+          <aside class="resource-inspector" role="dialog" aria-modal="true" :aria-label="`Edit ${asset.name}`" tabindex="-1">
+            <header class="resource-inspector-header"><div><p class="roadmap-label">Resource details</p><h3>{{ asset.name }}</h3></div><button type="button" class="resource-quiet" aria-label="Close resource details" @click="expanded = null">Done</button></header>
+            <div class="resource-inspector-scroll">
+            <div class="resource-inspector-preview">
+              <img v-if="shownRevision(asset).original.mediaType.startsWith('image/')" :src="previewHref(imageHref(asset))" :alt="asset.name" />
+              <div v-else><span class="resource-kind">{{ shownRevision(asset).original.path.split('.').pop()?.toUpperCase() }}</span><p>{{ shownRevision(asset).original.path }}</p></div>
+            </div>
             <div class="resource-details">
               <fieldset v-if="isCoverAsset(asset)" class="resource-cover-position">
                 <legend>Cover focus and crops</legend>
@@ -974,18 +1017,27 @@ onUnmounted(() => {
                     <button type="button" class="resource-quiet" @click="setCoverPoint(50, 50)">Center</button>
                   </span>
                 </div>
+                <label class="resource-cover-framing">
+                  <span><strong>Framing</strong><output>{{ coverFramingText }}</output></span>
+                  <input type="range" min="-1" max="1" step="0.05" :value="coverFraming" aria-label="Cover framing: show full image, fill crop, or close-up" @input="setCoverFraming" />
+                  <span class="resource-cover-framing-scale" aria-hidden="true"><span>Show full image</span><span>Fill</span><span>Close-up</span></span>
+                </label>
                 <div class="resource-cover-crops" aria-label="Crop previews">
                   <figure>
-                    <div class="resource-cover-crop resource-cover-crop-card">
-                      <img :src="previewHref(imageHref(asset))" alt="" :style="{ objectPosition: `${coverAxis(0)}% ${coverAxis(1)}%` }" />
-                      <span aria-hidden="true" />
+                    <div class="resource-cover-crop resource-cover-crop-card roadmap-cover-media" :style="coverStyle">
+                      <img class="roadmap-cover-backdrop" :src="previewHref(imageHref(asset))" alt="" />
+                      <img class="roadmap-cover-fill" :src="previewHref(imageHref(asset))" alt="" />
+                      <img class="roadmap-cover-reveal" :src="previewHref(imageHref(asset))" alt="" />
+                      <span class="resource-cover-crop-treatment" aria-hidden="true" />
                     </div>
                     <figcaption>Roadmap card</figcaption>
                   </figure>
                   <figure>
-                    <div class="resource-cover-crop resource-cover-crop-reader">
-                      <img :src="previewHref(imageHref(asset))" alt="" :style="{ objectPosition: `${coverAxis(0)}% ${coverAxis(1)}%` }" />
-                      <span aria-hidden="true" />
+                    <div class="resource-cover-crop resource-cover-crop-reader roadmap-cover-media" :style="coverStyle">
+                      <img class="roadmap-cover-backdrop" :src="previewHref(imageHref(asset))" alt="" />
+                      <img class="roadmap-cover-fill" :src="previewHref(imageHref(asset))" alt="" />
+                      <img class="roadmap-cover-reveal" :src="previewHref(imageHref(asset))" alt="" />
+                      <span class="resource-cover-crop-treatment" aria-hidden="true" />
                     </div>
                     <figcaption>Reader header</figcaption>
                   </figure>
@@ -1018,9 +1070,13 @@ onUnmounted(() => {
                 <small v-else-if="asset.placements.length">Remove its uses in this item first.</small>
               </div>
             </footer>
+            </div>
+          </aside>
           </div>
         </article>
-          <article v-for="link in external" :key="link.start" class="resource-row">
+        </div>
+          <div v-if="external.length" class="resource-link-list" aria-label="Attached links">
+          <article v-for="link in external" :key="link.start" class="resource-row resource-row-link">
             <div class="resource-row-main">
               <ImageThumbnail v-if="link.image || isImageResource(link.href)" :href="link.href" />
               <span v-else class="resource-kind">LINK</span>
@@ -1028,12 +1084,19 @@ onUnmounted(() => {
               <a :href="resourceHref(link.href)" target="_blank" rel="noopener">Open</a>
               <button type="button" :aria-expanded="expanded === `link-${link.start}`" @click="toggleResource(`link-${link.start}`)">{{ expanded === `link-${link.start}` ? 'Done' : 'Edit' }}</button>
             </div>
-            <div v-if="expanded === `link-${link.start}`" class="resource-link-editor">
+            <div v-if="expanded === `link-${link.start}`" class="resource-inspector-shell">
+              <button type="button" class="resource-inspector-backdrop" aria-label="Close link details" @click="expanded = null" />
+              <aside class="resource-inspector resource-link-inspector" role="dialog" aria-modal="true" :aria-label="`Edit ${link.label || 'link'}`" tabindex="-1">
+              <header class="resource-inspector-header"><div><p class="roadmap-label">Link details</p><h3>{{ link.label || 'Untitled link' }}</h3></div><button type="button" class="resource-quiet" @click="expanded = null">Done</button></header>
+              <div class="resource-link-editor">
               <label>Display name<input :value="link.label" @change="editExternal(link.start, 'label', ($event.target as HTMLInputElement).value)" /></label>
               <label>Link<input :value="link.href" @change="editExternal(link.start, 'href', ($event.target as HTMLInputElement).value)" /></label>
               <button type="button" class="resource-quiet resource-danger" @click="removePlacement(link, $event); expanded = null">Remove</button>
+              </div>
+              </aside>
             </div>
           </article>
+          </div>
       </section>
     </fieldset>
     <ConfirmAction
@@ -1206,15 +1269,21 @@ onUnmounted(() => {
 .resource-cover-position-row { display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem; }
 .resource-cover-position-row output { color:var(--color-text-primary-default);font-size:.76rem;font-weight:600;font-variant-numeric:tabular-nums; }
 .resource-cover-position-row > span { display:flex;gap:.35rem; }
+.resource-cover-framing { display:grid;gap:.45rem;padding:.65rem 0 .15rem;border-top:1px solid var(--color-border-subtle-default); }
+.resource-cover-framing > span:first-child { display:flex;align-items:center;justify-content:space-between;gap:.75rem;font-size:.78rem; }
+.resource-cover-framing output { color:var(--color-text-subtle-default);font-weight:600; }
+.resource-cover-framing input { width:100%;height:22px;margin:0;padding:0;accent-color:var(--color-accent-brand-default);cursor:pointer; }
+.resource-cover-framing-scale { display:grid;grid-template-columns:1fr 1fr 1fr;color:var(--color-text-subtle-default);font-size:.66rem;line-height:1.25; }
+.resource-cover-framing-scale span:nth-child(2) { text-align:center; }
+.resource-cover-framing-scale span:last-child { text-align:right; }
 .resource-cover-crops { display:grid;grid-template-columns:minmax(0,.72fr) minmax(0,1.28fr);gap:.65rem;align-items:end; }
 .resource-cover-crops figure { min-width:0;margin:0; }
 .resource-cover-crops figcaption { margin-top:.35rem;color:var(--color-text-subtle-default);font-size:.7rem;font-weight:600; }
 .resource-cover-crop { position:relative;overflow:hidden;border:1px solid var(--color-border-subtle-default);border-radius:8px;background:var(--color-surface-subtle-default); }
-.resource-cover-crop img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover; }
 .resource-cover-crop-card { aspect-ratio:1.12 / 1; }
 .resource-cover-crop-reader { aspect-ratio:3.2 / 1; }
-.resource-cover-crop-card span { position:absolute;left:6%;right:6%;bottom:6%;height:45%;border:1px solid rgb(255 255 255 / 42%);border-radius:6px;background:color-mix(in srgb,var(--color-card) 90%,transparent);box-shadow:0 4px 12px rgb(0 0 0 / 18%);backdrop-filter:blur(5px); }
-.resource-cover-crop-reader span { position:absolute;inset:42% 0 0;background:linear-gradient(to top,var(--color-card),color-mix(in srgb,var(--color-card) 72%,transparent),transparent); }
+.resource-cover-crop-card .resource-cover-crop-treatment { position:absolute;left:6%;right:6%;bottom:6%;height:45%;border:1px solid rgb(255 255 255 / 42%);border-radius:6px;background:color-mix(in srgb,var(--color-card) 90%,transparent);box-shadow:0 4px 12px rgb(0 0 0 / 18%);backdrop-filter:blur(5px); }
+.resource-cover-crop-reader .resource-cover-crop-treatment { position:absolute;inset:42% 0 0;background:linear-gradient(to top,var(--color-card),color-mix(in srgb,var(--color-card) 72%,transparent),transparent); }
 @media (max-width: 560px) {
   .resource-cover-crops { grid-template-columns:1fr; }
 }
@@ -1251,10 +1320,7 @@ onUnmounted(() => {
   width: 100px;
   accent-color: var(--color-accent-brand-default);
 }
-.resource-row {
-  padding: 0.8rem 0;
-  border-top: 1px solid var(--color-border-subtle-default);
-}
+.resource-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.75rem}.resource-link-list{display:grid;gap:.45rem;margin-top:.85rem}.resource-row{min-width:0;padding:.7rem;border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 76%,transparent);border-radius:12px;background:color-mix(in srgb,var(--color-card) 88%,var(--color-surface-subtle-default));transition:border-color 160ms ease,box-shadow 160ms ease,transform 160ms ease}.resource-row:hover{border-color:color-mix(in srgb,var(--color-accent-brand-default) 26%,var(--color-border-subtle-default));box-shadow:0 10px 24px rgb(0 0 0 / 7%);transform:translateY(-1px)}.resource-row-link{padding:.55rem .7rem}.resource-row-expanded{border-color:color-mix(in srgb,var(--color-accent-brand-default) 44%,var(--color-border-subtle-default))}
 .resource-row-main > div {
   flex: 1;
   min-width: 0;
@@ -1286,14 +1352,15 @@ onUnmounted(() => {
   text-decoration: underline;
 }
 /* The shelf reads as a list; only the selected resource opens an inspector. */
-.resource-shelf { padding: 1rem 1rem .25rem; }
+.resource-shelf { padding: 1rem; }
 .resource-count { color: var(--color-text-subtle-default); font-size: .8rem; margin-left: .35rem; font-variant-numeric: tabular-nums; }
-.resource-row-main { flex-wrap: nowrap; gap: .75rem; }
-.resource-row-main :deep(.image-thumbnail), .resource-kind { width: 48px; height: 48px; flex: 0 0 48px; display: grid; place-items: center; }
+.resource-row-main { flex-wrap: nowrap; gap: .6rem; align-items:center; }
+.resource-row-main :deep(.image-thumbnail), .resource-kind { width: 58px; height: 52px; flex: 0 0 58px; display: grid; place-items: center; border-radius:8px; }
+.resource-row-image .resource-row-main :deep(.image-thumbnail){width:84px;height:64px;flex-basis:84px;background:var(--color-surface-subtle-default)}
 .resource-row-main .resource-identity { min-width: 0; }
 .resource-controls .resource-quiet { border-color: transparent; background: transparent; }
 .resource-controls :is(button, input, select):focus-visible { outline: 2px solid var(--color-accent-brand-default); outline-offset: 3px; }
-.resource-inspector { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.25rem 2rem; padding: 1rem 0 .25rem 3.75rem; }
+.resource-inspector-shell{position:fixed;inset:0;z-index:95;display:flex;justify-content:flex-end}.resource-inspector-backdrop{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;border:0!important;border-radius:0!important;background:rgb(8 10 14 / 58%)!important;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);cursor:default!important}.resource-inspector{position:relative;display:flex;width:min(680px,96vw);height:100%;flex-direction:column;overflow:hidden;border-left:1px solid var(--color-border-subtle-default);background:var(--color-card);box-shadow:-28px 0 68px rgb(0 0 0 / 32%);animation:resource-inspector-in 220ms cubic-bezier(.2,.8,.2,1)}.resource-inspector-header{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 1.15rem;border-bottom:1px solid var(--color-border-subtle-default)}.resource-inspector-header h3{margin:.2rem 0 0;font-size:1.05rem;font-weight:650;overflow-wrap:anywhere}.resource-inspector-scroll{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(220px,.88fr);gap:1rem;overflow-y:auto;padding:1rem}.resource-inspector-preview{grid-column:1/-1;display:grid;min-height:220px;max-height:42vh;place-items:center;overflow:hidden;border:1px solid var(--color-border-subtle-default);border-radius:14px;background:radial-gradient(circle at 50% 35%,color-mix(in srgb,var(--roadmap-product-accent,var(--color-accent-brand-default)) 12%,var(--color-surface-subtle-default)),var(--color-surface-subtle-default))}.resource-inspector-preview>img{display:block;width:100%;height:100%;min-height:220px;max-height:42vh;object-fit:contain}.resource-inspector-preview>div{text-align:center;color:var(--color-text-subtle-default)}.resource-inspector-preview .resource-kind{margin:0 auto .75rem}.resource-inspector-preview p{max-width:42ch;font-size:.78rem;overflow-wrap:anywhere}.resource-details{min-width:0}.resource-placements{min-width:0;padding:.85rem;border:1px solid var(--color-border-subtle-default);border-radius:12px;background:color-mix(in srgb,var(--color-card) 84%,var(--color-surface-subtle-default))}@keyframes resource-inspector-in{from{opacity:0;transform:translateX(24px)}}
 .resource-details { display: grid; gap: .7rem; align-content: start; }
 .resource-inspector label { max-width: none; }
 .resource-placements h4 { font-size: .8rem; font-weight: 500; margin-bottom: .5rem; }
@@ -1305,7 +1372,8 @@ onUnmounted(() => {
 .resource-delete { text-align: right; }
 .resource-controls .resource-danger { color: var(--color-feedback-error-text-independent-default); }
 .resource-link-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.resource-link-editor { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: .75rem; align-items: end; padding: 1rem 0 .25rem 3.75rem; }
+.resource-link-inspector{width:min(520px,96vw)}.resource-link-editor { display: grid; gap: .9rem; align-items: end; padding: 1rem; }
+.resource-skeleton-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.75rem}.resource-skeleton-grid>span{display:grid;grid-template-columns:64px 1fr;gap:.7rem;padding:.7rem;border:1px solid var(--color-border-subtle-default);border-radius:12px}.resource-skeleton-grid i,.resource-skeleton-grid b,.resource-skeleton-grid em{display:block;border-radius:7px;background:linear-gradient(100deg,var(--color-surface-subtle-default) 20%,color-mix(in srgb,var(--color-card) 65%,var(--color-surface-subtle-default)) 45%,var(--color-surface-subtle-default) 70%);background-size:220% 100%;animation:resource-shimmer 1.3s linear infinite}.resource-skeleton-grid i{grid-row:1/3;width:64px;height:52px}.resource-skeleton-grid b{height:13px}.resource-skeleton-grid em{height:10px;width:62%}@keyframes resource-shimmer{to{background-position:-220% 0}}
 .existing-resource-list { display:grid; gap:.4rem; max-height:min(28rem,50vh); overflow-y:auto; padding-right:.25rem; scrollbar-gutter:stable; }
 .existing-resource-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.4rem; align-items:stretch; }
 .resource-controls .existing-resource-choice { display: flex; width:100%; min-width:0; text-align: left; align-items: center; gap: .75rem; padding: .6rem; }
@@ -1326,7 +1394,7 @@ onUnmounted(() => {
 .resource-picker-tabs button:last-child { margin-left: auto; }
 .resource-picker form > button { justify-self: start; }
 @media (max-width: 640px) {
-  .resource-inspector { grid-template-columns: 1fr; padding-left: 0; gap: 1rem; }
+  .resource-grid{grid-template-columns:1fr}.resource-inspector{width:100vw}.resource-inspector-backdrop{display:none}.resource-inspector-scroll{grid-template-columns:1fr}.resource-inspector-preview{min-height:180px}.resource-inspector-preview>img{min-height:180px}
   .resource-row-main { gap: .4rem; flex-wrap: wrap; }
   .resource-row-main .resource-identity { flex-basis: calc(100% - 60px); }
   .resource-row-main > button:first-of-type, .resource-row-main > a { margin-left: auto; }
@@ -1337,6 +1405,8 @@ onUnmounted(() => {
   .existing-resource-row { grid-template-columns:1fr; }
   .resource-controls .existing-resource-open { justify-self:start; min-height:34px; }
 }
+@media(prefers-reduced-motion:reduce){.resource-row{transition:none}.resource-row:hover{transform:none}.resource-inspector{animation:none}.resource-skeleton-grid :is(i,b,em){animation:none}}
+@media(prefers-reduced-transparency:reduce){.resource-inspector-backdrop{-webkit-backdrop-filter:none;backdrop-filter:none}}
 @media (pointer: coarse) {
   .resource-controls button, .resource-picker button {
     min-height: 44px;

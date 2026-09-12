@@ -10,6 +10,11 @@ const emit = defineEmits<{ (e: 'apply', view: SavedView): void }>();
 type ViewEntry = { key: string; view: SavedView };
 const views = ref<SavedView[]>([]);
 const entries = computed<ViewEntry[]>(() => views.value.map(view => ({ key: `saved:${view.name}`, view })));
+const viewQuery = ref('');
+const visibleEntries = computed(() => {
+  const query = viewQuery.value.trim().toLocaleLowerCase();
+  return query ? entries.value.filter(entry => `${entry.view.name} ${summary(entry.view)}`.toLocaleLowerCase().includes(query)) : entries.value;
+});
 const selectedKey = ref<string | null>(null);
 const selected = computed(() => entries.value.find(entry => entry.key === selectedKey.value)
   ?? entries.value.find(entry => sameViewSelection(entry.view, props)));
@@ -21,6 +26,7 @@ const name = ref('');
 const error = ref('');
 const message = ref('');
 const removed = ref<{ view: SavedView; index: number; wasSelected: boolean } | null>(null);
+let messageTimer: ReturnType<typeof setTimeout> | undefined;
 const root = ref<HTMLElement>();
 const panel = ref<HTMLElement>();
 const opensAbove = ref(false);
@@ -36,6 +42,14 @@ const editorView = computed(() => mode.value === 'rename' ? views.value.find(vie
 watch(() => [props.filters, props.horizons, props.sort, props.reverseLanes, props.showCovers], () => {
   if (!removed.value) message.value = '';
 }, { deep: true });
+watch(message, (value) => {
+  clearTimeout(messageTimer);
+  if (!value) return;
+  messageTimer = setTimeout(() => {
+    message.value = '';
+    removed.value = null;
+  }, removed.value ? 5200 : 3200);
+});
 
 function summary(view: Pick<SavedView, 'filters' | 'horizons' | 'sort' | 'reverseLanes' | 'showCovers'>) {
   const { filters, horizons, sort, reverseLanes, showCovers } = view;
@@ -67,6 +81,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onOutsidePointer);
   window.removeEventListener('storage', onStorage);
   window.removeEventListener('resize', positionPanel);
+  clearTimeout(messageTimer);
 });
 
 function onStorage(event: StorageEvent) {
@@ -210,8 +225,9 @@ function undo() {
     <div class="view-toolbar">
       <button ref="trigger" type="button" class="view-trigger roadmap-action" :aria-expanded="open" :aria-controls="panelId"
         :aria-label="compact ? 'View options and saved views' : `Choose view: ${selected?.view.name ?? 'Current view'}${modified ? ', modified' : ''}`" @click="toggle">
-        <PhBookmarkSimple v-if="!compact" :size="16" aria-hidden="true" />
-        <span class="view-current-name">{{ compact ? 'View' : selected?.view.name ?? 'Current view' }}</span>
+        <PhBookmarkSimple :size="16" aria-hidden="true" />
+        <span class="view-current-name">{{ compact ? selected?.view.name ?? 'View' : selected?.view.name ?? 'Current view' }}</span>
+        <span v-if="compact && modified" class="view-modified-dot" aria-label="View has unsaved changes" />
         <PhCaretDown :size="12" aria-hidden="true" class="view-caret" :class="{ 'is-open': open }" />
       </button>
       <span v-if="modified && !compact" class="view-modified">Modified</span>
@@ -235,9 +251,11 @@ function undo() {
           <button type="button" class="view-text-action view-save" @click="update">Save changes</button>
         </div>
         <div class="view-list">
-          <div class="view-section-label"><span>Saved in this browser</span></div>
-          <p v-if="!views.length" class="view-empty">Save a combination of filters to come back to it.</p>
-          <div v-for="entry in entries" :key="entry.key" class="view-saved-row">
+          <div class="view-section-label"><span>{{ views.length ? `Saved in this browser · ${views.length} view${views.length === 1 ? '' : 's'}` : 'Saved views' }}</span></div>
+          <input v-if="views.length > 4" v-model="viewQuery" class="view-search" type="search" autocomplete="off" placeholder="Find a view…" aria-label="Find a saved view" />
+          <p v-if="!views.length" class="view-empty">Save this setup to open it again.</p>
+          <p v-else-if="!visibleEntries.length" class="view-empty">No saved views match.</p>
+          <div v-for="entry in visibleEntries" :key="entry.key" class="view-saved-row">
             <button type="button" class="view-option" :aria-pressed="selected?.key === entry.key" @click="apply(entry)">
               <span class="view-option-copy"><span>{{ entry.view.name }}</span><small>{{ summary(entry.view) }}</small></span>
               <PhCheck v-if="selected?.key === entry.key" :size="16" aria-hidden="true" />
@@ -253,7 +271,7 @@ function undo() {
         <label :for="inputId">View name</label>
         <input :id="inputId" ref="nameInput" v-model="name" maxlength="60" autocomplete="off" :aria-invalid="!!error" :aria-describedby="error ? errorId : undefined" @input="error = ''" />
         <p v-if="editorView" class="view-scope">{{ summary(editorView) }}</p>
-        <p class="view-help">{{ mode === 'create' ? 'Keeps your filters, layout, grouping and date window.' : 'Renaming keeps this view’s saved filters and layout.' }} Saved in this browser; not synced across devices.</p>
+        <p class="view-help">{{ mode === 'create' ? 'Keeps your filters, layout, grouping and date window.' : 'Renaming keeps this view’s saved filters and layout.' }} Views stay in this browser. Share snapshots copy the current setup.</p>
         <p v-if="error" :id="errorId" role="alert" class="view-error">{{ error }}</p>
         <div class="view-form-actions">
           <button v-if="mode === 'rename'" type="button" class="view-text-action view-remove" @click="remove">Remove view</button>
@@ -274,7 +292,7 @@ function undo() {
 <style scoped>
 .saved-views.compact { margin-bottom: 0; flex-shrink: 0; }
 .compact .view-popover { width: min(380px, calc(100vw - 32px)); left: auto; right: 0; }
-.compact .view-feedback { position: absolute; right: 0; top: 100%; width: 260px; padding: .5rem; background: var(--color-card); z-index: 31; }
+.view-feedback { position:fixed;right:1.5rem;bottom:1.5rem;top:auto;width:auto;max-width:min(360px,calc(100vw - 2rem));padding:.75rem 1rem;border:1px solid var(--roadmap-glass-border);border-radius:9px;background:var(--color-card);box-shadow:var(--roadmap-warm-shadow),0 12px 32px rgb(0 0 0 / 18%);z-index:50; }
 .view-current-status { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .5rem 1rem; }
 .view-current-status > span { flex-basis: 100%; color: var(--roadmap-ink-muted); }
 .saved-views { position: relative; margin-bottom: 1rem; font-size: .8125rem; color: var(--roadmap-ink); }
@@ -285,6 +303,7 @@ function undo() {
 .view-caret { margin-left: .5rem; }
 .view-caret.is-open { transform: rotate(180deg); }
 .view-modified { color: var(--roadmap-ink-muted); font-size: .7rem; }
+.view-modified-dot { width:.42rem;height:.42rem;flex:0 0 auto;border-radius:999px;background:var(--color-accent-brand-default); }
 .view-actions { display: flex; align-items: center; gap: .65rem; }
 .view-text-action { display: inline-flex; justify-content: center; align-items: center; gap: .3rem; min-height: 40px; padding: .4rem .25rem; font-size: .75rem; font-weight: 500; color: var(--roadmap-ink-muted); cursor: pointer; white-space: nowrap; }
 .view-save { color: var(--color-accent-brand-default); }
@@ -293,7 +312,7 @@ function undo() {
 .view-popover-heading { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; padding: .6rem .75rem .4rem 1rem; }
 .view-popover-heading h2 { margin: 0; font-size: .875rem; font-weight: 600; }
 .view-icon-action { display: inline-grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 5px; color: var(--roadmap-ink-muted); cursor: pointer; }
-.view-list { min-height: 0; max-height: min(360px, 48dvh); overflow-y: auto; overscroll-behavior: contain; padding: 0 .5rem .5rem; scrollbar-width: thin; }
+.view-list { min-height: 96px; flex:1 1 auto; max-height:none; overflow-y:auto; overscroll-behavior:contain; padding:0 .5rem .5rem; scrollbar-width:thin; }
 .view-section-label { margin: .5rem .5rem .35rem; font-size: .68rem; font-weight: 500; color: var(--roadmap-ink-muted); }
 .view-option { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex: 1; width: 100%; min-width: 0; text-align: left; padding: .7rem .5rem; border-radius: 6px; cursor: pointer; }
 .view-option[aria-pressed='true'] { background: var(--color-surface-subtle-default); }
@@ -303,6 +322,8 @@ function undo() {
 .view-option-copy small { color: var(--roadmap-ink-muted); font-size: .68rem; line-height: 1.5; }
 .view-saved-row { display: flex; align-items: center; gap: .25rem; }
 .view-empty { color: var(--roadmap-ink-muted); font-size: .75rem; line-height: 1.6; padding: .3rem .5rem .5rem; }
+.view-search { width:calc(100% - 1rem);min-height:36px;margin:.15rem .5rem .45rem;padding:.45rem .65rem;border:1px solid var(--roadmap-glass-border);border-radius:7px;background:var(--color-background);color:var(--roadmap-ink);font:inherit;outline:none; }
+.view-search:focus { border-color:var(--color-accent-brand-default); }
 .view-popover-footer { flex-shrink: 0; padding: .3rem 1rem; border-top: 1px solid var(--roadmap-glass-border); }
 .view-form { overflow-y: auto; overscroll-behavior: contain; padding: .3rem 1rem 1rem; }
 .view-form label { display: block; font-size: .75rem; font-weight: 500; margin-bottom: .5rem; }
@@ -314,7 +335,9 @@ function undo() {
 .view-submit { min-height: 40px; border-radius: 6px; padding: .5rem .8rem; font-size: .75rem; font-weight: 500; cursor: pointer; }
 .view-remove, .view-error { color: var(--color-data-red-border-primary-default); }
 .view-error { margin-top: .75rem; font-size: .75rem; line-height: 1.5; }
-.view-feedback { display: flex; align-items: center; gap: .75rem; margin-top: .4rem; color: var(--roadmap-ink-muted); font-size: .75rem; }
+.view-feedback { display:flex;align-items:center;gap:.75rem;margin-top:.4rem;color:var(--roadmap-ink);font-size:.78rem;animation:view-toast-in 160ms ease both; }
+.view-feedback .view-text-action { min-height:32px;color:var(--color-accent-brand-default); }
+@keyframes view-toast-in { from { opacity:0;transform:translateY(6px); } }
 .view-feedback .view-text-action { min-height: 28px; color: var(--color-accent-brand-default); }
 @media (hover: hover) and (pointer: fine) {
   .view-trigger:hover, .view-icon-action:hover, .view-option:hover { background: var(--color-surface-subtle-default); }

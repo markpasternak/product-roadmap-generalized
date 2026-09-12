@@ -46,9 +46,9 @@ async function setup(body = "## What ships\n\nA clear story\n") {
     defineComponent({
       components: { ResourceEditor },
       setup() {
-        return { body: ref(body), cover: ref(''), coverPosition: ref('') };
+        return { body: ref(body), cover: ref(''), coverPosition: ref(''), coverFraming: ref('') };
       },
-      template: '<ResourceEditor v-model:body="body" v-model:cover="cover" v-model:cover-position="coverPosition" visibility="Internal" item-id="TEST-001"><textarea :value="body" /></ResourceEditor>',
+      template: '<ResourceEditor v-model:body="body" v-model:cover="cover" v-model:cover-position="coverPosition" v-model:cover-framing="coverFraming" visibility="Internal" item-id="TEST-001"><textarea :value="body" /></ResourceEditor>',
     }),
   );
   await flushPromises();
@@ -270,12 +270,17 @@ describe('resource management', () => {
     await w.findAll('button').find(button => button.text() === 'Use as cover')!.trigger('click');
     expect((w.vm as any).cover).toBe('../../assets/ast_one/rev_one/cover.png');
     expect((w.vm as any).coverPosition).toBe('50% 50%');
+    expect((w.vm as any).coverFraming).toBe('0');
     const focus = w.get('.resource-cover-focus-map');
     await focus.trigger('keydown', { key: 'ArrowUp' });
     expect((w.vm as any).coverPosition).toBe('50% 45%');
+    await w.get('input[aria-label^="Cover framing"]').setValue('-0.75');
+    expect((w.vm as any).coverFraming).toBe('-0.75');
+    expect(w.get('.resource-cover-framing output').text()).toBe('Reveal more');
     expect(w.findAll('.resource-cover-crop')).toHaveLength(2);
     await w.findAll('button').find(button => button.text() === 'Remove cover')!.trigger('click');
     expect((w.vm as any).cover).toBe('');
+    expect((w.vm as any).coverFraming).toBe('');
   });
 
 });

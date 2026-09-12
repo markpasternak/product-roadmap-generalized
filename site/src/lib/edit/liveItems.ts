@@ -75,6 +75,7 @@ export function itemsFromApi(apiItems: ApiItem[], base: string): ItemVM[] {
       endDate: fm.endDate,
       cover: fm.cover || null,
       coverPosition: fm.coverPosition || null,
+      coverFraming: fm.coverFraming === undefined || fm.coverFraming === '' ? null : Number(fm.coverFraming),
       horizon: fm.horizon ?? '',
       stage: fm.stage ?? '',
       owner: IS_PUBLIC ? '' : (fm.owner ?? ''),

@@ -55,11 +55,13 @@ import { useEditStore } from '../../lib/edit/store';
 import { validateChangeset, type FieldError } from '../../lib/edit/validate';
 import { projectBoard } from '../../lib/edit/project';
 import { fetchDeployedCommit, watchForNewVersion } from '../../lib/edit/version';
-import { resourceTransferCount } from '../../lib/edit/resourceClient';
+import { listResources, resourceTransferCount } from '../../lib/edit/resourceClient';
 import PublicationConflicts from '../edit/PublicationConflicts.vue';
 import type { ApiItem } from '../../lib/edit/client';
 import DraftConflicts from '../edit/DraftConflicts.vue';
 import SaveStatus from '../edit/SaveStatus.vue';
+import DraftRecovery from '../edit/DraftRecovery.vue';
+import { fieldLabel, type ChangeSummary } from '../../lib/edit/fieldLabels';
 import { useDraftSync } from '../../composables/useDraftSync';
 import PresenceIndicator from './PresenceIndicator.vue';
 import { useBackend } from '../../composables/useBackend';
@@ -77,7 +79,8 @@ import {
 
 // Lazy: keeps the ~270KB md-editor (SectionEditor → MarkdownEditor) out of the initial
 // bundle — only fetched once a signed-in editor actually opens the full-screen editor.
-const ItemEditor = defineAsyncComponent(() => import('../edit/ItemEditor.vue'));
+const loadItemEditor = () => import('../edit/ItemEditor.vue');
+const ItemEditor = defineAsyncComponent(loadItemEditor);
 // Lazy for the same reason as ShareDialog/ItemEditor: this pulls in the AI client and is
 // only ever needed once an editor with AI available opens it.
 const NewWithAiDialog = defineAsyncComponent(() => import('../edit/NewWithAiDialog.vue'));
@@ -240,6 +243,14 @@ function signIn() {
 
 const editStore = useEditStore();
 const draftSync = useDraftSync(editStore);
+const recoveryOpen = ref(false);
+const validationIssues = ref<FieldError[]>([]);
+const focusRequest = ref<{ field: string; sequence: number }>();
+function reviewChange(id: string, field?: string) {
+  openEditor(id);
+  focusRequest.value = { field: field ?? 'title', sequence: (focusRequest.value?.sequence ?? 0) + 1 };
+}
+const namedValidationIssues = computed(() => validationIssues.value.map(issue => ({ ...issue, title: displayNameFor(issue.id, editStore.changeset()) })));
 
 const syncPending = ref(false);
 const syncResult = ref<{ sha: string } | null>(null);
@@ -507,7 +518,9 @@ function formatValidationErrors(errors: FieldError[], cs: ReturnType<typeof edit
 
 async function acceptPublication(res: Awaited<ReturnType<typeof sync>>, sent: any) {
   // Read the exact committed tree before advancing any item's editing base.
-  const api = await fetchItems(res.sha || undefined);
+  const delta = Array.isArray(res.items);
+  const api = delta ? res.items! : await fetchItems(res.sha || undefined);
+  if (boardStopped) return;
   if (sent.created?.some((item: any) => !res.createdIds?.[item.id]))
     throw new Error('Publication receipt is missing created item IDs');
   const skippedNames = (res.skippedReorders ?? []).map((id) => byId.value.get(id)?.title ?? id);
@@ -520,9 +533,18 @@ async function acceptPublication(res: Awaited<ReturnType<typeof sync>>, sent: an
         item.content,
         sent.updated?.some((e: any) => e.id === item.id) || Object.values(res.createdIds ?? {}).includes(item.id),
       );
-  liveItems.value = itemsFromApi(api, props.base ?? '/');
-  rawBodies.value = new Map(api.map((i) => [i.id, i.body]));
-  baseShaMap.value = new Map(api.filter((i) => i.sha).map((i) => [i.id, i.sha!]));
+  if (delta) {
+    const removed = new Set<string>(res.deletedIds ?? sent.deletedIds ?? []);
+    const changed = new Set(api.map(item => item.id));
+    liveItems.value = [...liveItems.value.filter(item => !removed.has(item.id) && !changed.has(item.id)), ...itemsFromApi(api, props.base ?? '/')];
+    for (const id of removed) { rawBodies.value.delete(id); baseShaMap.value.delete(id); }
+    for (const item of api) { rawBodies.value.set(item.id, item.body); if (item.sha) baseShaMap.value.set(item.id, item.sha); }
+  } else {
+    liveItems.value = itemsFromApi(api, props.base ?? '/');
+    rawBodies.value = new Map(api.map((i) => [i.id, i.body]));
+    baseShaMap.value = new Map(api.filter((i) => i.sha).map((i) => [i.id, i.sha!]));
+  }
+  validationIssues.value = [];
   if (editingId.value && res.createdIds?.[editingId.value]) editingId.value = res.createdIds[editingId.value]!;
   syncedJson.value = JSON.stringify(sent);
   syncError.value = null;
@@ -544,6 +566,8 @@ async function doSync() {
     return;
   }
   if (syncPending.value || draftSync.conflict.value || resourceTransferCount.value) return;
+  clearTimeout(publicationRecoveryTimer);
+  publicationRecoveryAttempt = 0;
   if (!baseVersionLoaded.value) {
     syncError.value = 'Still loading your workspace. Try again in a moment.';
     return;
@@ -551,24 +575,21 @@ async function doSync() {
   sessionExpired.value = false;
   const existing = editStore.snapshot().requestPayload;
   const candidate = existing ?? editStore.changeset(baseShaMap.value);
-  const errors = validateChangeset(candidate);
-  for (const item of existing ? [] : projected.value) {
-    if (candidate.updated.some((u: {id:string}) => u.id === item.id) || candidate.created.some((u: {id:string}) => u.id === item.id)) {
-      if (item.startDate && item.endDate && item.endDate < item.startDate)
-        errors.push({ id:item.id, field:'endDate', message:'Planned end must be on or after planned start' });
-    }
-  }
+  const errors = publicationValidation(candidate, !!existing);
   if (errors.length) {
+    validationIssues.value = errors;
     interruptKind.value = 'validationBlocked';
     syncError.value = `Review these fields: ${formatValidationErrors(errors, candidate)}`;
     return;
   }
   const sent = editStore.preparePublication(baseShaMap.value);
+  validationIssues.value = [];
   syncPending.value = true;
   syncError.value = null;
   interruptKind.value = null;
   try {
     const res = await sync(sent);
+    if (boardStopped) return;
     if (res.ok) await acceptPublication(res, sent);
     else if (res.authError) {
       editStore.releasePublication();
@@ -590,13 +611,43 @@ async function doSync() {
       if (recovered.ok) await acceptPublication(recovered, sent);
       else
         syncError.value =
-          'Could not confirm publication. Your draft is kept. Retry safely to check and finish this publication.';
+          'Could not confirm publication yet. Your draft is kept; checking automatically. Retrying is safe.';
     } catch {
-      syncError.value = 'Connection interrupted. Your draft is kept. Retrying this publication is safe.';
+      syncError.value = 'Connection interrupted. Your draft is kept; checking publication automatically. Retrying is safe.';
     }
   } finally {
     syncPending.value = false;
+    schedulePublicationRecovery();
   }
+}
+let publicationRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
+let publicationRecoveryAttempt = 0;
+let boardStopped = false;
+function schedulePublicationRecovery() {
+  clearTimeout(publicationRecoveryTimer);
+  if (boardStopped || !editStore.snapshot().requestPayload || sessionExpired.value || publicationRecoveryAttempt >= 12) return;
+  publicationRecoveryTimer = setTimeout(async () => {
+    if (syncPending.value || boardStopped) return;
+    const sent = editStore.snapshot().requestPayload;
+    if (!sent) return;
+    publicationRecoveryAttempt++;
+    syncPending.value = true;
+    try {
+      const result = await publicationStatus(sent.requestId);
+      if (boardStopped) return;
+      if (result.ok) { await acceptPublication(result, sent); publicationRecoveryAttempt = 0; }
+      else if (result.authError) {
+        sessionExpired.value = true;
+        syncError.value = 'Sign in again to confirm publication. Your draft is kept.';
+      }
+      else if (result.state === 'conflict' || result.state === 'invalid') {
+        editStore.releasePublication();
+        if (result.conflict?.length) { conflictIds.value = result.conflict; conflictsOpen.value = true; }
+        syncError.value = result.errors?.join(' · ') || 'Review overlapping changes before publishing.';
+      }
+    } catch { /* Keep the same receipt and retry status, never submit a new publication. */ }
+    finally { syncPending.value = false; schedulePublicationRecovery(); }
+  }, Math.min(2000 * (publicationRecoveryAttempt + 1), 10000));
 }
 const draftConflictOpen = ref(false);
 watch(draftSync.conflict, (value) => {
@@ -723,6 +774,13 @@ const rawBodies = ref<Map<string, string>>(new Map());
 // base-version map on reload" convergence requirement — no extra bookkeeping needed here.
 const baseShaMap = ref<Map<string, string>>(new Map());
 const baseVersionLoaded = ref(false);
+const workspaceError = ref(false);
+const restoringCommit = ref<string | null>(null);
+const publishBlockedReason = computed(() => draftSync.conflict.value ? 'Resolve overlapping draft changes to publish.'
+  : conflictIds.value.length ? 'Review the conflicting items to publish.'
+    : resourceTransferCount.value ? 'Finish or cancel file uploads to publish.'
+      : !baseVersionLoaded.value ? workspaceError.value ? 'Could not load your workspace. Your draft is kept.' : 'Loading the latest item versions…'
+        : '');
 let rawBodiesRequested = false;
 // Shared by both the edit-mode-entry watcher below and the U10 (R11) view-mode mount check —
 // the one authed call that fetches raw bodies + base shas, and re-reconciles the draft with
@@ -731,8 +789,14 @@ let rawBodiesRequested = false;
 async function loadRawBodies() {
   if (rawBodiesRequested) return;
   rawBodiesRequested = true;
+  workspaceError.value = false;
   try {
-    const items = (await fetchItems()) as { id: string; body: string; sha?: string }[];
+    const items = restoringCommit.value ? await fetchItems(restoringCommit.value) : await fetchItems();
+    if (boardStopped) return;
+    if (restoringCommit.value) {
+      liveItems.value = itemsFromApi(items, props.base ?? '/');
+      restoringCommit.value = null;
+    }
     rawBodies.value = new Map(items.map((it) => [it.id, it.body]));
     baseShaMap.value = new Map(
       items.filter((it): it is { id: string; body: string; sha: string } => !!it.sha).map((it) => [it.id, it.sha]),
@@ -747,6 +811,7 @@ async function loadRawBodies() {
       if (!editStore.snapshot().requestPayload) editStore.reconcile(liveItems.value, rawBodies.value);
     }
   } catch {
+    workspaceError.value = true;
     // Degrade gracefully for the body-editor fallback (DetailDrawer falls back to its
     // parsed-sections reconstruction) — but baseVersionLoaded deliberately stays false here:
     // R1 is fail-closed, so doSync keeps refusing to send updates/deletes until a later
@@ -761,6 +826,10 @@ async function loadRawBodies() {
     // keep it true so a landed fetch isn't redundantly re-requested.
     rawBodiesRequested = false;
   }
+}
+async function retryWorkspace() {
+  await loadRawBodies();
+  if (baseVersionLoaded.value) syncError.value = null;
 }
 watch(editMode, (on) => {
   if (on) void loadRawBodies();
@@ -1184,6 +1253,7 @@ function onCardDuplicate(id: string) {
       endDate: src.endDate ?? '',
       cover: src.cover ?? '',
       coverPosition: src.coverPosition ?? '',
+      coverFraming: src.coverFraming == null ? '' : String(src.coverFraming),
       tags: (src.tags ?? []).join(', '),
     }),
   );
@@ -1198,22 +1268,39 @@ const byId = computed(() => new Map(liveItems.value.map((i) => [i.id, i])));
 // before clicking Sync, instead of taking the changeset (all ids/temp-ids) on faith.
 // Names resolve through `byId` (the published board) since the changeset itself only
 // ever carries ids.
-type ChangeSummary = {
-  edited: { id: string; title: string }[];
-  created: { title: string; product: string }[];
-  deleted: { id: string; title: string }[];
-  reorderLanes: number;
-  resources: number;
-};
 const changeSummary = computed<ChangeSummary>(() => {
   const cs = editStore.changeset();
   return {
-    edited: cs.updated.map((u) => ({ id: u.id, title: byId.value.get(u.id)?.title ?? u.id })),
-    created: cs.created.map((c) => ({ title: c.title, product: c.product })),
+    edited: cs.updated.map((u) => ({ id: u.id, title: byId.value.get(u.id)?.title ?? u.id,
+      changes: [
+        ...Object.entries(u.frontmatter).map(([key, after]) => ({ label: fieldLabel(key), before: String((byId.value.get(u.id) as unknown as Record<string, unknown>)?.[key] ?? ''), after })),
+        ...(u.bodySet ? [{ label: 'Write-up', before: rawBodies.value.get(u.id) ?? '', after: u.body }] : []),
+      ],
+    })),
+    created: cs.created.map((c) => ({ id: c.id, title: c.title })),
     deleted: cs.deletedIds.map((id) => ({ id, title: byId.value.get(id)?.title ?? id })),
     resources: cs.assets.attach.length + cs.assets.update.length,
     reorderLanes: Object.values(cs.reorder).reduce((n, lanes) => n + Object.keys(lanes).length, 0),
   };
+});
+function publicationValidation(candidate: ReturnType<typeof editStore.changeset>, frozen = false): FieldError[] {
+  const errors = validateChangeset(candidate);
+  if (!frozen) {
+    const changed = new Set([...candidate.updated, ...candidate.created].map(item => item.id));
+    for (const item of projected.value) {
+      if (changed.has(item.id) && item.startDate && item.endDate && item.endDate < item.startDate)
+        errors.push({ id: item.id, field: 'endDate', message: 'Planned end must be on or after planned start' });
+    }
+  }
+  return errors;
+}
+watch(editStore.revision, () => {
+  if (!validationIssues.value.length || editStore.snapshot().requestPayload) return;
+  validationIssues.value = publicationValidation(editStore.changeset(baseShaMap.value));
+  if (!validationIssues.value.length && interruptKind.value === 'validationBlocked') {
+    interruptKind.value = null;
+    syncError.value = null;
+  }
 });
 
 // Real tag suggestions for the editor's TagInput reuse-autocomplete, drawn from every
@@ -1913,6 +2000,8 @@ onMounted(async () => {
   const meRes = await me();
   canEdit.value = meRes.editor;
   if (canEdit.value) {
+    void loadItemEditor();
+    void listResources().catch(() => {});
     editStore.activate(meRes.login);
     try { dismissedPublication.value = sessionStorage.getItem(`${editStore.recoveryKey()}:publication-notice`) ?? ''; } catch {}
     await draftSync.start(meRes.login);
@@ -1922,7 +2011,12 @@ onMounted(async () => {
   // an edit whose value now matches, a delete that's gone), so a stale "new"/"edited" card
   // never reappears after a reload, whether that's a plain browser refresh or the in-app
   // Reload button (see reloadToLatest).
-  editStore.reconcile(liveItems.value);
+  if (canEdit.value && editStore.committedSha.value) {
+    restoringCommit.value = editStore.committedSha.value;
+    await loadRawBodies();
+  }
+  // A stale deployed page must never reconcile away work on newly committed items.
+  if (!restoringCommit.value) editStore.reconcile(liveItems.value);
   // R5 (KTD4): a committed-but-not-yet-live sha survives a reload during the build window —
   // resume "awaiting build"/"building"/etc. rather than showing a phantom "unsynced" or
   // "clean". `committedSnapshot` seeds `syncedJson` too, so `unsynced` (which compares the
@@ -1972,6 +2066,7 @@ onMounted(async () => {
     } catch {
       /* retry remains available */
     }
+    schedulePublicationRecovery();
   }
   // U9: only real editors (who might have a draft worth preserving) need to know a
   // fresher build has landed.
@@ -1981,6 +2076,8 @@ onMounted(async () => {
     });
 });
 onUnmounted(() => {
+  boardStopped = true;
+  clearTimeout(publicationRecoveryTimer);
   removeTitleTooltips?.();
   document.removeEventListener('fullscreenchange', onFsChange);
   document.removeEventListener('keydown', onSheetKey);
@@ -2044,7 +2141,10 @@ const editActionBtn =
     class="board-root"
     :data-ready="ready"
     :data-editing="canEdit && editMode ? 'true' : undefined"
-    :class="isFull ? 'bg-background overflow-y-auto p-6' : ''"
+    :class="[
+      isFull ? 'bg-background overflow-y-auto p-6' : '',
+      { 'board-presentation': present },
+    ]"
   >
     <p class="sr-only" role="status" aria-live="polite">{{ moveAnnouncement }}</p>
     <div
@@ -2169,17 +2269,22 @@ const editActionBtn =
         <div class="min-w-0 flex-1">
           <div v-if="!present" class="board-toolbar compact-toolbar mb-3 flex flex-wrap items-center">
             <div class="board-product">
+              <span
+                class="board-product-mark"
+                :style="{ background: filters.product ? productColor[filters.product as keyof typeof productColor] : 'var(--color-accent-brand-default)' }"
+                aria-hidden="true"
+              />
               <Select :model-value="filters.product ?? ''" @update:model-value="filters.product = $event || null"
                 :options="[{ value: '', label: 'All products' }, ...PRODUCTS.map(product => ({ value: product, label: product }))]"
                 aria-label="Filter by product" />
-              <span role="status" aria-live="polite">{{ focused.length }} items</span>
+              <span role="status" aria-live="polite">{{ focused.length }} initiatives</span>
             </div>
             <div class="roadmap-layout-switch" role="group" aria-label="Roadmap layout">
               <button type="button" :aria-pressed="filters.layout !== 'timeline'" @click="filters.layout = 'board'">Board</button>
               <button type="button" :aria-pressed="filters.layout === 'timeline'" @click="filters.layout = 'timeline'">Timeline</button>
             </div>
             <div ref="searchWrap" class="board-search">
-              <SearchInput v-model="filters.q" name="q" placeholder="Search roadmap items..." :debounce="150" />
+              <SearchInput v-model="filters.q" name="q" placeholder="Search initiatives…" :debounce="150" />
             </div>
             <button
               type="button"
@@ -2188,7 +2293,7 @@ const editActionBtn =
               :aria-expanded="sheetOpen"
               @click="toggleFilters"
             >
-              Filters
+              Filter
               <span v-if="toolbarFilterCount" class="board-filter-count">{{ toolbarFilterCount }}</span>
             </button>
           <SavedViews
@@ -2231,7 +2336,7 @@ const editActionBtn =
                   <input v-model="showCoverImages" type="checkbox" />
                   <span>Show cover images</span>
                 </label>
-                <p id="lane-order-hint" class="lane-order-hint">Saved in this browser and included in shared views. Items inside each lane keep their order.</p>
+                <p id="lane-order-hint" class="lane-order-hint">Stored in this browser. Presentation links and share snapshots copy these settings.</p>
               </div>
             </template>
           </SavedViews>
@@ -2248,10 +2353,11 @@ const editActionBtn =
                 aria-controls="board-more-actions"
                 @click="moreOpen = !moreOpen"
               >
-                More<span class="disclosure-caret" aria-hidden="true"></span>
+                Actions<span class="disclosure-caret" aria-hidden="true"></span>
               </button>
               <div v-if="moreOpen" id="board-more-actions" class="control-popover board-more-panel">
-                <button type="button" @click="openRecentChanges">Recent changes</button>
+                <button v-if="canEdit" type="button" @click="recoveryOpen = true; closeMore(false)">Draft recovery copies</button>
+                <span class="board-more-label">Presentation</span>
                 <button type="button" aria-label="Start presentation" @click="startPresentation">
                   Start presentation
                 </button>
@@ -2267,6 +2373,8 @@ const editActionBtn =
                 <button v-if="fullscreenAvailable" type="button" @click="toggleFull">
                   {{ isFull ? 'Exit full screen' : 'Full screen' }}
                 </button>
+                <span class="board-more-label board-more-label-history">History</span>
+                <button type="button" @click="openRecentChanges">Recent changes</button>
               </div>
             </div>
             <PresenceIndicator :viewers="viewers" :self-id="shareAuthor?.id" :realtime-available="realtimeAvailable" />
@@ -2278,7 +2386,7 @@ const editActionBtn =
                 aria-label="Publish a share link…"
                 @click="openShare"
               >
-                Share
+                Share snapshot
               </button>
               <button
                 v-if="canEdit"
@@ -2382,8 +2490,14 @@ const editActionBtn =
           />
 
           <div v-if="customHorizons && !present" class="horizon-view-summary">
-            <span>Showing horizons: {{ horizons.length ? horizons.join(', ') : 'None' }}</span>
-            <button type="button" @click="resetHorizons" aria-label="Reset visible horizons">Reset</button>
+            <span class="horizon-view-label">Visible</span>
+            <span v-if="!horizons.length">No horizons</span>
+            <span v-for="horizon in horizons" :key="horizon" class="horizon-view-token">
+              <span class="horizon-view-dot" :style="{ background: horizonDot[horizon as keyof typeof horizonDot] }" aria-hidden="true" />
+              {{ horizon }}
+            </span>
+            <span class="horizon-view-count">{{ focused.length }} initiative{{ focused.length === 1 ? '' : 's' }}</span>
+            <button type="button" @click="resetHorizons" aria-label="Reset visible horizons">Reset view</button>
           </div>
           <ActiveFilterChips
             v-if="activeChips.length && !present"
@@ -2465,7 +2579,7 @@ const editActionBtn =
                   </div>
                   <div class="border-border-subtle-default mt-2.5 border-t" />
                 </header>
-                <div class="mt-3 flex flex-col gap-2" :ref="(el) => registerLaneListEl(lane.key, el as Element | null)">
+                <div class="roadmap-lane-cards mt-3 flex flex-col gap-2" :ref="(el) => registerLaneListEl(lane.key, el as Element | null)">
                   <RoadmapCard
                     v-for="it in lane.items"
                     :key="it.id"
@@ -2584,11 +2698,14 @@ const editActionBtn =
       v-if="canEdit && editMode && editingItem"
       :item="editingItem"
       :editor-login="editorLogin"
+      :validation-errors="validationIssues.filter(issue => issue.id === editingId)"
+      :focus-request="focusRequest"
       :body="editingBody"
       :is-new="editingIsNew"
       :all-tags="allTags"
       :all-owners="allOwners"
       :published="editingId ? (byId.get(editingId) ?? null) : null"
+      :published-body="editingId ? (rawBodies.get(editingId) ?? undefined) : undefined"
       :preview-show-product="showCardProducts"
       :preview-show-horizon="filters.group === 'product'"
       :preview-show-cover="showCoverImages"
@@ -2613,6 +2730,11 @@ const editActionBtn =
           :publication="visiblePublication"
           @dismiss="dismissPublication"
           :summary="changeSummary"
+          :issues="namedValidationIssues"
+          :blocked-reason="publishBlockedReason"
+          :workspace-error="workspaceError"
+          @retry-workspace="retryWorkspace"
+          @review="reviewChange"
           :blocked="!!draftSync.conflict.value || !baseVersionLoaded || !!resourceTransferCount || !!conflictIds.length"
           @publish="doSync"
           @discard="onDiscardAll"
@@ -2642,6 +2764,11 @@ const editActionBtn =
       :publication="visiblePublication"
           @dismiss="dismissPublication"
       :summary="changeSummary"
+      :issues="namedValidationIssues"
+      :blocked-reason="publishBlockedReason"
+      :workspace-error="workspaceError"
+      @retry-workspace="retryWorkspace"
+      @review="reviewChange"
       :blocked="!!draftSync.conflict.value || !baseVersionLoaded || !!resourceTransferCount || !!conflictIds.length"
       @publish="doSync"
       @discard="onDiscardAll"
@@ -2663,10 +2790,11 @@ const editActionBtn =
       :titles="Object.fromEntries(liveItems.map((i) => [i.id, i.title]))"
       @resolve="
         draftSync.resolve($event);
-        draftConflictOpen = false;
+        draftConflictOpen = !!draftSync.conflict.value;
       "
       @close="draftConflictOpen = false"
     />
+    <DraftRecovery v-if="recoveryOpen" :copies="draftSync.recoveryCopies.value" :error="draftSync.recoveryError.value" @close="recoveryOpen = false" />
     <button
       v-if="conflictIds.length && !conflictsOpen"
       type="button"
@@ -3062,6 +3190,36 @@ const editActionBtn =
   font-style: italic;
   font-weight: 400;
   letter-spacing: 0;
+}
+
+.board-presentation .roadmap-masthead {
+  position: relative;
+  top: auto;
+  z-index: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-inline: 0;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.board-presentation [data-test='exit-presentation'] {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 30;
+  background: color-mix(in srgb,var(--color-card) 90%,transparent);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 16%);
+  -webkit-backdrop-filter: blur(14px) saturate(.9);
+  backdrop-filter: blur(14px) saturate(.9);
+}
+.board-presentation .board-scroll { gap: 1.1rem; }
+.board-presentation .roadmap-lane { min-width: 300px; padding: .75rem; }
+.board-presentation :deep(.roadmap-card-with-cover) { min-height: 286px; }
+.board-presentation :deep(.roadmap-card:not(.roadmap-card-with-cover)) { min-height: 132px; }
+@media (prefers-reduced-transparency: reduce) {
+  .board-presentation [data-test='exit-presentation'] { background: var(--color-card); -webkit-backdrop-filter:none; backdrop-filter:none; }
 }
 
 .sheet-panel { background: var(--color-card); border-left: 1px solid var(--roadmap-glass-border); }

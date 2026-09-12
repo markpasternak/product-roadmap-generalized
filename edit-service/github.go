@@ -34,13 +34,16 @@ func appJWT(appID string, key *rsa.PrivateKey, now time.Time) (string, error) {
 }
 
 type GitHub struct {
-	cfg     Config
-	key     *rsa.PrivateKey
-	httpc   *http.Client
-	mu      sync.Mutex
-	repoMu  sync.Mutex
-	instTok string
-	instExp time.Time
+	cfg               Config
+	key               *rsa.PrivateKey
+	httpc             *http.Client
+	mu                sync.Mutex
+	repoMu            sync.Mutex
+	itemsMu           sync.Mutex
+	itemSnapshots     map[string]map[string]RepoFile
+	itemSnapshotOrder []string
+	instTok           string
+	instExp           time.Time
 }
 
 func NewGitHub(cfg Config) (*GitHub, error) {

@@ -540,10 +540,10 @@ const primaryCls =
       <!-- Header + stepper -->
       <header class="border-border-subtle-default flex items-start justify-between gap-4 border-b px-6 py-4">
         <div>
-          <h2 data-share-heading tabindex="-1" class="roadmap-label">{{ result ? resultHeader : step === 1 ? "Choose what to share" : "Share settings" }}</h2>
+          <h2 data-share-heading tabindex="-1" class="roadmap-label">{{ result ? resultHeader : step === 1 ? "Choose initiatives" : "Set access and appearance" }}</h2>
           <p v-if="!result" class="text-single-sm-medium text-text-subtle-default mt-1">
-            Step {{ step }} of 2 —
-            {{ step === 1 ? 'Content' : 'Access and appearance' }}
+            {{ step }} of 2 ·
+            {{ step === 1 ? 'Items and files' : 'Recipient view' }}
           </p>
         </div>
         <button
@@ -562,6 +562,11 @@ const primaryCls =
 
       <!-- STEP 1 — content -->
       <div v-if="!result && step === 1" class="flex-1 overflow-y-auto px-6 py-5">
+        <div class="share-view-contract mb-5">
+          <span class="share-view-contract-label">Current view</span>
+          <p>{{ shareViewSummary }}</p>
+          <small>The share keeps this layout, lane order, sort, horizons, and cover setting.</small>
+        </div>
         <div class="mb-4 flex items-center justify-between gap-3">
           <p class="text-single-sm-medium text-text-primary-default font-semibold tabular-nums">
             {{ effectiveItems.length }}<span class="text-text-subtle-default font-normal"> of {{ total }} selected</span>
@@ -583,7 +588,7 @@ const primaryCls =
         </div>
 
         <p class="mb-5 text-single-sm-medium text-text-subtle-default">
-          Review the selected text, including any internal items. Recipients see roadmap statuses and stages, without owner names. Inline images are included automatically; choose any additional files and links below.
+          Check the initiatives and resources before publishing. Recipients see the selected roadmap copy, statuses, and stages. Owner names stay private.
         </p>
         <div class="space-y-6">
           <section v-for="l in lanes" :key="l.h">
@@ -633,7 +638,11 @@ const primaryCls =
                     @change="toggleItem(it.id)"
                   />
                   <span class="min-w-0 flex-1">
-                    <span class="text-single-sm-medium text-text-primary-default block truncate">{{ it.title }}</span>
+                    <span class="text-single-sm-medium text-text-primary-default block font-semibold leading-snug">{{ it.title }}</span>
+                    <span class="share-item-meta">
+                      <span class="size-1.5 rounded-full" :style="{ background: horizonDot[it.horizon as keyof typeof horizonDot] ?? 'var(--color-icons-subtle-default)' }" aria-hidden="true" />
+                      {{ it.horizon }} · {{ it.stage }}<template v-if="!context.product"> · {{ it.product }}</template>
+                    </span>
                   </span>
                 </label>
               </li>
@@ -667,7 +676,7 @@ const primaryCls =
                 <Select v-if="previewOpen" v-model="previewSize" aria-label="Preview width"
                   :options="[{ value: 'desktop', label: 'Full width' }, { value: 'mobile', label: 'Mobile · 390px' }]" />
               </div>
-              <p class="mt-2 text-single-sm-medium text-text-subtle-default">The published snapshot uses this layout and selected content. Access follows your sharing settings.</p>
+              <p class="mt-2 text-single-sm-medium text-text-subtle-default">This is the page recipients will open. It uses the same card, cover, lane, and reader styles as presentation mode.</p>
               <div v-if="previewOpen" ref="previewViewport" class="mt-3 overflow-hidden rounded-lg bg-surface-subtle-default p-1">
                 <p v-if="resourceError" role="alert" class="p-2 text-sm">{{ resourceError }}</p><p v-if="!previewAssets || (!previewResources && !resourceError)" role="status" class="p-2 text-single-sm-medium text-text-subtle-default">{{ previewAssetError ? 'Design assets could not load.' : 'Loading fonts and artwork…' }}</p>
                 <button v-if="previewAssetError" type="button" class="min-h-11 px-2 text-sm underline" @click="loadPreviewAssets">Retry preview</button>
@@ -680,8 +689,8 @@ const primaryCls =
           <div class="space-y-5">
             <section class="space-y-3.5">
               <div>
-                <p class="text-single-base-medium text-text-primary-default font-semibold">Canvas record</p>
-                <p class="text-single-sm-medium text-text-subtle-default mt-0.5">Used for finding and updating this share later.</p>
+                <p class="text-single-base-medium text-text-primary-default font-semibold">Share record</p>
+                <p class="text-single-sm-medium text-text-subtle-default mt-0.5">Used in Shares and Canvas Drop when you update this URL.</p>
               </div>
               <div>
                 <label :class="labelCls" for="share-canvas-title">Canvas name</label>
@@ -842,9 +851,9 @@ const primaryCls =
 
 
 
-            <div class="border-border-subtle-default bg-card/50 rounded-xl border px-4 py-3.5">
+            <div class="share-view-contract">
               <p class="text-single-sm-medium text-text-primary-default">
-                Sharing
+                This snapshot contains
                 <b class="tabular-nums">{{ effectiveItems.length }}</b> item{{ effectiveItems.length === 1 ? '' : 's' }}.
               </p>
               <p class="text-single-sm-medium text-text-subtle-default mt-1">
@@ -1128,7 +1137,7 @@ const primaryCls =
         <template v-else-if="step === 1">
           <Button variant="ghost" data-test="cancel" @click="emit('close')">Cancel</Button>
           <Button variant="primary" data-test="next" :class="primaryCls" :disabled="!canProceed" @click="step = 2">
-            Next — share settings
+            Next: access and preview
           </Button>
         </template>
         <template v-else>
@@ -1144,6 +1153,11 @@ const primaryCls =
 </template>
 
 <style scoped>
+.share-view-contract { padding:.9rem 1rem;border:1px solid color-mix(in srgb,var(--color-accent-brand-default) 24%,var(--color-border-subtle-default));border-radius:12px;background:linear-gradient(135deg,color-mix(in srgb,var(--color-accent-brand-default) 7%,transparent),transparent 62%),color-mix(in srgb,var(--color-card) 86%,transparent); }
+.share-view-contract-label { display:block;margin-bottom:.35rem;color:var(--color-accent-brand-default);font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase; }
+.share-view-contract p { color:var(--color-text-primary-default);font-size:.8125rem;line-height:1.5; }
+.share-view-contract small { display:block;margin-top:.3rem;color:var(--color-text-subtle-default);font-size:.72rem;line-height:1.5; }
+.share-item-meta { display:flex;align-items:center;gap:.4rem;margin-top:.35rem;color:var(--color-text-subtle-default);font-size:.7rem;line-height:1.35; }
 .share-resource-picker { margin-top: 1.25rem; border: 1px solid var(--color-border-subtle-default); border-radius: 10px; }
 .share-resource-picker summary { display: flex; align-items: center; gap: .6rem; min-height: 52px; padding: .8rem 1rem; cursor: pointer; font-size: .8125rem; font-weight: 500; list-style: none; }
 .share-resource-picker summary::-webkit-details-marker { display: none; }

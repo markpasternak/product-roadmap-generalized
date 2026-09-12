@@ -113,5 +113,14 @@ func ValidateFrontmatter(fm map[string]string, path string) []string {
 	if fm["coverPosition"] != "" && fm["cover"] == "" {
 		errs = append(errs, "coverPosition requires cover")
 	}
+	if value := fm["coverFraming"]; value != "" {
+		framing, err := strconv.ParseFloat(value, 64)
+		if err != nil || framing < -1 || framing > 1 {
+			errs = append(errs, "coverFraming must be a number from -1 to 1")
+		}
+	}
+	if fm["coverFraming"] != "" && fm["cover"] == "" {
+		errs = append(errs, "coverFraming requires cover")
+	}
 	return errs
 }

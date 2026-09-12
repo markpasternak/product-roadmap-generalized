@@ -8,6 +8,8 @@ export type DraftSaveState =
   "loading" | "saving" | "saved" | "local" | "conflict";
 const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
+export type DraftChoices = Record<string, 'local' | 'remote'>;
+export type DraftRecovery = { key: string; savedAt: string; local: Draft; remote: RemoteDraft };
 
 /** Merge independent keys; arrays and text are atomic. Never choose a winner for
  * overlapping edits. Both complete versions remain available to the author. */
@@ -15,6 +17,7 @@ export function mergeDraftData(
   base: any,
   mine: any,
   theirs: any,
+  choices: DraftChoices = {},
 ): { value: any; conflicts: string[] } {
   const conflicts: string[] = [];
   function merge(b: any, m: any, t: any, path: string): any {
@@ -41,6 +44,7 @@ export function mergeDraftData(
       }
       return result;
     }
+    if (choices[path]) return choices[path] === 'local' ? m : t;
     conflicts.push(path);
     return m;
   }
@@ -51,6 +55,10 @@ export function useDraftSync(store: Store) {
   const state = ref<DraftSaveState>("loading");
   const savedAt = ref("");
   const authExpired = ref(false);
+  const saveError = ref('');
+  const recoveryCopies = ref<DraftRecovery[]>([]);
+  const recoveryError = ref('');
+  let queuedAt: number | null = null;
   const conflict = ref<{ remote: RemoteDraft; fields: string[] } | null>(null);
   let active = false,
     stopped = false,
@@ -81,7 +89,7 @@ export function useDraftSync(store: Store) {
               ? "Connecting your draft…"
               : authExpired.value
                 ? "Saved on this device · sign in with GitHub to resume account saving"
-                : "Saved on this device · waiting to save to your account",
+                : saveError.value || "Saved on this device · reconnecting to your account",
   );
   const remember = () => {
     try {
@@ -110,7 +118,8 @@ export function useDraftSync(store: Store) {
       return;
     }
     state.value = "saving";
-    timer = setTimeout(() => void flush(), delay);
+    queuedAt ??= Date.now();
+    timer = setTimeout(() => void flush(), Math.min(delay, Math.max(0, 5000 - (Date.now() - queuedAt))));
   }
   async function flush() {
     if (!active || stopped || sending || conflict.value || authExpired.value) return;
@@ -119,6 +128,7 @@ export function useDraftSync(store: Store) {
       return;
     }
     sending = true;
+    queuedAt = null;
     const sent = accountSnapshot();
     try {
       const res = await authedRequest("/api/draft", {
@@ -146,10 +156,12 @@ export function useDraftSync(store: Store) {
           schedule(0);
         }
       } else if (!res.ok) {
+        saveError.value = (remote as unknown as { error?: string }).error ?? '';
         state.value = "local";
         scheduleRetry();
       } else {
         serverRevision = remote.revision;
+        saveError.value = '';
         acknowledged = sent;
         savedAt.value = remote.updatedAt ?? "";
         remember();
@@ -210,6 +222,7 @@ export function useDraftSync(store: Store) {
   }
   async function start(_login: string) {
     syncKey = `${store.recoveryKey()}:account-ack`;
+    refreshRecoveryCopies();
     try {
       const saved = JSON.parse(localStorage.getItem(syncKey) ?? "null");
       if (saved) {
@@ -266,9 +279,34 @@ export function useDraftSync(store: Store) {
       }
     }
   }
-  function resolve(keepLocal: boolean) {
+  function refreshRecoveryCopies() {
+    try {
+      const prefix = store.recoveryKey().split(':tab:')[0] + ':tab:';
+      const copies: DraftRecovery[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)!;
+        if (!key.startsWith(prefix) || !key.includes(':account-ack:recovery:')) continue;
+        try {
+          const value = JSON.parse(localStorage.getItem(key)!);
+          if (value.local && value.remote) copies.push({ ...value, key, savedAt: new Date(Number(key.split(':').at(-1))).toISOString() });
+        } catch { /* Ignore an unreadable backup, keep the others accessible. */ }
+      }
+      recoveryCopies.value = copies.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+    } catch { recoveryError.value = 'Device backups are unavailable in this browser.'; }
+  }
+  function resolve(selection: DraftChoices | boolean) {
     const remote = conflict.value?.remote;
     if (!remote) return;
+    // Boolean support is retained for older callers; even these choices now
+    // affect only overlaps, never independent changes elsewhere in the draft.
+    const choices = typeof selection === 'boolean'
+      ? Object.fromEntries(conflict.value!.fields.map(path => [path, selection ? 'local' : 'remote'])) as DraftChoices
+      : selection;
+    const merged = mergeDraftData(acknowledged, accountSnapshot(), remote.data, choices);
+    if (merged.conflicts.length) {
+      conflict.value = { remote, fields: merged.conflicts };
+      return;
+    }
     // Keep an explicit recovery copy before the author's resolution.
     try {
       localStorage.setItem(
@@ -276,9 +314,10 @@ export function useDraftSync(store: Store) {
         JSON.stringify({ local: store.snapshot(), remote }),
       );
     } catch {
-      /* the server still has the remote draft */
+      recoveryError.value = 'The recovery copy could not be saved on this device.';
     }
-    if (!keepLocal) adopt(remote.data);
+    refreshRecoveryCopies();
+    adopt(merged.value);
     serverRevision = remote.revision;
     acknowledged = remote.data;
     conflict.value = null;
@@ -295,6 +334,7 @@ export function useDraftSync(store: Store) {
   const online = () => void reconnect();
   const visible = () => {
     if (!document.hidden) void reconnect();
+    else void flush();
   };
   if (typeof window !== "undefined") {
     window.addEventListener("online", online);
@@ -306,5 +346,5 @@ export function useDraftSync(store: Store) {
     window.removeEventListener("online", online);
     document.removeEventListener("visibilitychange", visible);
   });
-  return { state, detail, savedAt, authExpired, conflict, start, flush, resolve, reconnect };
+  return { state, detail, savedAt, authExpired, conflict, start, flush, resolve, reconnect, recoveryCopies, recoveryError };
 }

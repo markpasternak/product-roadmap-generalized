@@ -19,6 +19,7 @@ export interface ItemVM extends ItemHistory {
   endDate?: string | null;
   cover?: string | null;
   coverPosition?: string | null;
+  coverFraming?: number | null;
   id: string;
   title: string;
   product: string;

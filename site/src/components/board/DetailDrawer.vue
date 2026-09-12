@@ -42,6 +42,7 @@ import { linkSource, linkDisplay } from '../../lib/sources';
 import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
 import type { ItemVM } from '../../lib/filters';
 import { formatDateTime, formatDateTimeOrDate } from '../../lib/dates';
+import { coverPresentationStyle } from '../../lib/coverPresentation';
 import { PRODUCTS, HORIZONS, STAGES, LEVELS, VISIBILITIES } from '../../lib/schema';
 import { useEditStore } from '../../lib/edit/store';
 import { VelocityTracker, decideSwipe, rubberband, type SwipeDecision } from '../../lib/swipe';
@@ -139,11 +140,6 @@ const storyBlocks = computed(() => {
   if (props.item?.outcome) blocks.unshift({ heading: 'Target outcome', text: props.item.outcome });
   return blocks;
 });
-const resourceTypes = computed(() => {
-  const counts = new Map<string, number>();
-  for (const ln of props.item?.links ?? []) counts.set(ln.label, (counts.get(ln.label) ?? 0) + 1);
-  return [...counts.entries()].map(([label, count]) => ({ label, count, src: linkSource(label) }));
-});
 // Decorate each link with its brand source (icon/tone) and a short display string —
 // never the raw URL, which overflows the panel.
 const decoratedLinks = computed(() =>
@@ -158,9 +154,15 @@ const detailCoverSrc = computed(() => {
   const path = repositoryAssetPath(props.item.cover);
   return (path && resourcePreviewURLs.value[path]) || resourceHref(props.item.cover, boardBase);
 });
-const detailCoverPosition = computed(() => /^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(props.item?.coverPosition ?? '')
-  ? props.item!.coverPosition!
-  : '50% 50%');
+const detailCoverStyle = computed(() => coverPresentationStyle(props.item?.coverPosition, props.item?.coverFraming));
+const expandedSections = ref(new Set<string>());
+function isLongSection(text: string) { return text.trim().length > 420; }
+function sectionExpanded(heading: string) { return expanded.value || expandedSections.value.has(heading); }
+function toggleSection(heading: string) {
+  const next = new Set(expandedSections.value);
+  if (next.has(heading)) next.delete(heading); else next.add(heading);
+  expandedSections.value = next;
+}
 
 const panel = ref<HTMLElement>();
 const expanded = ref(false);
@@ -560,6 +562,7 @@ function copyLink() {
 const scrollArea = ref<HTMLElement>();
 watch(() => props.item?.id, () => {
   imageViewer?.close();
+  expandedSections.value = new Set();
   resetCopy();
   if (scrollArea.value) scrollArea.value.scrollTop = 0;
 });
@@ -634,9 +637,11 @@ watch(() => props.item?.id, () => {
           <Transition :name="drawerItemTransitionName" mode="out-in">
           <div :key="item.id" class="drawer-reading-content px-4 pb-5 sm:px-6 sm:pb-6">
             <header class="detail-masthead" :class="{ 'has-cover': detailCoverSrc, 'is-completed': item.horizon === 'Completed' }">
-              <div v-if="detailCoverSrc" class="detail-cover-media" aria-hidden="true">
-                <img :src="detailCoverSrc" alt="" decoding="async" :style="{ objectPosition: detailCoverPosition }" />
-                <span />
+              <div v-if="detailCoverSrc" class="detail-cover-media roadmap-cover-media" :style="detailCoverStyle" aria-hidden="true">
+                <img class="roadmap-cover-backdrop" :src="detailCoverSrc" alt="" decoding="async" />
+                <img class="roadmap-cover-fill" :src="detailCoverSrc" alt="" decoding="async" />
+                <img class="roadmap-cover-reveal" :src="detailCoverSrc" alt="" decoding="async" />
+                <span class="detail-cover-treatment" />
               </div>
               <div class="detail-masthead-copy min-w-0">
                 <h2 data-reading-title id="drawer-title" tabindex="-1" aria-live="polite" class="roadmap-display roadmap-title text-[1.75rem] sm:text-[2.1rem]">
@@ -813,15 +818,25 @@ watch(() => props.item?.id, () => {
               <section
                 v-for="s in storyBlocks"
                 :key="s.heading"
-                class="item-reading-section"
+                class="item-reading-section item-section-surface"
+                :class="{ 'item-section-preview': isLongSection(s.text) && !sectionExpanded(s.heading) }"
               >
-                <div>
+                <div :class="{ 'item-section-body-collapsed': isLongSection(s.text) && !sectionExpanded(s.heading) }">
                   <h3 class="roadmap-section-heading">{{ s.heading }}</h3>
                   <RichMarkdown v-if="s.markdown && !client" :markdown="s.markdown" :overrides="resourcePreviewURLs" class="mt-1.5" />
                   <p v-else class="mt-1.5 whitespace-pre-line text-base leading-relaxed text-text-primary-default">
                     {{ s.text }}
                   </p>
                 </div>
+                <button
+                  v-if="isLongSection(s.text) && !expanded"
+                  type="button"
+                  class="item-section-toggle roadmap-action"
+                  :aria-expanded="sectionExpanded(s.heading)"
+                  @click="toggleSection(s.heading)"
+                >
+                  {{ sectionExpanded(s.heading) ? 'Show less' : 'Continue reading' }}
+                </button>
               </section>
             </div>
 
@@ -861,20 +876,6 @@ watch(() => props.item?.id, () => {
               </a>
             </div>
 
-            <div v-if="resourceTypes.length && !client" class="mt-4 flex flex-wrap items-center gap-2">
-              <span class="roadmap-label mr-1">Resources</span>
-              <span
-                v-for="resource in resourceTypes"
-                :key="resource.label"
-                class="text-single-sm-medium inline-flex items-center gap-2 rounded-lg border border-border-subtle-default/60 px-2.5 py-1.5"
-                :style="{ background: toneSurfaceStrong[resource.src.tone], color: toneText[resource.src.tone] }"
-              >
-                <component :is="resource.src.Icon" :size="16" />
-                {{ resource.label }}
-                <span v-if="resource.count > 1" class="tabular-nums">×{{ resource.count }}</span>
-              </span>
-            </div>
-
             <p v-if="historyValue(item.createdAt, item.created) && !client" class="detail-created roadmap-muted">
               Created
               <time
@@ -885,14 +886,15 @@ watch(() => props.item?.id, () => {
 
             <div v-if="decoratedLinks.length && !client" class="mt-5">
               <h3 :class="label" data-toc-heading>Related resources</h3>
-              <div class="mt-3 grid gap-2">
+              <div class="resource-reading-grid mt-3">
                 <a
                   v-for="ln in decoratedLinks"
                   :key="ln.href"
                   :href="ln.href"
                   :target="ln.kind === 'external' || ln.kind === 'presentation' ? '_blank' : undefined"
                   :rel="ln.kind === 'external' || ln.kind === 'presentation' ? 'noopener' : undefined"
-                    class="roadmap-panel roadmap-action flex items-center gap-3 rounded-xl px-3 py-2.5"
+                    class="roadmap-panel roadmap-action resource-reading-card flex items-center gap-3 rounded-xl px-3 py-2.5"
+                    :class="{ 'resource-reading-card-image': ln.image || isImageResource(ln.target) }"
                 >
                   <ImageThumbnail v-if="ln.image || isImageResource(ln.target)" :href="ln.target" :alt="ln.title || ln.label" />
                   <span v-else
@@ -905,11 +907,11 @@ watch(() => props.item?.id, () => {
                     <span class="text-single-sm-medium block truncate font-semibold uppercase tracking-wider" :style="{ color: toneText[ln.src.tone] }">
                       {{ ln.label }}
                     </span>
-                    <span class="text-single-base-medium text-text-primary-default block truncate" :title="ln.kind === 'external' ? ln.target : undefined">
+                    <span class="resource-reading-title text-single-base-medium text-text-primary-default block" :title="ln.display">
                       {{ ln.display }}
                     </span>
                   </span>
-                  <PhArrowSquareOut :size="18" class="text-icons-subtle-default" />
+                  <span class="resource-reading-open"><span>Open</span><PhArrowSquareOut :size="18" /></span>
                 </a>
               </div>
             </div>
@@ -943,22 +945,22 @@ watch(() => props.item?.id, () => {
   align-items:flex-end;
   isolation:isolate;
 }
-.detail-cover-media,.detail-cover-media img,.detail-cover-media span { position:absolute; inset:0; width:100%; height:100%; }
+.detail-cover-media,.detail-cover-treatment { position:absolute; inset:0; width:100%; height:100%; }
 .detail-cover-media { z-index:-1; overflow:hidden; background:color-mix(in srgb,var(--roadmap-product-accent) 18%,var(--color-surface-subtle-default)); }
-.detail-cover-media img { object-fit:cover; filter:saturate(.82) contrast(.94); }
-.detail-cover-media span {
+.detail-cover-media .roadmap-cover-fill,.detail-cover-media .roadmap-cover-reveal { filter:saturate(.82) contrast(.94); }
+.detail-cover-treatment {
   background:
     linear-gradient(to top,var(--color-card) 0%,color-mix(in srgb,var(--color-card) 96%,transparent) 18%,color-mix(in srgb,var(--color-card) 62%,transparent) 52%,color-mix(in srgb,var(--color-card) 14%,transparent) 100%),
     color-mix(in srgb,var(--roadmap-product-accent) 14%,transparent);
 }
-:global(:root[data-theme='dark']) .detail-cover-media img { filter:brightness(.7) saturate(.68) contrast(.92); }
-:global(:root[data-theme='dark']) .detail-cover-media span {
+:global(:root[data-theme='dark']) .detail-cover-media .roadmap-cover-fill,:global(:root[data-theme='dark']) .detail-cover-media .roadmap-cover-reveal { filter:brightness(.7) saturate(.68) contrast(.92); }
+:global(:root[data-theme='dark']) .detail-cover-treatment {
   background:
     linear-gradient(to top,var(--color-card) 0%,color-mix(in srgb,var(--color-card) 97%,transparent) 20%,color-mix(in srgb,var(--color-card) 68%,transparent) 54%,color-mix(in srgb,var(--color-card) 20%,transparent) 100%),
     color-mix(in srgb,var(--roadmap-product-accent) 20%,transparent);
 }
-.detail-masthead.is-completed .detail-cover-media img { filter:grayscale(.28) saturate(.65) contrast(.94); }
-:global(:root[data-theme='dark']) .detail-masthead.is-completed .detail-cover-media img { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
+.detail-masthead.is-completed .detail-cover-media .roadmap-cover-fill,.detail-masthead.is-completed .detail-cover-media .roadmap-cover-reveal { filter:grayscale(.28) saturate(.65) contrast(.94); }
+:global(:root[data-theme='dark']) .detail-masthead.is-completed .detail-cover-media .roadmap-cover-fill,:global(:root[data-theme='dark']) .detail-masthead.is-completed .detail-cover-media .roadmap-cover-reveal { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
 .detail-masthead-copy { position:relative; width:100%; max-width:960px; }
 .detail-masthead.has-cover .detail-masthead-copy { width:fit-content; max-width:min(100%,960px); padding:14px 16px; border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent); border-radius:13px; background:color-mix(in srgb,var(--color-card) 92%,transparent); box-shadow:0 12px 32px rgb(10 14 20 / 18%),inset 0 1px 0 rgb(255 255 255 / 20%); -webkit-backdrop-filter:blur(12px) saturate(.86); backdrop-filter:blur(12px) saturate(.86); }
 :global(:root[data-theme='dark']) .detail-masthead.has-cover .detail-masthead-copy { border-color:rgb(255 255 255 / 14%); background:color-mix(in srgb,var(--color-card) 90%,transparent); box-shadow:0 14px 36px rgb(0 0 0 / 34%),inset 0 1px 0 rgb(255 255 255 / 7%); }
