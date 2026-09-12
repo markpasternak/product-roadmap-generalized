@@ -27,6 +27,15 @@ func TestSet(t *testing.T) {
 	}
 }
 
+func TestUnset(t *testing.T) {
+	d := ParseDoc(sample)
+	d.Set("cover", "../../assets/ast_one/rev_one/cover.png")
+	d.Unset("cover")
+	if _, exists := d.FM["cover"]; exists || containsLine(d.Render(), "cover: ../../assets/ast_one/rev_one/cover.png") {
+		t.Fatalf("unset cover remained in frontmatter: %s", d.Render())
+	}
+}
+
 func TestNoFrontmatterRoundTrip(t *testing.T) {
 	raw := "Just a body\nwith no frontmatter.\n"
 	if got := ParseDoc(raw).Render(); got != raw {

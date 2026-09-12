@@ -86,6 +86,8 @@ Uploaded originals live in `content/assets/ast_<id>/rev_<id>/filename.ext`. Each
 - [Supporting notes](../../assets/ast_example/rev_example/notes.pdf)
 ```
 
+An attached managed image can also be selected and positioned as a card cover. Cover metadata pins the same immutable revision, and baked shares copy the selected cover into the standalone snapshot automatically.
+
 Replacement creates a new revision. Removing a reference does not delete the file. Deleting a file from the current tree does **not** erase earlier Git commits or existing shared snapshots.
 
 An item's `Internal` / `Public` label controls site projections; it is **not an access boundary for a public Git repository**. Everything committed here must be suitable for public disclosure, regardless of its label.

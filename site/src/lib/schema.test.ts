@@ -46,6 +46,14 @@ describe('itemSchema', () => {
   it('coerces a string order to a number', () => {
     expect(itemSchema.parse({ ...base, order: '3' }).order).toBe(3);
   });
+
+  it('accepts managed card covers and rejects external or malformed cover metadata', () => {
+    const cover = '../../assets/ast_one/rev_one/cover.png';
+    expect(itemSchema.parse({ ...base, cover, coverPosition: '35% 70%' })).toMatchObject({ cover, coverPosition: '35% 70%' });
+    expect(() => itemSchema.parse({ ...base, cover: 'https://example.com/cover.png' })).toThrow();
+    expect(() => itemSchema.parse({ ...base, cover, coverPosition: 'left top' })).toThrow();
+    expect(() => itemSchema.parse({ ...base, coverPosition: '50% 50%' })).toThrow();
+  });
 });
 
 describe('docSchema', () => {

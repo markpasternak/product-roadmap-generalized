@@ -5,7 +5,7 @@ import { activityLabel } from '../../lib/activityFilter';
 import type { FilterState, SortKey } from '../../lib/filters';
 import { SAVED_VIEWS_KEY, readSavedViews, sameViewSelection, snapshotView, type SavedView } from '../../lib/savedViews';
 
-const props = withDefaults(defineProps<{ filters: FilterState; horizons: string[]; sort: SortKey; reverseLanes?: boolean; compact?: boolean }>(), { reverseLanes: false });
+const props = withDefaults(defineProps<{ filters: FilterState; horizons: string[]; sort: SortKey; reverseLanes?: boolean; showCovers?: boolean; compact?: boolean }>(), { reverseLanes: false, showCovers: true });
 const emit = defineEmits<{ (e: 'apply', view: SavedView): void }>();
 type ViewEntry = { key: string; view: SavedView };
 const views = ref<SavedView[]>([]);
@@ -33,12 +33,12 @@ const inputId = useId();
 const errorId = useId();
 const sortLabels: Record<SortKey, string> = { manual: 'Board order', updated: 'Recently updated', title: 'Title A–Z', impact: 'Highest impact', effort: 'Lowest effort' };
 const editorView = computed(() => mode.value === 'rename' ? views.value.find(view => view.name === editingName.value) : props);
-watch(() => [props.filters, props.horizons, props.sort, props.reverseLanes], () => {
+watch(() => [props.filters, props.horizons, props.sort, props.reverseLanes, props.showCovers], () => {
   if (!removed.value) message.value = '';
 }, { deep: true });
 
-function summary(view: Pick<SavedView, 'filters' | 'horizons' | 'sort' | 'reverseLanes'>) {
-  const { filters, horizons, sort, reverseLanes } = view;
+function summary(view: Pick<SavedView, 'filters' | 'horizons' | 'sort' | 'reverseLanes' | 'showCovers'>) {
+  const { filters, horizons, sort, reverseLanes, showCovers } = view;
   const scope = [filters.layout === 'timeline' ? 'Timeline' : 'Board', filters.product ?? 'All products', horizons.length ? horizons.join(', ') : 'No horizons'];
   if (filters.activity) scope.push(activityLabel(filters.activity));
   if (filters.hygiene === 'now-early') scope.push('Early stage');
@@ -52,6 +52,7 @@ function summary(view: Pick<SavedView, 'filters' | 'horizons' | 'sort' | 'revers
     scope.push(sortLabels[sort]);
   }
   if (reverseLanes) scope.push('Reverse lane order');
+  if (!showCovers) scope.push('Cover images hidden');
   return scope.join(' · ');
 }
 
@@ -125,7 +126,7 @@ function toggle() {
 }
 function apply(entry: ViewEntry) {
   selectedKey.value = entry.key;
-  emit('apply', snapshotView(entry.view.name, entry.view.filters, entry.view.horizons, entry.view.sort, entry.view.reverseLanes));
+  emit('apply', snapshotView(entry.view.name, entry.view.filters, entry.view.horizons, entry.view.sort, entry.view.reverseLanes, entry.view.showCovers));
   message.value = '';
   void close();
 }
@@ -157,7 +158,7 @@ function save() {
   let next: SavedView;
   try {
     const source = previous ?? props;
-    next = snapshotView(nextName, source.filters, source.horizons, source.sort, source.reverseLanes);
+    next = snapshotView(nextName, source.filters, source.horizons, source.sort, source.reverseLanes, source.showCovers);
   } catch { error.value = 'This view couldn’t be saved. Check the name and filters, then try again.'; return; }
   if (!persist(previous ? views.value.map(view => view.name === previous.name ? next : view) : [...views.value, next])) return;
   if (!previous || selectedKey.value === `saved:${previous.name}`) selectedKey.value = `saved:${next.name}`;
@@ -169,7 +170,7 @@ function update() {
   const entry = selected.value;
   if (!entry || !modified.value) return;
   let next: SavedView;
-  try { next = snapshotView(entry.view.name, props.filters, props.horizons, props.sort, props.reverseLanes); }
+  try { next = snapshotView(entry.view.name, props.filters, props.horizons, props.sort, props.reverseLanes, props.showCovers); }
   catch { error.value = 'This view couldn’t be updated. Check the filters and try again.'; return; }
   if (!persist(views.value.map(view => view.name === next.name ? next : view))) return;
   removed.value = null;

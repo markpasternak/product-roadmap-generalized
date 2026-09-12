@@ -14,9 +14,11 @@ import {
   productColor,
 } from '../../lib/display';
 import { useEditStore } from '../../lib/edit/store';
+import { resourcePreviewURLs } from '../../lib/edit/resourceClient';
 import type { ItemVM } from '../../lib/filters';
+import { repositoryAssetPath, resourceHref } from '../../lib/resources';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   item: ItemVM;
   /** Product identity is only needed when cards from multiple products share a horizon lane. */
   showProduct?: boolean;
@@ -37,7 +39,9 @@ const props = defineProps<{
   pending?: 'edited' | 'new' | 'deleted';
   /** Active board search query; rendered as quiet highlights on matching text outside presentation mode. */
   highlightQuery?: string;
-}>();
+  /** View preference. The selected cover itself is item content. */
+  showCover?: boolean;
+}>(), { showCover: true });
 const emit = defineEmits<{
   (e: 'select', item: ItemVM): void;
   (e: 'discard', id: string): void;
@@ -131,6 +135,14 @@ function onRenameKeydown(e: KeyboardEvent) {
 }
 
 const highlightQuery = computed(() => (props.client ? '' : (props.highlightQuery ?? '').trim()));
+const coverSrc = computed(() => {
+  if (!props.showCover || !props.item.cover) return '';
+  const repoPath = repositoryAssetPath(props.item.cover);
+  return (repoPath && resourcePreviewURLs.value[repoPath]) || resourceHref(props.item.cover, import.meta.env.BASE_URL);
+});
+const coverPosition = computed(() => /^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(props.item.coverPosition ?? '')
+  ? props.item.coverPosition!
+  : '50% 50%');
 
 // R4: working-copy status from projectBoard() — a subtle brand-accent treatment for
 // edited/new cards (ring + left accent bar, matching the existing `.roadmap-card-active`
@@ -153,7 +165,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
   <div class="relative roadmap-card-item" :data-item-id="item.id">
   <button
     type="button"
-    class="group roadmap-card roadmap-product-card roadmap-action relative block w-full rounded-2xl p-3.5 text-left transition duration-150"
+    class="group roadmap-card roadmap-product-card roadmap-action relative block w-full overflow-hidden rounded-2xl p-3.5 text-left transition duration-150"
     :class="[
       { 'roadmap-card-active': active },
       pendingClass,
@@ -174,6 +186,10 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
       class="text-icons-subtle-default absolute top-3 right-3 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
       aria-hidden="true"
     />
+    <span v-if="coverSrc" class="roadmap-card-cover" aria-hidden="true">
+      <img :src="coverSrc" alt="" loading="lazy" decoding="async" :style="{ objectPosition: coverPosition }" />
+      <span class="roadmap-card-cover-treatment" />
+    </span>
 
     <div class="flex items-start gap-3">
       <ProductMark v-if="showProduct" :product="item.product" :size="36" />
@@ -291,6 +307,41 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
 }
 .roadmap-card-deleted {
   opacity: 0.55;
+}
+.roadmap-card-cover {
+  position: relative;
+  display: block;
+  height: 88px;
+  margin: -1rem -1rem 1rem;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--roadmap-product-accent) 18%, var(--color-surface-subtle-default));
+}
+.roadmap-card-cover img,
+.roadmap-card-cover-treatment {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.roadmap-card-cover img {
+  object-fit: cover;
+  filter: saturate(0.84) contrast(0.94);
+}
+.roadmap-card-cover-treatment {
+  background:
+    linear-gradient(to bottom, transparent 46%, color-mix(in srgb, var(--color-card) 92%, transparent) 100%),
+    color-mix(in srgb, var(--roadmap-product-accent) 12%, transparent);
+}
+:global(:root[data-theme='dark']) .roadmap-card-cover img {
+  filter: brightness(0.76) saturate(0.72) contrast(0.92);
+}
+:global(:root[data-theme='dark']) .roadmap-card-cover-treatment {
+  background:
+    linear-gradient(to bottom, transparent 42%, color-mix(in srgb, var(--color-card) 96%, transparent) 100%),
+    color-mix(in srgb, var(--roadmap-product-accent) 18%, transparent);
+}
+.roadmap-card-deleted .roadmap-card-cover img {
+  filter: grayscale(0.7) saturate(0.35);
 }
 
 /* The one and only way to start a drag (SortableJS's `handle` option, set from Board.vue,

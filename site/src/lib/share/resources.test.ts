@@ -46,6 +46,18 @@ async function mockFiles(response: Response) {
   return fetcher;
 }
 describe("explicit frozen share resources", () => {
+  it('automatically freezes the selected card cover without listing it as a drawer resource', async () => {
+    const imageBytes = new Uint8Array([137, 80, 78, 71]);
+    const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', imageBytes))).map(b => b.toString(16).padStart(2, '0')).join('');
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ assets: [{ id: 'ast_image', revisions: [{ original: { path: 'rev_one/cover.png', mediaType: 'image/png', bytes: imageBytes.length, sha256 } }] }] })))
+      .mockResolvedValueOnce(new Response(imageBytes, { headers: { 'Content-Type': 'image/png' } }));
+    vi.stubGlobal('fetch', fetcher);
+    const source = { ...item, cover: '../../assets/ast_image/rev_one/cover.png', coverPosition: '30% 70%' };
+    const result = await prepareShareResources([source], []);
+    expect(result.items[0]).toMatchObject({ cover: 'assets/ast_image/rev_one/cover.png', coverPosition: '30% 70%' });
+    expect(result.items[0].resources).toBeUndefined();
+    expect(result.files['assets/ast_image/rev_one/cover.png']).toEqual(imageBytes);
+  });
   it('automatically freezes inline images once and preserves their place in the text', async () => {
     const imageBytes = new Uint8Array([137, 80, 78, 71]);
     const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', imageBytes))).map(b => b.toString(16).padStart(2, '0')).join('');

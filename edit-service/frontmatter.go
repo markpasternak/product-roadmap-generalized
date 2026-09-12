@@ -47,6 +47,17 @@ func (d *Doc) Set(key, val string) {
 	d.FM[key] = val
 }
 
+func (d *Doc) Unset(key string) {
+	delete(d.FM, key)
+	next := d.Keys[:0]
+	for _, existing := range d.Keys {
+		if existing != key {
+			next = append(next, existing)
+		}
+	}
+	d.Keys = next
+}
+
 func (d Doc) Render() string {
 	if !d.HasFM {
 		return d.Body

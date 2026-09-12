@@ -24,6 +24,15 @@ export type ExternalVisibility = (typeof EXTERNAL_VISIBILITIES)[number];
 export type CommercialDriver = (typeof COMMERCIAL_DRIVERS)[number];
 export type Confidence = (typeof CONFIDENCES)[number];
 
+const coverPathSchema = z.string().regex(
+  /^\.\.\/\.\.\/assets\/ast_[a-z0-9_-]+\/rev_[a-z0-9_-]+\/[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:png|jpe?g|gif|webp|avif|svg)$/i,
+  'Cover must reference a managed image resource',
+);
+const coverPositionSchema = z.string().regex(
+  /^(?:100|\d{1,2})% (?:100|\d{1,2})%$/,
+  'Cover position must contain horizontal and vertical percentages',
+);
+
 export const itemSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -45,7 +54,11 @@ export const itemSchema = z.object({
   startDate: plannedDateSchema,
   endDate: plannedDateSchema,
   confidence: z.enum(CONFIDENCES).optional(),
-}).refine(v => !v.startDate || !v.endDate || v.endDate >= v.startDate, { message: 'Planned end must be on or after planned start', path: ['endDate'] });
+  cover: coverPathSchema.optional(),
+  coverPosition: coverPositionSchema.optional(),
+})
+  .refine(v => !v.startDate || !v.endDate || v.endDate >= v.startDate, { message: 'Planned end must be on or after planned start', path: ['endDate'] })
+  .refine(v => !v.coverPosition || !!v.cover, { message: 'Cover position requires a cover', path: ['coverPosition'] });
 export type ItemFrontmatter = z.infer<typeof itemSchema>;
 
 // Docs (PRD / technical-design / research) carry a lighter, varied frontmatter.

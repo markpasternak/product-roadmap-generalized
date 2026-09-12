@@ -146,7 +146,7 @@ const TOC = [
         <div><dt>View — how to show them</dt><dd>Choose visible horizons and manage your saved views.
           On Board, choose grouping by horizon or product and a sort order: Priority, Highest impact, Lowest effort,
           Recently updated or Title. Timeline has its own grouping and scale controls. Horizons, grouping, sort order
-          and lane order stay in this browser. A link with explicit view settings takes precedence without replacing
+          lane order and whether card covers are shown stay in this browser. A link with explicit view settings takes precedence without replacing
           those browser preferences.</dd></div>
         <div><dt>Reverse lane order</dt><dd>Reverse the displayed lanes or Timeline groups without changing item priority.
           It is included in saved views, presentation links and shared snapshots.</dd></div>
@@ -159,7 +159,7 @@ const TOC = [
         Newly created items count too. Draft autosaves and site rebuilds do not count.
         These activity dates describe publication history; they are separate from planned start and end dates.</p>
       <h3>Keep a useful view</h3>
-      <p>Choose <b>View → Save as new view</b> to name your current filters, horizons, layout, grouping, sort and lane order.
+      <p>Choose <b>View → Save as new view</b> to name your current filters, horizons, layout, grouping, sort, lane order and cover-image setting.
         Timeline settings are saved too. You can update, rename or delete saved views in the same menu.
         They are stored in this browser, not synced to your account; clearing browser data removes them.
         A saved “last 7 days” filter keeps rolling as time passes.</p>
@@ -255,6 +255,9 @@ const TOC = [
       <p>Choose <b>Edit</b> beside a resource to change its name or image description, replace the file or remove
         a use. Removing a use keeps the file in the library. Replacing a file updates this item's references;
         other items keep their chosen revision. Delete from library is available when the file has no remaining uses.</p>
+      <p>An attached image can also become the card's cover. Choose <b>Use as cover</b>, then adjust the horizontal
+        and vertical focus if the shallow crop misses the important part. The roadmap adds a restrained product tint
+        and keeps the card text on its normal surface. Removing the cover keeps the original image attached.</p>
       <p>Uploads support common image, document, video, archive and text formats, up to 25 MiB per file and
         100 MiB per publication. Unpublished uploads expire after 30 days.
         Published originals and revisions live in Git. Deleting a file on publication removes the current copy,
@@ -311,7 +314,8 @@ const TOC = [
         <li>Choose the audience and publish a new share, or update an existing one.</li>
       </ol>
       <p>Card titles use up to two lines. Hover or focus a card to read a clipped title in full; open the item for its full write-up.
-        Shared cards keep the board's grouping, sort and lane order. Selected empty horizon lanes stay visible.
+        Shared cards keep the board's grouping, sort, lane order and cover-image setting. Selected covers are copied
+        into the snapshot automatically. Selected empty horizon lanes stay visible.
         Cards show the work stage. When horizon lanes mix products, cards show the product shorthand; the shorthand
         is hidden for a single product and when product lanes already provide that context. Product lanes show the horizon instead.
         The Completed lane is visually quieter.
