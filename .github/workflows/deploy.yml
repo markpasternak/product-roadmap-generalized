@@ -30,6 +30,11 @@ concurrency:
 env:
   CANVAS_ID: 01a0152e-2c0d-726b-9235-298bf5d46ff8
   CANVAS_HOST: roadmapdemo.canvas-drop.com
+  SITE_URL: https://roadmapdemo.canvas-drop.com
+  SITE_BASE: /
+  SITE_AUDIENCE: internal
+  PUBLIC_EDIT_API: https://roadmapdemoapi.canvas-drop.com
+  PUBLIC_CANVAS_BACKEND: "true"
 
 jobs:
   deploy:
@@ -39,35 +44,49 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Check current release and capture publication token
+        id: coordination
+        run: node tooling/deploy/coordinate.mjs preflight
+        env:
+          CANVAS_DROP_TOKEN: ${{ secrets.CANVAS_DROP_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
       - uses: ./.github/actions/setup-site
+        if: steps.coordination.outputs.already_current != 'true'
       - name: Classify changes since the last verified deployment
         id: changes
         run: node tooling/ci/changes.mjs
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Cache item history
+        if: steps.coordination.outputs.already_current != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: site/.cache/item-history.json
           key: history-${{ runner.os }}-${{ hashFiles('site/scripts/build-item-history.mjs', 'site/src/lib/itemHistory.server.ts') }}-${{ github.sha }}
           restore-keys: history-${{ runner.os }}-${{ hashFiles('site/scripts/build-item-history.mjs', 'site/src/lib/itemHistory.server.ts') }}-
       - name: Validate content
+        if: steps.coordination.outputs.already_current != 'true'
         run: python3 tooling/validate_items.py
 
       # Full internal build. Served at the canvas subdomain root, so base = "/".
       - name: Build the roadmap site
+        if: steps.coordination.outputs.already_current != 'true'
         working-directory: site
         run: npm run build
-        env:
-          PUBLIC_EDIT_API: https://roadmapdemoapi.canvas-drop.com
-          PUBLIC_CANVAS_BACKEND: "true"
 
       - name: Verify source document links
+        if: steps.coordination.outputs.already_current != 'true'
         run: node site/scripts/check-document-links.mjs
       - name: Verify published item dates
+        if: steps.coordination.outputs.already_current != 'true'
         run: node site/scripts/check-item-history.mjs
 
       - name: Verify fictional demo content
+        if: steps.coordination.outputs.already_current != 'true'
         run: node site/scripts/check-demo.mjs
 
       # The public demo retains its secret-history scan for every release.
@@ -78,6 +97,7 @@ jobs:
 
       # canvas-drop expects a zip whose root is the site root (index.html at top).
       - name: Package the static site
+        if: steps.coordination.outputs.already_current != 'true'
         run: |
           # Canvas Drop ignores dotfiles; this marker is only for GitHub Pages.
           rm -f site/dist/.nojekyll
@@ -86,21 +106,8 @@ jobs:
       - name: Deploy to canvas-drop
         env:
           CANVAS_DROP_TOKEN: ${{ secrets.CANVAS_DROP_TOKEN }}
-        run: |
-          if [ -z "$CANVAS_DROP_TOKEN" ]; then
-            echo "::error::CANVAS_DROP_TOKEN secret is not set — add it in repo Settings → Secrets."
-            exit 1
-          fi
-          curl --fail-with-body -sS -X PUT \
-            "https://${CANVAS_HOST}/v1/canvases/${CANVAS_ID}/deploy" \
-            -H "Authorization: Bearer ${CANVAS_DROP_TOKEN}" \
-            --data-binary @"$GITHUB_WORKSPACE/site.zip"
-          echo "✓ Deployed to https://${CANVAS_HOST}/"
-
-      - name: Verify every deployed file and release commit
-        env:
-          CANVAS_DROP_TOKEN: ${{ secrets.CANVAS_DROP_TOKEN }}
-        run: node site/scripts/verify-deploy.mjs
+          GH_TOKEN: ${{ github.token }}
+        run: node tooling/deploy/coordinate.mjs publish
 
       - name: Record verified deployment
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

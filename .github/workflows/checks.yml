@@ -38,17 +38,24 @@ jobs:
       - run: npm --prefix site run ${{ matrix.task }}
 
   build:
-    needs: changes
+    # Start alongside classification instead of waiting for another runner.
+    # This job classifies locally so its build decision cannot race job outputs.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+      - id: changes
+        run: node tooling/ci/changes.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
       - uses: ./.github/actions/setup-site
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        if: steps.changes.outputs.build_required != 'false'
         with:
           python-version: '3.12'
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: steps.changes.outputs.build_required != 'false'
         with:
           path: site/.cache/item-history.json
           key: history-${{ runner.os }}-${{ hashFiles('site/scripts/build-item-history.mjs', 'site/src/lib/itemHistory.server.ts') }}-${{ github.sha }}
@@ -56,11 +63,19 @@ jobs:
       - run: npm --prefix site audit --audit-level=moderate
       - run: node --test tooling/ci/*.test.mjs site/scripts/build-item-history.test.mjs
       - run: python3 tooling/validate_items.py
+        if: steps.changes.outputs.build_required != 'false'
       - run: npm --prefix site run build
+        if: steps.changes.outputs.build_required != 'false'
       - run: node site/scripts/check-demo.mjs
+        if: steps.changes.outputs.build_required != 'false'
       - run: node site/scripts/check-document-links.mjs
+        if: steps.changes.outputs.build_required != 'false'
       - name: Verify published item dates
+        if: steps.changes.outputs.build_required != 'false'
         run: node site/scripts/check-item-history.mjs
+      - name: Explain content-only build ownership
+        if: steps.changes.outputs.build_required == 'false'
+        run: echo 'Deploy roadmap site owns content validation, the production build, and artifact checks for this content-only main push. This check does not confirm deployment.' >> "$GITHUB_STEP_SUMMARY"
 
   go:
     needs: changes

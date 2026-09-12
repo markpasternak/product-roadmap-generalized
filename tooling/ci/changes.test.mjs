@@ -1,6 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { contentOnly, classifyChanges, checkRunState } from './changes.mjs';
+import { contentOnly, classifyChanges, checkRunState, requiresApplicationBuild } from './changes.mjs';
+
+test('only confirmed content pushes with an automatic deployment can omit the check build', () => {
+  for (const event of ['push', 'pull_request', 'workflow_dispatch', undefined]) {
+    for (const ref of ['refs/heads/main', 'refs/heads/feature', 'refs/pull/1/merge', undefined]) {
+      for (const content of [true, false, undefined, 'true']) {
+        assert.equal(
+          requiresApplicationBuild(content, event, ref),
+          !(content === true && event === 'push' && ref === 'refs/heads/main'),
+          JSON.stringify({ content, event, ref }),
+        );
+      }
+    }
+  }
+});
 
 test('classifies files, not editor or author', () => {
   assert.equal(contentOnly(['content/items/studio/X.md']), true);

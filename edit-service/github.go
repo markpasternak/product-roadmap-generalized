@@ -44,6 +44,7 @@ type GitHub struct {
 	itemSnapshotOrder []string
 	instTok           string
 	instExp           time.Time
+	localBuild        *localBuildWorker
 }
 
 func NewGitHub(cfg Config) (*GitHub, error) {

@@ -5,10 +5,14 @@
 Runs on every push to `main`, on pull requests (opened, reopened or updated), and
 on manual dispatch. It validates the application; it does not publish the site.
 
-Known content-only changes keep the dependency audit, content/schema and managed
-asset validation, Astro build, document-link checks and published-date checks.
-The fictional-content check and full Git-history secret scan also run on every
-change. Application changes additionally run frontend tests, type checks and Go race
+Known content-only pushes to `main` keep the dependency audit and CI-tool tests
+in application checks. The deploy job alone runs content/schema and managed-asset
+validation, the production Astro build, document-link checks and published-date
+checks. PRs and manual checks still build and validate their own artifacts; they
+cannot rely on a deployment. There is no separate `Validate roadmap items` workflow.
+The fictional-content check remains mandatory on every build, and the full
+Git-history secret scan still runs on every change. Application changes
+additionally run frontend tests, type checks and Go race
 tests/vet in parallel jobs. The final `check` job requires every applicable job
 to succeed; an unexpected skip fails the check.
 
@@ -18,6 +22,13 @@ compared with the latest successful deployment, not only the preceding push. A
 later content edit cannot hide code from an earlier failed or cancelled release.
 Missing baselines, uncertain ancestry, unknown paths and manual runs use full checks.
 Pull requests are compared with their merge base.
+
+The application build job starts alongside the change-classification job. It
+classifies locally to decide whether artifact work is needed, without waiting for
+another runner. Only an explicit content-only `main` push can omit that work;
+missing output falls back to building. Auditing and CI-tool tests always run.
+The `build` job can therefore pass before publication finishes: the deployment
+workflow and its verification receipt remain the authority for whether it is live.
 
 The deploy workflow builds and validates its actual production configuration.
 All demo releases wait for successful application checks on the exact commit before

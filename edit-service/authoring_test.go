@@ -159,12 +159,19 @@ func TestAtomicPublicationAndDurableReceipt(t *testing.T) {
 	gitTest(t, root, "push", "origin", "main")
 	cfg := Config{StateDir: t.TempDir()}
 	g := &GitHub{cfg: cfg}
+	buildStarted := make(chan struct{}, 1)
+	g.localBuild = newLocalBuildWorker(func(ctx context.Context) {
+		buildStarted <- struct{}{}
+		<-ctx.Done() // A blocked build must not hold up the commit response.
+	})
+	t.Cleanup(g.localBuild.close)
 	u := stagedText(t, cfg)
 	cs := Changeset{RequestID: "publication-testing123", Created: []ItemNew{{ID: "new-client-123", Product: "Podcasts & Audiobooks", Title: "With an attachment", Frontmatter: map[string]string{"owner": "Alice", "horizon": "Next", "stage": "Discovery", "visibility": "Internal"}, Body: "## Resources\n\n- [Evidence](../../assets/ast_testing123/rev_testing123/evidence.txt)\n"}}, Assets: AssetChanges{Attach: []AssetAttachment{{UploadID: u.ID}}}}
 	out, _, pushErr, err := g.applyCommitPush(context.Background(), "", root, cs, "Publish resources", "alice", gitTest(t, root, "rev-parse", "HEAD"))
 	if err != nil || pushErr != nil || len(out.Errors) > 0 {
 		t.Fatal(err, pushErr, out)
 	}
+	awaitBuild(t, buildStarted)
 	if out.CreatedIDs["new-client-123"] != "TALK-001" {
 		t.Fatal("missing stable create identity", out.CreatedIDs)
 	}
@@ -178,13 +185,16 @@ func TestAtomicPublicationAndDurableReceipt(t *testing.T) {
 		}
 	}
 	// Pretend every in-memory/disk operation record was lost after the push.
-	restarted := &GitHub{cfg: cfg}
+	restarted := &GitHub{cfg: cfg, localBuild: g.localBuild}
 	retry, _, _, err := restarted.applyCommitPush(context.Background(), "", root, cs, "Retry", "alice", out.SHA)
 	if err != nil || retry.SHA != out.SHA || retry.CreatedIDs["new-client-123"] != "TALK-001" {
 		t.Fatal("retry was not recovered from git", retry, err)
 	}
 	if count := gitTest(t, root, "rev-list", "--count", "HEAD"); count != "2" {
 		t.Fatal("retry made a duplicate commit", count)
+	}
+	if len(g.localBuild.wake) != 0 {
+		t.Fatal("recovered publication queued a duplicate build")
 	}
 	cs.Created[0].Title = "Different request"
 	if _, _, _, err := restarted.applyCommitPush(context.Background(), "", root, cs, "Retry", "alice", out.SHA); err == nil {
