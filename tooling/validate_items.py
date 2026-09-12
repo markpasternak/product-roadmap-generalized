@@ -32,6 +32,8 @@ LEVELS = {"Low", "Medium", "High"}
 VISIBILITIES = {"Internal", "Public"}
 STAGES = {"Discovery", "Validation", "Shaping", "Committed", "Building", "Pilot", "Shipped", "Parked"}
 ID_RE = re.compile(r"^(MUSIC|TALK|ARTISTS|ADS|PLATFORM)-\d{3}$")
+COVER_POSITION_RE = re.compile(r"^(?:100|\d{1,2})% (?:100|\d{1,2})%$")
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".svg"}
 
 
 def parse_fm(txt):
@@ -153,6 +155,19 @@ def main():
                         err(f"{field} must be a valid date (YYYY-MM-DD)")
             if fm.get("startDate") and fm.get("endDate") and fm["endDate"] < fm["startDate"]:
                 err("endDate must be on or after startDate")
+            cover = fm.get("cover", "")
+            if cover:
+                cover_path = os.path.normpath(os.path.join(os.path.dirname(path), cover))
+                assets_root = os.path.join(REPO, "content", "assets") + os.sep
+                if not cover_path.startswith(assets_root) or not os.path.isfile(cover_path):
+                    err("cover must reference an existing managed resource")
+                elif os.path.splitext(cover_path)[1].lower() not in IMAGE_EXTENSIONS:
+                    err("cover must be an image resource")
+            position = fm.get("coverPosition", "")
+            if position and not COVER_POSITION_RE.match(position):
+                err("coverPosition must contain horizontal and vertical percentages")
+            if position and not cover:
+                err("coverPosition requires cover")
             visibility = fm.get("visibility", "Internal")
             if visibility not in VISIBILITIES:
                 err(f"invalid visibility '{visibility}' (want Internal/Public)")

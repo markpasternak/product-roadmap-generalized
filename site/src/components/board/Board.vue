@@ -155,14 +155,16 @@ function clearAdditionalFilters() {
 }
 const sort = ref<SortKey>('manual');
 const reverseLaneOrder = ref(false);
+const showCoverImages = ref(true);
 function currentBoardViewState(): BoardViewState {
-  return { horizons: [...horizons.value], group: filters.group, sort: sort.value, reverseLanes: reverseLaneOrder.value };
+  return { horizons: [...horizons.value], group: filters.group, sort: sort.value, reverseLanes: reverseLaneOrder.value, showCovers: showCoverImages.value };
 }
 function applyBoardViewState(state: BoardViewState) {
   horizons.value = [...state.horizons];
   filters.group = state.group;
   sort.value = state.sort;
   reverseLaneOrder.value = state.reverseLanes;
+  showCoverImages.value = state.showCovers;
 }
 const sheetOpen = ref(false);
 // Fix #9: the "?" cheat-sheet overlay (global keyboard shortcuts). See onGlobalKey below.
@@ -1180,6 +1182,8 @@ function onCardDuplicate(id: string) {
       visibility: src.visibility,
       startDate: src.startDate ?? '',
       endDate: src.endDate ?? '',
+      cover: src.cover ?? '',
+      coverPosition: src.coverPosition ?? '',
       tags: (src.tags ?? []).join(', '),
     }),
   );
@@ -1615,6 +1619,7 @@ const shareContext = computed<ShareContext>(() => ({
   group: filters.group,
   sort: sort.value,
   reverseLanes: reverseLaneOrder.value,
+  showCovers: showCoverImages.value,
   generatedAt: formatDateTime(Date.now()),
   timeline: filters.layout === 'timeline' ? { ...timelineSettings(filters.timeline), range: timelineRange(focused.value, timelineSettings(filters.timeline)) } : undefined,
   activitySummary: filters.activity ? `${activityLabel({ field: filters.activity.field, timeZone: filters.activity.timeZone, period: 'range', ...activityRange(filters.activity) })} (${filters.activity.timeZone})` : undefined,
@@ -1729,6 +1734,7 @@ async function onShareSubmit(p: {
       group: shareContext.value.group,
       sort: shareContext.value.sort,
       reverseLanes: shareContext.value.reverseLanes,
+      showCovers: shareContext.value.showCovers,
       generatedAt: Date.now(),
     };
     const baseOptions = {
@@ -2016,8 +2022,8 @@ function syncState() {
   history.replaceState(null, '', qs ? `${path}?${qs}` : path);
 }
 
-watch([filters, horizons, sort, reverseLaneOrder, selected, present], syncState, { deep: true });
-watch([() => filters.group, horizons, sort, reverseLaneOrder], () => {
+watch([filters, horizons, sort, reverseLaneOrder, showCoverImages, selected, present], syncState, { deep: true });
+watch([() => filters.group, horizons, sort, reverseLaneOrder, showCoverImages], () => {
   if (!canPersistViewPreferences) return;
   try {
     localStorage.setItem(BOARD_VIEW_STORAGE_KEY, JSON.stringify(currentBoardViewState()));
@@ -2192,12 +2198,14 @@ const editActionBtn =
             :horizons="horizons"
             :sort="sort"
             :reverse-lanes="reverseLaneOrder"
+            :show-covers="showCoverImages"
             @apply="
               (view) => {
                 Object.assign(filters, view.filters, { layout: view.filters.layout ?? 'board', timeline: timelineSettings(view.filters.timeline) });
                 horizons = [...view.horizons];
                 sort = view.sort;
                 reverseLaneOrder = view.reverseLanes;
+                showCoverImages = view.showCovers;
                 selected = null;
               }
             "
@@ -2218,6 +2226,10 @@ const editActionBtn =
                 <label class="lane-order-setting">
                   <input v-model="reverseLaneOrder" type="checkbox" aria-describedby="lane-order-hint" />
                   <span>Reverse lane order</span>
+                </label>
+                <label class="lane-order-setting">
+                  <input v-model="showCoverImages" type="checkbox" />
+                  <span>Show cover images</span>
                 </label>
                 <p id="lane-order-hint" class="lane-order-hint">Saved in this browser and included in shared views. Items inside each lane keep their order.</p>
               </div>
@@ -2460,6 +2472,7 @@ const editActionBtn =
                     :item="it"
                     :show-product="showCardProducts"
                     :show-horizon="filters.group === 'product'"
+                    :show-cover="showCoverImages"
                     :active="selected?.id === it.id"
                     :client="present || IS_PUBLIC"
                     :editing="canEdit && editMode"

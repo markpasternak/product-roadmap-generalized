@@ -17,6 +17,13 @@ describe('saved views', () => {
     expect(readSavedViews(JSON.stringify([legacy]))[0].reverseLanes).toBe(false);
     expect(sameViewSelection(reversed, { ...reversed, reverseLanes: false })).toBe(false);
   });
+  it('round trips hidden covers and defaults legacy views to showing them', () => {
+    const hidden = snapshotView('Dense', emptyFilters(), ['Now'], 'manual', false, false);
+    expect(readSavedViews(JSON.stringify([hidden]))[0].showCovers).toBe(false);
+    const { showCovers, ...legacy } = hidden;
+    expect(readSavedViews(JSON.stringify([legacy]))[0].showCovers).toBe(true);
+    expect(sameViewSelection(hidden, { ...hidden, showCovers: true })).toBe(false);
+  });
   it('ignores corrupt or obsolete entries while preserving valid views', () => {
     const valid = snapshotView('Now', emptyFilters(), ['Now'], 'manual');
     expect(readSavedViews('not json')).toEqual([]);

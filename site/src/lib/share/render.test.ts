@@ -102,6 +102,14 @@ describe('renderShareHtml', () => {
     expect(html).toContain('Podcasts &amp; Audiobooks — partner view');
   });
 
+  it('renders frozen cover images by default and honors the shared view toggle', () => {
+    const covered = { ...item, cover: 'assets/ast_one/rev_one/cover.png', coverPosition: '40% 65%' };
+    const shown = renderShareHtml(ctx, [covered]);
+    expect(shown).toContain('class="share-card-cover"');
+    expect(shown).toContain('object-position:40% 65%');
+    expect(renderShareHtml({ ...ctx, showCovers: false }, [covered])).not.toContain('class="share-card-cover"');
+  });
+
   it('identifies products with shorthand on mixed horizon boards without repeating marks for one product', () => {
     const infraItem = { ...item, id: 'ADS-1', product: 'Ads Platform' };
     const infraHtml = renderShareHtml({ ...ctx, product: 'Ads Platform' }, [infraItem]);

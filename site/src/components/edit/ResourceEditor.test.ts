@@ -46,9 +46,9 @@ async function setup(body = "## What ships\n\nA clear story\n") {
     defineComponent({
       components: { ResourceEditor },
       setup() {
-        return { body: ref(body) };
+        return { body: ref(body), cover: ref(''), coverPosition: ref('') };
       },
-      template: '<ResourceEditor v-model:body="body" visibility="Internal" item-id="TEST-001"><textarea :value="body" /></ResourceEditor>',
+      template: '<ResourceEditor v-model:body="body" v-model:cover="cover" v-model:cover-position="coverPosition" visibility="Internal" item-id="TEST-001"><textarea :value="body" /></ResourceEditor>',
     }),
   );
   await flushPromises();
@@ -261,6 +261,21 @@ describe('resource management', () => {
     expect((w.vm as any).body.match(/evidence.txt/g)).toHaveLength(1);
     expect(w.get('.resource-placements').text()).toContain('What ships');
     expect(w.findAll('button').find(b => b.text() === 'Delete from library…')!.attributes('disabled')).toBeDefined();
+  });
+
+  it('selects an attached managed image as the card cover and adjusts its focal point', async () => {
+    const imageRevision = { ...result.revision, original: { ...result.revision.original, path: 'rev_one/cover.png', mediaType: 'image/png' } };
+    vi.mocked(listResources).mockResolvedValueOnce([{ ...asset, revisions: [imageRevision] }]);
+    await setup('## Resources\n\n- [Evidence](../../assets/ast_one/rev_one/cover.png)\n');
+    await w.findAll('button').find(button => button.text() === 'Use as cover')!.trigger('click');
+    expect((w.vm as any).cover).toBe('../../assets/ast_one/rev_one/cover.png');
+    expect((w.vm as any).coverPosition).toBe('50% 50%');
+    await w.get('[aria-label="Edit Evidence"]').trigger('click');
+    const vertical = w.findAll('.resource-cover-position input[type="range"]')[1];
+    await vertical.setValue('25');
+    expect((w.vm as any).coverPosition).toBe('50% 25%');
+    await w.findAll('button').find(button => button.text() === 'Remove cover')!.trigger('click');
+    expect((w.vm as any).cover).toBe('');
   });
 
 });

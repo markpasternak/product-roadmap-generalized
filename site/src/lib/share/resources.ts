@@ -15,6 +15,7 @@ export type ShareResourceChoice = {
   repoPath: string | null;
   image?: boolean;
   inline?: boolean;
+  cover?: boolean;
 };
 export type SharedResource = {
   label: string;
@@ -66,11 +67,17 @@ export async function prepareShareResources(
   preview = false,
 ) {
   const files: Record<string, Uint8Array> = {},
-    resources = new Map<string, SharedResource[]>();
+    resources = new Map<string, SharedResource[]>(),
+    covers = new Map<string, string>();
   let catalog: any = null,
     total = 0;
   const choices = new Map(selected.filter(choice => items.some(item => item.id === choice.itemId)).map(choice => [choice.key, choice]));
   for (const item of items) {
+    if (item.cover) {
+      const repoPath = repositoryAssetPath(item.cover);
+      if (!repoPath) throw new Error(`The cover for ${item.title} must use a managed image resource.`);
+      choices.set(`${item.id}:cover`, { key: `${item.id}:cover`, itemId: item.id, href: item.cover, label: `${item.title} cover`, repoPath, image: true, cover: true });
+    }
     for (const section of item.sections ?? []) for (const block of section.blocks ?? []) {
       if (!('image' in block)) continue;
       const { href, label } = block.image;
@@ -102,6 +109,8 @@ export async function prepareShareResources(
           `${choice.label} is not published yet. Publish it before sharing.`,
         );
       const f = revision.original;
+      if (choice.cover && !f.mediaType.startsWith('image/'))
+        throw new Error(`${choice.label} is not an image.`);
       const dst = choice.repoPath.slice("content/".length);
       let bytes = files[dst];
       if (!bytes) {
@@ -138,10 +147,11 @@ export async function prepareShareResources(
     } else if (!/^https?:\/\//i.test(choice.href))
       throw new Error("Unsupported resource link");
     resolved.set(choice.key, resource);
-    resources.set(choice.itemId, [
-      ...(resources.get(choice.itemId) ?? []),
-      resource,
-    ]);
+    if (choice.cover) covers.set(choice.itemId, resource.href);
+    else resources.set(choice.itemId, [
+        ...(resources.get(choice.itemId) ?? []),
+        resource,
+      ]);
   }
   return {
     items: items.map((i) => ({
@@ -156,6 +166,7 @@ export async function prepareShareResources(
         }) } : {}),
       })) } : {}),
       ...(resources.has(i.id) ? { resources: resources.get(i.id) } : {}),
+      ...(covers.has(i.id) ? { cover: covers.get(i.id) } : {}),
     })),
     files,
   };

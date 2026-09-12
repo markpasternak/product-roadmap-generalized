@@ -25,6 +25,8 @@ func set(xs ...string) map[string]bool {
 
 var idRe = regexp.MustCompile(`^(ARTISTS|ADS|PLATFORM|MUSIC|TALK)-\d{3}$`)
 var slugStrip = regexp.MustCompile(`[^a-z0-9]+`)
+var coverPathRe = regexp.MustCompile(`^\.\./\.\./assets/ast_[a-z0-9_-]+/rev_[a-z0-9_-]+/[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(png|jpg|jpeg|gif|webp|avif|svg)$`)
+var coverPositionRe = regexp.MustCompile(`^(100|[0-9]{1,2})% (100|[0-9]{1,2})%$`)
 
 func Slugify(title string) string {
 	s := slugStrip.ReplaceAllString(strings.ToLower(title), "-")
@@ -101,6 +103,15 @@ func ValidateFrontmatter(fm map[string]string, path string) []string {
 	}
 	if fm["startDate"] != "" && fm["endDate"] != "" && fm["endDate"] < fm["startDate"] {
 		errs = append(errs, "endDate must be on or after startDate")
+	}
+	if value := fm["cover"]; value != "" && !coverPathRe.MatchString(value) {
+		errs = append(errs, "cover must reference a managed image resource")
+	}
+	if value := fm["coverPosition"]; value != "" && !coverPositionRe.MatchString(value) {
+		errs = append(errs, "coverPosition must contain horizontal and vertical percentages")
+	}
+	if fm["coverPosition"] != "" && fm["cover"] == "" {
+		errs = append(errs, "coverPosition requires cover")
 	}
 	return errs
 }

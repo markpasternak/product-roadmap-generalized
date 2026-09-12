@@ -47,6 +47,7 @@ export interface ShareContext {
   /** Included for an explicit, inspectable snapshot contract; items arrive pre-sorted. */
   sort?: SortKey;
   reverseLanes?: boolean;
+  showCovers?: boolean;
   /** Horizon lanes selected in the roadmap view, including intentionally empty lanes. */
   horizons?: readonly string[];
   generatedAt: string;
@@ -150,9 +151,13 @@ function productMark(product: string): string {
   return `<span class="product-mark" style="--product:${info.color};font-size:${info.short.length > 1 ? 12 : 15}px" title="${escapeHtml(product)}" role="img" aria-label="${escapeHtml(product)}"><span aria-hidden="true">${escapeHtml(info.short)}</span></span>`;
 }
 
-function card(it: ProjectedItem, index: number, showProduct: boolean, showHorizon: boolean): string {
-  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}${showProduct ? `, ${escapeHtml(it.product)}` : ''}">
+function card(it: ProjectedItem, index: number, showProduct: boolean, showHorizon: boolean, showCover: boolean): string {
+  const cover = showCover && it.cover && safeResourceUrl(it.cover)
+    ? `<span class="share-card-cover" aria-hidden="true"><img src="${escapeHtml(it.cover)}" alt="" loading="lazy" decoding="async" style="object-position:${/^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(it.coverPosition ?? '') ? it.coverPosition : '50% 50%'}"><span></span></span>`
+    : '';
+  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card${it.horizon === 'Completed' ? ' share-card-completed' : ''}" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}${showProduct ? `, ${escapeHtml(it.product)}` : ''}">
     <span class="card-open" aria-hidden="true">↗</span>
+    ${cover}
     <div class="card-main">
       ${showProduct ? productMark(it.product) : ''}
       <div class="card-copy">
@@ -168,7 +173,7 @@ function card(it: ProjectedItem, index: number, showProduct: boolean, showHorizo
   </button>`;
 }
 
-function lane(name: string, laneItems: ProjectedItem[], allItems: ProjectedItem[], group: 'horizon' | 'product'): string {
+function lane(name: string, laneItems: ProjectedItem[], allItems: ProjectedItem[], group: 'horizon' | 'product', showCovers: boolean): string {
   const accent = group === 'product'
     ? PRODUCT_META[name]?.color ?? 'var(--roadmap-ink-muted)'
     : `var(--roadmap-horizon-${name.toLowerCase()})`;
@@ -182,7 +187,7 @@ function lane(name: string, laneItems: ProjectedItem[], allItems: ProjectedItem[
       </div>
       <div class="lane-rule"></div>
     </header>
-    <div class="lane-cards">${laneItems.length ? laneItems.map((it) => card(it, allItems.indexOf(it), showProduct, group === 'product')).join('') : '<p class="lane-empty">No items in this lane.</p>'}</div>
+    <div class="lane-cards">${laneItems.length ? laneItems.map((it) => card(it, allItems.indexOf(it), showProduct, group === 'product', showCovers)).join('') : '<p class="lane-empty">No items in this lane.</p>'}</div>
   </section>`;
 }
 
@@ -449,7 +454,23 @@ function css(context: ShareContext): string {
     padding: 14px;
     color: var(--color-text-primary-default);
     text-align: left;
+    overflow: hidden;
   }
+  .share-card-cover {
+    position: relative;
+    display: block;
+    height: 88px;
+    margin: -14px -14px 14px;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--roadmap-product-accent) 18%, var(--color-surface-subtle-default));
+  }
+  .share-card-cover img,
+  .share-card-cover span { position:absolute;inset:0;width:100%;height:100%; }
+  .share-card-cover img { object-fit:cover;filter:saturate(.84) contrast(.94); }
+  .share-card-cover span { background:linear-gradient(to bottom,transparent 46%,color-mix(in srgb,var(--color-card) 92%,transparent)),color-mix(in srgb,var(--roadmap-product-accent) 12%,transparent); }
+  [data-theme="dark"] .share-card-cover img { filter:brightness(.76) saturate(.72) contrast(.92); }
+  [data-theme="dark"] .share-card-cover span { background:linear-gradient(to bottom,transparent 42%,color-mix(in srgb,var(--color-card) 96%,transparent)),color-mix(in srgb,var(--roadmap-product-accent) 18%,transparent); }
+  .share-card-completed .share-card-cover img { filter:grayscale(.7) saturate(.35); }
   .share-card:focus-visible,
   .stat:focus-visible {
     outline: 3px solid rgba(246, 62, 13, .36);
@@ -972,7 +993,7 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
   }
   if (context.reverseLanes) laneNames = [...laneNames].reverse();
   const lanes = laneNames
-    .map(name => lane(name, items.filter(item => group === 'product' ? item.product === name : item.horizon === name), items, group)).join('');
+    .map(name => lane(name, items.filter(item => group === 'product' ? item.product === name : item.horizon === name), items, group, context.showCovers !== false)).join('');
   const title = escapeHtml(context.title);
   const description = shareDescription(context);
   const logo = escapeHtml(

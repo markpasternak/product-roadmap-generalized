@@ -7,6 +7,7 @@ export interface BoardViewState {
   group: 'horizon' | 'product';
   sort: SortKey;
   reverseLanes: boolean;
+  showCovers: boolean;
 }
 
 export const DEFAULT_BOARD_VIEW_STATE: BoardViewState = {
@@ -14,6 +15,7 @@ export const DEFAULT_BOARD_VIEW_STATE: BoardViewState = {
   group: 'horizon',
   sort: 'manual',
   reverseLanes: false,
+  showCovers: true,
 };
 
 export const BOARD_VIEW_STORAGE_KEY = 'rm-board-view-v1';
@@ -23,6 +25,7 @@ const schema = z.object({
   group: z.enum(['horizon', 'product']),
   sort: z.enum(['manual', 'impact', 'effort', 'updated', 'title']),
   reverseLanes: z.boolean(),
+  showCovers: z.boolean().default(true),
 });
 
 function copy(state: BoardViewState): BoardViewState {
@@ -40,7 +43,7 @@ export function readBoardViewState(raw: string | null, legacyReverse = false): B
 }
 
 export function hasBoardViewParams(params: URLSearchParams): boolean {
-  return ['horizon', 'group', 'sort', 'reverse'].some(key => params.has(key));
+  return ['horizon', 'group', 'sort', 'reverse', 'covers'].some(key => params.has(key));
 }
 
 export function boardViewStateFromParams(params: URLSearchParams): BoardViewState {
@@ -54,6 +57,7 @@ export function boardViewStateFromParams(params: URLSearchParams): BoardViewStat
   const sort = params.get('sort');
   if (sort && schema.shape.sort.safeParse(sort).success) state.sort = sort as SortKey;
   state.reverseLanes = params.get('reverse') === '1';
+  state.showCovers = params.get('covers') !== '0';
   return state;
 }
 
@@ -64,4 +68,5 @@ export function writeBoardViewParams(params: URLSearchParams, state: BoardViewSt
   params.set('group', state.group);
   params.set('sort', state.sort);
   params.set('reverse', state.reverseLanes ? '1' : '0');
+  params.set('covers', state.showCovers ? '1' : '0');
 }

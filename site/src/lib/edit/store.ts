@@ -289,6 +289,10 @@ export function createEditStore() {
     impact?: string | null;
     effort?: string | null;
     visibility?: string;
+    startDate?: string | null;
+    endDate?: string | null;
+    cover?: string | null;
+    coverPosition?: string | null;
     tags?: string[];
     order?: number;
   };
@@ -300,7 +304,7 @@ export function createEditStore() {
   // here would never reconcile and would show as permanently "edited" even once the base
   // item's value catches up (e.g. a synced product move should clear the "edited" badge, not
   // leave it stuck forever).
-  const SCALAR_FIELDS = new Set(['product', 'title', 'horizon', 'stage', 'owner', 'impact', 'effort', 'visibility', 'startDate', 'endDate']);
+  const SCALAR_FIELDS = new Set(['product', 'title', 'horizon', 'stage', 'owner', 'impact', 'effort', 'visibility', 'startDate', 'endDate', 'cover', 'coverPosition']);
   // Split a pending comma-separated tags string into a trimmed, non-empty, case-folded set.
   const tagSet = (csv: string): Set<string> =>
     new Set(

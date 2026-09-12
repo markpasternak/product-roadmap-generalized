@@ -72,3 +72,14 @@ func TestPlannedDateValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestCoverValidation(t *testing.T) {
+	fm := map[string]string{"id": "TALK-001", "title": "Plan", "product": "Podcasts & Audiobooks", "horizon": "Next", "stage": "Discovery", "owner": "Alice", "cover": "../../assets/ast_one/rev_one/cover.png", "coverPosition": "35% 70%"}
+	if errs := ValidateFrontmatter(fm, "content/items/podcasts-audiobooks/TALK-001-plan.md"); len(errs) != 0 {
+		t.Fatalf("valid cover rejected: %v", errs)
+	}
+	fm["cover"] = "https://example.com/cover.png"
+	if errs := ValidateFrontmatter(fm, "content/items/podcasts-audiobooks/TALK-001-plan.md"); len(errs) == 0 {
+		t.Fatal("external cover accepted")
+	}
+}

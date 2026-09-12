@@ -31,8 +31,12 @@ import {
   type ResourceUpload,
   isImageResource,
 } from "../../lib/resources";
-const props = defineProps<{ body: string; visibility: string; itemId?: string; editorLogin?: string }>();
-const emit = defineEmits<{ "update:body": [body: string] }>();
+const props = defineProps<{ body: string; visibility: string; itemId?: string; editorLogin?: string; cover?: string; coverPosition?: string }>();
+const emit = defineEmits<{
+  "update:body": [body: string];
+  "update:cover": [cover: string];
+  "update:coverPosition": [position: string];
+}>();
 const store = useEditStore();
 const locked = computed(() => !!store.snapshot().requestPayload);
 const loading = ref(true);
@@ -127,7 +131,16 @@ function toggleResource(id: string) { expanded.value = expanded.value === id ? n
 async function removePlacement(placement: typeof placements.value[number], event?: Event) {
   const row = (event?.currentTarget as HTMLElement | null)?.closest('.resource-row');
   const shelf = row?.closest('.resource-shelf');
-  emit('update:body', removeResourcePlacement(props.body, placement));
+  const nextBody = removeResourcePlacement(props.body, placement);
+  emit('update:body', nextBody);
+  const coverPath = repositoryAssetPath(props.cover ?? '');
+  if (coverPath && repositoryAssetPath(placement.href)?.split('/').slice(0, 3).join('/') === coverPath.split('/').slice(0, 3).join('/')) {
+    const stillAttached = resourcePlacements(nextBody).some(p => repositoryAssetPath(p.href)?.split('/').slice(0, 3).join('/') === coverPath.split('/').slice(0, 3).join('/'));
+    if (!stillAttached) {
+      emit('update:cover', '');
+      emit('update:coverPosition', '');
+    }
+  }
   notice.value = repositoryAssetPath(placement.href) ? 'Removed from this item. The original file is still in your library.' : 'Link removed from this item.';
   await nextTick();
   const target = row?.isConnected ? row : shelf;
@@ -139,6 +152,31 @@ function shownRevision(asset: ResourceAsset & { placements?: typeof placements.v
 }
 function imageHref(asset: typeof allAssets.value[number]) {
   return markdownAssetPath(`content/assets/${asset.id}/${shownRevision(asset).original.path}`);
+}
+function isCoverAsset(asset: typeof allAssets.value[number]) {
+  const path = repositoryAssetPath(props.cover ?? '');
+  return !!path && path.startsWith(`content/assets/${asset.id}/`);
+}
+function setCover(asset: typeof allAssets.value[number]) {
+  if (!asset.placements.length || !shownRevision(asset).original.mediaType.startsWith('image/')) return;
+  if (isCoverAsset(asset)) {
+    emit('update:cover', '');
+    emit('update:coverPosition', '');
+    notice.value = 'Card cover removed.';
+    return;
+  }
+  emit('update:cover', imageHref(asset));
+  emit('update:coverPosition', '50% 50%');
+  notice.value = 'Card cover selected. It will use the product tint on the roadmap.';
+}
+function coverAxis(axis: 0 | 1): number {
+  const values = (props.coverPosition ?? '50% 50%').match(/(100|\d{1,2})% (100|\d{1,2})%/);
+  return Number(values?.[axis + 1] ?? 50);
+}
+function setCoverAxis(axis: 0 | 1, value: string) {
+  const next: [number, number] = [coverAxis(0), coverAxis(1)];
+  next[axis] = Math.max(0, Math.min(100, Number(value) || 0));
+  emit('update:coverPosition', `${next[0]}% ${next[1]}%`);
 }
 const imageChoices = computed(() => [...allAssets.value
   .filter(a => !a.remove && shownRevision(a).original.mediaType.startsWith('image/') && (props.visibility !== 'Public' || a.visibility === 'Public'))
@@ -391,6 +429,13 @@ async function runUpload(job: Pending) {
         ),
       ))
         body = replaceResourceReferences(body, p.href, href);
+      if (repositoryAssetPath(props.cover ?? '')?.startsWith(`content/assets/${job.assetId}/`)) {
+        if (u.revision.original.mediaType.startsWith('image/')) emit('update:cover', href);
+        else {
+          emit('update:cover', '');
+          emit('update:coverPosition', '');
+        }
+      }
       notice.value =
         "New revision selected for this item. Other items keep their existing files.";
     } else if (job.anchor) {
@@ -863,11 +908,12 @@ onUnmounted(() => {
           <div class="resource-row-main">
             <ImageThumbnail v-if="shownRevision(asset).original.mediaType.startsWith('image/')" :href="imageHref(asset)" authenticated />
             <span v-else class="resource-kind">{{ shownRevision(asset).original.path.split('.').pop()?.toUpperCase() }}</span>
-            <div class="resource-identity"><strong>{{ asset.name }}</strong>
+            <div class="resource-identity"><strong>{{ asset.name }} <span v-if="isCoverAsset(asset)" class="resource-cover-badge">Cover</span></strong>
               <p class="resource-muted">{{ readableBytes(shownRevision(asset).original.bytes) }} · {{ fileStatus(asset) }}
                 <span v-if="!asset.placements.length"> · Not used here</span>
               </p>
             </div>
+            <button v-if="shownRevision(asset).original.mediaType.startsWith('image/') && asset.placements.length" type="button" class="resource-quiet" :aria-pressed="isCoverAsset(asset)" @click="setCover(asset)">{{ isCoverAsset(asset) ? 'Remove cover' : 'Use as cover' }}</button>
             <button type="button" class="resource-quiet" :aria-label="`Download ${asset.name}`" @click="download(asset)">Download</button>
             <button v-if="!asset.remove" type="button" :aria-label="`${expanded === asset.id ? 'Close' : 'Edit'} ${asset.name}`" :aria-expanded="expanded === asset.id" @click="toggleResource(asset.id)">{{ expanded === asset.id ? 'Done' : 'Edit' }}</button>
             <button v-else type="button" @click="store.setAssets({ ...dirtyAssets(), update: dirtyAssets().update.filter(c => c.id !== asset.id) })">Undo deletion</button>
@@ -877,6 +923,12 @@ onUnmounted(() => {
           </p>
           <div v-if="expanded === asset.id && !asset.remove" class="resource-inspector">
             <div class="resource-details">
+              <fieldset v-if="isCoverAsset(asset)" class="resource-cover-position">
+                <legend>Card cover focus</legend>
+                <label>Horizontal<input type="range" min="0" max="100" step="5" :value="coverAxis(0)" @input="setCoverAxis(0, ($event.target as HTMLInputElement).value)" /></label>
+                <label>Vertical<input type="range" min="0" max="100" step="5" :value="coverAxis(1)" @input="setCoverAxis(1, ($event.target as HTMLInputElement).value)" /></label>
+                <p class="resource-muted">Choose which part of the image stays visible in the shallow card crop.</p>
+              </fieldset>
               <label>Display name<input :value="asset.name" @change="rename(asset, ($event.target as HTMLInputElement).value)" /></label>
               <label v-for="placement in asset.placements.filter(p => p.image)" :key="placement.start">
                 Image description · {{ placement.section || 'Write-up' }}
@@ -1008,6 +1060,34 @@ onUnmounted(() => {
   font-size: 0.85rem;
   color: var(--color-feedback-error-text-independent-default);
   padding: 0.6rem 0;
+}
+.resource-cover-badge {
+  display: inline-flex;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-accent-brand-default) 14%, transparent);
+  color: var(--color-accent-brand-default);
+  font-size: 0.68rem;
+  font-weight: 700;
+  vertical-align: 0.1rem;
+}
+.resource-cover-position {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0 0 1rem;
+  padding: 0.8rem;
+  border: 1px solid var(--color-border-subtle-default);
+  border-radius: 9px;
+}
+.resource-cover-position legend {
+  padding: 0 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.resource-cover-position label {
+  grid-template-columns: 5rem minmax(8rem, 1fr);
+  align-items: center;
 }
 .resource-picker form {
   display: grid;

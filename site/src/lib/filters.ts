@@ -17,6 +17,8 @@ export interface ItemLinkVM {
 export interface ItemVM extends ItemHistory {
   startDate?: string | null;
   endDate?: string | null;
+  cover?: string | null;
+  coverPosition?: string | null;
   id: string;
   title: string;
   product: string;

@@ -131,6 +131,10 @@ func buildFiles(cs Changeset, current map[string]RepoFile) (write []RepoFile, de
 			if k == "created" || k == "updated" {
 				continue
 			}
+			if (k == "cover" || k == "coverPosition") && v == "" {
+				d.Unset(k)
+				continue
+			}
 			d.Set(k, v)
 		}
 		if u.BodySet || u.Body != "" {
@@ -160,8 +164,8 @@ func buildFiles(cs Changeset, current map[string]RepoFile) (write []RepoFile, de
 		d.Set("id", id)
 		d.Set("title", n.Title)
 		d.Set("product", n.Product)
-		for _, k := range []string{"horizon", "stage", "owner", "visibility", "tags", "impact", "effort", "order"} {
-			if v, ok := n.Frontmatter[k]; ok {
+		for _, k := range []string{"horizon", "stage", "owner", "visibility", "tags", "impact", "effort", "order", "startDate", "endDate", "cover", "coverPosition"} {
+			if v, ok := n.Frontmatter[k]; ok && v != "" {
 				d.Set(k, v)
 			}
 		}

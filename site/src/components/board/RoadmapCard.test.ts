@@ -32,6 +32,14 @@ it('shows ownership internally and omits it in presentation cards', () => {
   expect(publicCard.text()).toContain('Building');
 });
 
+it('renders an explicitly selected cover at its focal point and respects the view toggle', () => {
+  const covered = item({ cover: '../../assets/ast_one/rev_one/cover.png', coverPosition: '35% 70%' });
+  const shown = mountCard({ item: covered });
+  expect(shown.get('.roadmap-card-cover img').attributes('src')).toContain('/assets/ast_one/rev_one/cover.png');
+  expect(shown.get('.roadmap-card-cover img').attributes('style')).toContain('object-position: 35% 70%');
+  expect(mountCard({ item: covered, showCover: false }).find('.roadmap-card-cover').exists()).toBe(false);
+});
+
 it('shows product identity only when the board supplies mixed-product context', () => {
   expect(mountCard().findComponent({ name: 'ProductMark' }).exists()).toBe(false);
   expect(mountCard({ showProduct: true }).getComponent({ name: 'ProductMark' }).props('product')).toBe('Podcasts & Audiobooks');

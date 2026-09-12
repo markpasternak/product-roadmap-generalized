@@ -9,7 +9,8 @@ import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref }
 import Select from '../ui/Select.vue';
 import SectionEditor from './SectionEditor.vue';
 import ResourceEditor from './ResourceEditor.vue';
-import { resourceTransferCount } from '../../lib/edit/resourceClient';
+import { resourcePreviewURLs, resourceTransferCount } from '../../lib/edit/resourceClient';
+import { repositoryAssetPath, resourceHref } from '../../lib/resources';
 import TagInput from './TagInput.vue';
 import ConfirmAction from '../ui/ConfirmAction.vue';
 import OwnerInput from './OwnerInput.vue';
@@ -31,6 +32,8 @@ const RewriteWithAi = defineAsyncComponent(() => import('./RewriteWithAi.vue'));
 export interface ItemEditorItem extends Partial<ItemHistory> {
   startDate?: string | null;
   endDate?: string | null;
+  cover?: string | null;
+  coverPosition?: string | null;
   id: string;
   product: string;
   title: string;
@@ -106,7 +109,7 @@ const STAGE_OPTIONS = STAGES.map((v) => ({ value: v, label: v }));
 const LEVEL_OPTIONS = [{ value: '', label: 'Not scored' }, ...LEVELS.map((v) => ({ value: v, label: v }))];
 const VISIBILITY_OPTIONS = VISIBILITIES.map((v) => ({ value: v, label: v }));
 
-type FieldKey = 'title' | 'product' | 'horizon' | 'stage' | 'owner' | 'impact' | 'effort' | 'visibility' | 'startDate' | 'endDate';
+type FieldKey = 'title' | 'product' | 'horizon' | 'stage' | 'owner' | 'impact' | 'effort' | 'visibility' | 'startDate' | 'endDate' | 'cover' | 'coverPosition';
 
 /** A two-way binding for one metadata field: reads straight from the prop, emits
  * `field` on every change. No local store — the parent owns persistence and feeds
@@ -133,6 +136,13 @@ const stageModel = fieldModel('stage');
 const impactModel = fieldModel('impact');
 const effortModel = fieldModel('effort');
 const visibilityModel = fieldModel('visibility');
+const coverModel = fieldModel('cover');
+const coverPositionModel = fieldModel('coverPosition');
+const coverPreview = computed(() => {
+  if (!props.item.cover) return '';
+  const path = repositoryAssetPath(props.item.cover);
+  return (path && resourcePreviewURLs.value[path]) || resourceHref(props.item.cover, import.meta.env.BASE_URL);
+});
 
 /** Tags round-trip as a comma-separated string in frontmatter (see schema.ts and
  * lib/edit/project.ts, which splits it back into the array TagInput renders), so the
@@ -165,6 +175,8 @@ const CHANGE_KEYS: ChangeKey[] = [
   'impact',
   'effort',
   'visibility',
+  'cover',
+  'coverPosition',
   'tags',
 ];
 const changed = computed<Record<ChangeKey, boolean>>(() => {
@@ -335,6 +347,9 @@ const historyRows = computed(() => [
                dot, stage, and product — so the editor always shows how the card will look,
                live off the CURRENT (possibly-unsynced) `item` prop. -->
           <div class="roadmap-card roadmap-product-card mb-4 rounded-2xl p-3" data-test="editor-preview">
+            <div v-if="coverPreview" class="editor-card-cover" :style="{ '--preview-accent': productColor[item.product as keyof typeof productColor] }">
+              <img :src="coverPreview" alt="" :style="{ objectPosition: item.coverPosition || '50% 50%' }" />
+            </div>
             <div class="flex items-center gap-1.5">
               <span class="h-3.5 w-1 shrink-0 rounded-full" :style="{ background: productColor[item.product as keyof typeof productColor] }" aria-hidden="true" />
               <span class="text-single-sm-medium text-text-subtle-default truncate font-semibold uppercase tracking-wide" data-test="preview-product">
@@ -593,7 +608,7 @@ const historyRows = computed(() => [
         </div>
 
         <div class="min-h-[420px] min-w-0 overflow-x-auto lg:min-h-0">
-          <ResourceEditor :item-id="item.id" :editor-login="editorLogin" v-model:body="bodyModel" :visibility="visibilityModel" v-slot="resources"><SectionEditor v-model="bodyModel" managed-resources :managed-resource-hrefs="resources.managedResourceHrefs" /></ResourceEditor>
+          <ResourceEditor :item-id="item.id" :editor-login="editorLogin" v-model:body="bodyModel" v-model:cover="coverModel" v-model:cover-position="coverPositionModel" :visibility="visibilityModel" v-slot="resources"><SectionEditor v-model="bodyModel" managed-resources :managed-resource-hrefs="resources.managedResourceHrefs" /></ResourceEditor>
         </div>
       </div>
     </div>
@@ -623,5 +638,6 @@ const historyRows = computed(() => [
 </template>
 
 <style scoped>
+.editor-card-cover{position:relative;height:76px;margin:-.75rem -.75rem .75rem;overflow:hidden;border-radius:15px 15px 0 0;background:color-mix(in srgb,var(--preview-accent) 18%,var(--color-surface-subtle-default))}.editor-card-cover img{width:100%;height:100%;object-fit:cover;filter:saturate(.84) contrast(.94)}.editor-card-cover::after{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,transparent 42%,color-mix(in srgb,var(--color-card) 94%,transparent)),color-mix(in srgb,var(--preview-accent) 12%,transparent)}:global(:root[data-theme='dark']) .editor-card-cover img{filter:brightness(.76) saturate(.72) contrast(.92)}
 .planned-editor{grid-column:1/-1;border-top:1px solid var(--color-border-subtle-default);padding-top:16px;margin-top:8px}.planned-editor h3{font-size:14px;font-weight:600}.planned-editor p{font-size:12px;color:var(--color-text-subtle-default);margin:5px 0 12px}.planned-editor-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.planned-editor-fields label{display:grid;gap:6px;font-size:12px}.planned-editor input{width:100%;min-width:0;min-height:40px;border:1px solid var(--color-border-subtle-default);border-radius:8px;background:var(--color-card);color:var(--color-text-primary-default);padding:8px;color-scheme:inherit}.planned-editor button{background:none;border:0;color:var(--color-text-link-default);text-decoration:underline;min-height:32px;cursor:pointer;font-size:12px}
 </style>
