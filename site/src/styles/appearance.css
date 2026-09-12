@@ -3,6 +3,7 @@
   color-scheme: light;
   --roadmap-nav-height: 64px;
   --roadmap-product-wash: 11%;
+  --roadmap-horizon-wash: 5%;
   --roadmap-brand-orange: #12857c;
   --roadmap-brand-coral: #66cbbc;
   --roadmap-brand-peach: #e6f5f1;
@@ -78,6 +79,7 @@
 :root:root[data-theme='dark'] {
   color-scheme: dark;
   --roadmap-product-wash: 18%;
+  --roadmap-horizon-wash: 8%;
   --roadmap-page-bg: #111214;
   --roadmap-ink: #f1f0f2;
   --roadmap-ink-muted: #adaeb5;
@@ -201,8 +203,9 @@
    Product accents are application colors; brand and draft/status colors stay separate. */
 :root:root .roadmap-product-card {
   background:
-    radial-gradient(ellipse at 80% 0%, color-mix(in srgb, var(--roadmap-product-accent) var(--roadmap-product-wash), transparent), transparent 72%),
-    linear-gradient(160deg, color-mix(in srgb, var(--roadmap-product-accent) 4%, transparent), transparent 55%),
+    radial-gradient(ellipse at 82% -4%, color-mix(in srgb, var(--roadmap-product-accent) var(--roadmap-product-wash), transparent), transparent 70%),
+    radial-gradient(ellipse at 8% 108%, color-mix(in srgb, var(--lane-accent, var(--roadmap-product-accent)) var(--roadmap-horizon-wash), transparent), transparent 68%),
+    linear-gradient(155deg, color-mix(in srgb, var(--roadmap-product-accent) 4%, transparent), transparent 54%),
     var(--color-card);
   border-color: color-mix(in srgb, var(--roadmap-product-accent) 24%, var(--roadmap-glass-border));
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%), var(--roadmap-card-shadow);

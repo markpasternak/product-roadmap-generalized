@@ -4,6 +4,11 @@ import { repositoryAssetPath, type ResourceAsset, type ResourceUpload } from "..
 export const resourceTransferCount = ref(0);
 export const resourcePreviewURLs = ref<Record<string, string>>({});
 const imageRequests = new Map<string, Promise<void>>();
+let resourceListCache: { at: number; assets: ResourceAsset[] } | undefined;
+let resourceListRequest: Promise<ResourceAsset[]> | undefined;
+const RESOURCE_LIST_TTL = 5 * 60_000;
+const cloneResources = (assets: ResourceAsset[]): ResourceAsset[] =>
+  typeof structuredClone === 'function' ? structuredClone(assets) : JSON.parse(JSON.stringify(assets));
 /** Load authenticated originals when the static build has not caught up yet. */
 export async function loadImagePreview(path: string): Promise<void> {
   if (!repositoryAssetPath(path) || resourcePreviewURLs.value[path]) return;
@@ -20,9 +25,17 @@ export async function loadImagePreview(path: string): Promise<void> {
   try { await request; } finally { imageRequests.delete(path); }
 }
 export async function listResources(): Promise<ResourceAsset[]> {
-  const res = await authedRequest("/api/assets");
-  if (!res.ok) throw new Error("Could not load the file library. Try again.");
-  return res.json();
+  if (resourceListCache && Date.now() - resourceListCache.at < RESOURCE_LIST_TTL)
+    return cloneResources(resourceListCache.assets);
+  resourceListRequest ??= (async () => {
+    const res = await authedRequest("/api/assets");
+    if (!res.ok) throw new Error("Could not load the file library. Try again.");
+    const assets = await res.json() as ResourceAsset[];
+    resourceListCache = { at: Date.now(), assets };
+    return assets;
+  })();
+  try { return cloneResources(await resourceListRequest); }
+  finally { resourceListRequest = undefined; }
 }
 export function uploadResource(
   file: File,

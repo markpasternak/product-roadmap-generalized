@@ -112,6 +112,7 @@ export async function buildBoardItems(base: string): Promise<ItemVM[]> {
       endDate: e.data.endDate,
       cover: e.data.cover ?? null,
       coverPosition: e.data.coverPosition ?? null,
+      coverFraming: e.data.coverFraming ?? null,
       horizon: e.data.horizon,
       stage: e.data.stage,
       owner: IS_PUBLIC ? '' : e.data.owner,

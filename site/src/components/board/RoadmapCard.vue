@@ -17,6 +17,7 @@ import { useEditStore } from '../../lib/edit/store';
 import { resourcePreviewURLs } from '../../lib/edit/resourceClient';
 import type { ItemVM } from '../../lib/filters';
 import { repositoryAssetPath, resourceHref } from '../../lib/resources';
+import { coverPresentationStyle } from '../../lib/coverPresentation';
 
 const props = withDefaults(defineProps<{
   item: ItemVM;
@@ -142,9 +143,19 @@ const coverSrc = computed(() => {
   const repoPath = repositoryAssetPath(props.item.cover);
   return (repoPath && resourcePreviewURLs.value[repoPath]) || resourceHref(props.item.cover, import.meta.env.BASE_URL);
 });
-const coverPosition = computed(() => /^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(props.item.coverPosition ?? '')
-  ? props.item.coverPosition!
-  : '50% 50%');
+const coverStyle = computed(() => coverPresentationStyle(props.item.coverPosition, props.item.coverFraming));
+
+function openItem() {
+  const select = () => emit('select', props.item);
+  if (typeof document === 'undefined' || !document.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    select();
+    return;
+  }
+  document.startViewTransition(async () => {
+    select();
+    await nextTick();
+  });
+}
 
 // R4: working-copy status from projectBoard() — a subtle brand-accent treatment for
 // edited/new cards (ring + left accent bar, matching the existing `.roadmap-card-active`
@@ -174,9 +185,10 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
       pendingClass,
     ]"
     :style="{ '--roadmap-product-accent': productColor[item.product as keyof typeof productColor] ?? 'var(--color-icons-subtle-default)' }"
+    :data-horizon="item.horizon"
     :tabindex="preview ? -1 : 0"
     :aria-hidden="preview || undefined"
-    @click="!preview && emit('select', item)"
+    @click="!preview && openItem()"
   >
     <span
       v-if="dirty"
@@ -191,8 +203,10 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
       class="card-open-arrow text-icons-subtle-default absolute top-3 right-3 z-10 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
       aria-hidden="true"
     />
-    <span v-if="coverSrc" class="roadmap-card-cover" aria-hidden="true">
-      <img :src="coverSrc" alt="" loading="lazy" decoding="async" :style="{ objectPosition: coverPosition }" />
+    <span v-if="coverSrc" class="roadmap-card-cover roadmap-cover-media" :style="coverStyle" aria-hidden="true">
+      <img class="roadmap-cover-backdrop" :src="coverSrc" alt="" loading="lazy" decoding="async" />
+      <img class="roadmap-cover-fill" :src="coverSrc" alt="" loading="lazy" decoding="async" />
+      <img class="roadmap-cover-reveal" :src="coverSrc" alt="" loading="lazy" decoding="async" />
       <span class="roadmap-card-cover-treatment" />
     </span>
 
@@ -335,24 +349,23 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
   overflow: hidden;
   background: color-mix(in srgb, var(--roadmap-product-accent) 18%, var(--color-surface-subtle-default));
 }
-.roadmap-card-cover img,
 .roadmap-card-cover-treatment {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
 }
-.roadmap-card-cover img {
-  object-fit: cover;
+.roadmap-card-cover .roadmap-cover-fill,
+.roadmap-card-cover .roadmap-cover-reveal {
   filter: saturate(0.84) contrast(0.94);
-  transition: transform 320ms cubic-bezier(.2,.7,.2,1), filter 180ms ease;
 }
 .roadmap-card-cover-treatment {
   background:
     linear-gradient(to bottom, color-mix(in srgb, var(--roadmap-product-accent) 8%, transparent), rgb(10 14 20 / 24%)),
     color-mix(in srgb, var(--roadmap-product-accent) 10%, transparent);
 }
-:global(:root[data-theme='dark']) .roadmap-card-cover img {
+:global(:root[data-theme='dark']) .roadmap-card-cover .roadmap-cover-fill,
+:global(:root[data-theme='dark']) .roadmap-card-cover .roadmap-cover-reveal {
   filter: brightness(0.72) saturate(0.72) contrast(0.94);
 }
 :global(:root[data-theme='dark']) .roadmap-card-cover-treatment {
@@ -360,7 +373,8 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
     linear-gradient(to bottom, rgb(3 7 12 / 8%), rgb(3 7 12 / 42%)),
     color-mix(in srgb, var(--roadmap-product-accent) 16%, transparent);
 }
-.roadmap-card-deleted .roadmap-card-cover img {
+.roadmap-card-deleted .roadmap-card-cover .roadmap-cover-fill,
+.roadmap-card-deleted .roadmap-card-cover .roadmap-cover-reveal {
   filter: grayscale(0.45) saturate(0.5);
 }
 .roadmap-card-content {
@@ -390,9 +404,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
     color-mix(in srgb, var(--color-card) 90%, transparent);
   box-shadow: 0 12px 32px rgb(0 0 0 / 32%), inset 0 1px 0 rgb(255 255 255 / 7%);
 }
-@media (hover:hover) and (pointer:fine) {
-  .roadmap-card-with-cover:hover .roadmap-card-cover img { transform:scale(1.025); }
-}
+@media (hover:hover) and (pointer:fine) { .roadmap-card-with-cover:hover .roadmap-cover-fill,.roadmap-card-with-cover:hover .roadmap-cover-reveal { filter:saturate(.94) contrast(.97); } }
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .roadmap-card-content-over-cover { background:color-mix(in srgb,var(--color-card) 96%,transparent); }
 }
@@ -401,9 +413,6 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
 }
 @media (prefers-contrast: more) {
   .roadmap-card-content-over-cover { border-color:var(--color-text-primary-default);background:var(--color-card);box-shadow:none; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .roadmap-card-cover img { transition:none; }
 }
 .roadmap-card-with-cover .card-open-arrow {
   display: grid;

@@ -21,6 +21,7 @@ import { installTitleTooltips } from '../titleTooltips';
 import { installItemToc } from '../itemToc';
 import { installItemHeader } from '../itemHeader';
 import itemTocCss from '../../styles/item-toc.css?raw';
+import { coverPresentationCss, coverPresentationStyle, normalizeCoverFraming, normalizeCoverPosition } from '../coverPresentation';
 
 export type ShareTheme = 'light' | 'dark';
 
@@ -110,7 +111,12 @@ function shareItemData(items: ProjectedItem[]) {
     stage: it.stage,
     horizon: it.horizon,
     status: statusLabel(it),
-    ...(it.cover && safeResourceUrl(it.cover) ? { cover: it.cover, coverPosition: /^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(it.coverPosition ?? '') ? it.coverPosition : '50% 50%' } : {}),
+    ...(it.cover && safeResourceUrl(it.cover) ? {
+      cover: it.cover,
+      coverPosition: normalizeCoverPosition(it.coverPosition),
+      coverFraming: normalizeCoverFraming(it.coverFraming),
+      coverStyle: coverPresentationStyle(it.coverPosition, it.coverFraming),
+    } : {}),
     themes: [...it.themes],
     resources: (it.resources ?? [])
       .filter((r) => safeResourceUrl(r.href))
@@ -154,9 +160,9 @@ function productMark(product: string): string {
 
 function card(it: ProjectedItem, index: number, showProduct: boolean, showHorizon: boolean, showCover: boolean): string {
   const cover = showCover && it.cover && safeResourceUrl(it.cover)
-    ? `<span class="share-card-cover" aria-hidden="true"><img src="${escapeHtml(it.cover)}" alt="" loading="lazy" decoding="async" style="object-position:${/^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(it.coverPosition ?? '') ? it.coverPosition : '50% 50%'}"><span></span></span>`
+    ? `<span class="share-card-cover roadmap-cover-media" aria-hidden="true" style="${coverPresentationCss(it.coverPosition, it.coverFraming)}"><img class="roadmap-cover-backdrop" src="${escapeHtml(it.cover)}" alt="" loading="lazy" decoding="async"><img class="roadmap-cover-fill" src="${escapeHtml(it.cover)}" alt="" loading="lazy" decoding="async"><img class="roadmap-cover-reveal" src="${escapeHtml(it.cover)}" alt="" loading="lazy" decoding="async"><span class="share-card-cover-treatment"></span></span>`
     : '';
-  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card${cover ? ' share-card-with-cover' : ''}${it.horizon === 'Completed' ? ' share-card-completed' : ''}" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}${showProduct ? `, ${escapeHtml(it.product)}` : ''}">
+  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card${cover ? ' share-card-with-cover' : ''}${it.horizon === 'Completed' ? ' share-card-completed' : ''}" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" data-horizon="${escapeHtml(it.horizon)}" aria-label="Open ${escapeHtml(it.title)}${showProduct ? `, ${escapeHtml(it.product)}` : ''}">
     <span class="card-open" aria-hidden="true">↗</span>
     ${cover}
     <div class="share-card-content${cover ? ' share-card-content-over-cover' : ''}">
@@ -221,7 +227,7 @@ function detailShell(): string {
           <p data-copy-status role="status" hidden></p>
           <input data-copy-fallback aria-label="Item link; select and copy" readonly hidden />
           <header class="detail-masthead" data-detail-masthead>
-            <div class="detail-cover-media" data-detail-cover aria-hidden="true" hidden><img data-detail-cover-image alt="" decoding="async"><span></span></div>
+            <div class="detail-cover-media roadmap-cover-media" data-detail-cover aria-hidden="true" hidden><img class="roadmap-cover-backdrop" data-detail-cover-image alt="" decoding="async"><img class="roadmap-cover-fill" data-detail-cover-image alt="" decoding="async"><img class="roadmap-cover-reveal" data-detail-cover-image alt="" decoding="async"><span class="detail-cover-treatment"></span></div>
             <div class="detail-masthead-copy"><h2 class="roadmap-display roadmap-title detail-title" id="detail-title" data-reading-title tabindex="-1" aria-live="polite"></h2></div>
           </header>
           <dl class="detail-status-summary">
@@ -285,6 +291,14 @@ function css(context: ShareContext): string {
     width: min(1600px, 100%);
     margin: 0 auto;
     padding: 12px 24px;
+  }
+  .shared-roadmap > .roadmap-masthead {
+    border:0;
+    background:transparent;
+    box-shadow:none;
+    padding-inline:0;
+    -webkit-backdrop-filter:none;
+    backdrop-filter:none;
   }
   .hero-grid {
     display: grid;
@@ -481,22 +495,19 @@ function css(context: ShareContext): string {
     overflow: hidden;
     background: color-mix(in srgb, var(--roadmap-product-accent) 18%, var(--color-surface-subtle-default));
   }
-  .share-card-cover img,
-  .share-card-cover span { position:absolute;inset:0;width:100%;height:100%; }
-  .share-card-cover img { object-fit:cover;filter:saturate(.84) contrast(.94);transition:transform 320ms cubic-bezier(.2,.7,.2,1),filter 180ms ease; }
-  .share-card-cover span { background:linear-gradient(to bottom,color-mix(in srgb,var(--roadmap-product-accent) 8%,transparent),rgb(10 14 20 / 24%)),color-mix(in srgb,var(--roadmap-product-accent) 10%,transparent); }
-  [data-theme="dark"] .share-card-cover img { filter:brightness(.72) saturate(.72) contrast(.94); }
-  [data-theme="dark"] .share-card-cover span { background:linear-gradient(to bottom,rgb(3 7 12 / 8%),rgb(3 7 12 / 42%)),color-mix(in srgb,var(--roadmap-product-accent) 16%,transparent); }
-  .share-card-completed .share-card-cover img { filter:grayscale(.45) saturate(.5); }
+  .share-card-cover-treatment { position:absolute;inset:0;width:100%;height:100%;background:linear-gradient(to bottom,color-mix(in srgb,var(--roadmap-product-accent) 8%,transparent),rgb(10 14 20 / 24%)),color-mix(in srgb,var(--roadmap-product-accent) 10%,transparent); }
+  .share-card-cover .roadmap-cover-fill,.share-card-cover .roadmap-cover-reveal { filter:saturate(.84) contrast(.94); }
+  [data-theme="dark"] .share-card-cover .roadmap-cover-fill,[data-theme="dark"] .share-card-cover .roadmap-cover-reveal { filter:brightness(.72) saturate(.72) contrast(.94); }
+  [data-theme="dark"] .share-card-cover-treatment { background:linear-gradient(to bottom,rgb(3 7 12 / 8%),rgb(3 7 12 / 42%)),color-mix(in srgb,var(--roadmap-product-accent) 16%,transparent); }
+  .share-card-completed .share-card-cover .roadmap-cover-fill,.share-card-completed .share-card-cover .roadmap-cover-reveal { filter:grayscale(.45) saturate(.5); }
   .share-card-content { position:relative;z-index:1;min-width:0; }
   .share-card-content-over-cover { width:100%;padding:13px;border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent);border-radius:13px;background:linear-gradient(135deg,color-mix(in srgb,var(--roadmap-product-accent) 5%,transparent),transparent 62%),color-mix(in srgb,var(--color-card) 92%,transparent);box-shadow:0 10px 28px rgb(10 14 20 / 18%),inset 0 1px 0 rgb(255 255 255 / 22%);-webkit-backdrop-filter:blur(12px) saturate(.86);backdrop-filter:blur(12px) saturate(.86); }
   .share-card-content-over-cover .card-copy p { display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden; }
   [data-theme="dark"] .share-card-content-over-cover { border-color:rgb(255 255 255 / 14%);background:linear-gradient(135deg,color-mix(in srgb,var(--roadmap-product-accent) 7%,transparent),transparent 62%),color-mix(in srgb,var(--color-card) 90%,transparent);box-shadow:0 12px 32px rgb(0 0 0 / 32%),inset 0 1px 0 rgb(255 255 255 / 7%); }
-  @media (hover:hover) and (pointer:fine) { .share-card-with-cover:hover .share-card-cover img { transform:scale(1.025); } }
+  @media (hover:hover) and (pointer:fine) { .share-card-with-cover:hover .roadmap-cover-fill,.share-card-with-cover:hover .roadmap-cover-reveal { filter:saturate(.94) contrast(.97); } }
   @supports not ((-webkit-backdrop-filter:blur(1px)) or (backdrop-filter:blur(1px))) { .share-card-content-over-cover { background:color-mix(in srgb,var(--color-card) 96%,transparent); } }
   @media (prefers-reduced-transparency:reduce) { .share-card-content-over-cover { background:color-mix(in srgb,var(--color-card) 98%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none; } }
   @media (prefers-contrast:more) { .share-card-content-over-cover { border-color:var(--color-text-primary-default);background:var(--color-card);box-shadow:none; } }
-  @media (prefers-reduced-motion:reduce) { .share-card-cover img { transition:none; } }
   .share-card:focus-visible,
   .stat:focus-visible {
     outline: 3px solid rgba(246, 62, 13, .36);
@@ -622,15 +633,15 @@ function css(context: ShareContext): string {
   }
   .detail-masthead { position:relative; padding:10px 0 18px; overflow:hidden; }
   .detail-masthead.has-cover { display:flex; min-height:210px; margin:-12px -24px 0; padding:28px 24px 22px; align-items:flex-end; isolation:isolate; }
-  .detail-cover-media,.detail-cover-media img,.detail-cover-media span { position:absolute; inset:0; width:100%; height:100%; }
+  .detail-cover-media,.detail-cover-treatment { position:absolute; inset:0; width:100%; height:100%; }
   .detail-cover-media { z-index:-1; overflow:hidden; background:color-mix(in srgb,var(--roadmap-product-accent) 18%,var(--color-surface-subtle-default)); }
   .detail-cover-media[hidden] { display:none; }
-  .detail-cover-media img { object-fit:cover; filter:saturate(.82) contrast(.94); }
-  .detail-cover-media span { background:linear-gradient(to top,var(--color-card) 0%,color-mix(in srgb,var(--color-card) 96%,transparent) 18%,color-mix(in srgb,var(--color-card) 62%,transparent) 52%,color-mix(in srgb,var(--color-card) 14%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 14%,transparent); }
-  [data-theme="dark"] .detail-cover-media img { filter:brightness(.7) saturate(.68) contrast(.92); }
-  [data-theme="dark"] .detail-cover-media span { background:linear-gradient(to top,var(--color-card) 0%,color-mix(in srgb,var(--color-card) 97%,transparent) 20%,color-mix(in srgb,var(--color-card) 68%,transparent) 54%,color-mix(in srgb,var(--color-card) 20%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 20%,transparent); }
-  .detail-masthead.is-completed .detail-cover-media img { filter:grayscale(.28) saturate(.65) contrast(.94); }
-  [data-theme="dark"] .detail-masthead.is-completed .detail-cover-media img { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
+  .detail-cover-media .roadmap-cover-fill,.detail-cover-media .roadmap-cover-reveal { filter:saturate(.82) contrast(.94); }
+  .detail-cover-treatment { background:linear-gradient(to top,var(--color-card) 0%,color-mix(in srgb,var(--color-card) 96%,transparent) 18%,color-mix(in srgb,var(--color-card) 62%,transparent) 52%,color-mix(in srgb,var(--color-card) 14%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 14%,transparent); }
+  [data-theme="dark"] .detail-cover-media .roadmap-cover-fill,[data-theme="dark"] .detail-cover-media .roadmap-cover-reveal { filter:brightness(.7) saturate(.68) contrast(.92); }
+  [data-theme="dark"] .detail-cover-treatment { background:linear-gradient(to top,var(--color-card) 0%,color-mix(in srgb,var(--color-card) 97%,transparent) 20%,color-mix(in srgb,var(--color-card) 68%,transparent) 54%,color-mix(in srgb,var(--color-card) 20%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 20%,transparent); }
+  .detail-masthead.is-completed .detail-cover-media .roadmap-cover-fill,.detail-masthead.is-completed .detail-cover-media .roadmap-cover-reveal { filter:grayscale(.28) saturate(.65) contrast(.94); }
+  [data-theme="dark"] .detail-masthead.is-completed .detail-cover-media .roadmap-cover-fill,[data-theme="dark"] .detail-masthead.is-completed .detail-cover-media .roadmap-cover-reveal { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
   .detail-masthead-copy { position:relative; width:100%; max-width:960px; }
   .detail-masthead.has-cover .detail-masthead-copy { width:fit-content;max-width:min(100%,960px);padding:14px 16px;border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent);border-radius:13px;background:color-mix(in srgb,var(--color-card) 92%,transparent);box-shadow:0 12px 32px rgb(10 14 20 / 18%),inset 0 1px 0 rgb(255 255 255 / 20%);-webkit-backdrop-filter:blur(12px) saturate(.86);backdrop-filter:blur(12px) saturate(.86); }
   [data-theme="dark"] .detail-masthead.has-cover .detail-masthead-copy { border-color:rgb(255 255 255 / 14%);background:color-mix(in srgb,var(--color-card) 90%,transparent);box-shadow:0 14px 36px rgb(0 0 0 / 34%),inset 0 1px 0 rgb(255 255 255 / 7%); }
@@ -655,8 +666,11 @@ function css(context: ShareContext): string {
     font-size: 1rem;
     line-height: 1.7;
   }
-  .shared-resource { display:block; padding:12px 0; color:var(--accent); overflow-wrap:anywhere; }
-  .shared-resource img,.shared-resources video { display:block; max-width:100%; max-height:440px; border-radius:8px; margin-bottom:8px; }
+  .shared-resources { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px; }
+  .shared-resources h3 { grid-column:1/-1; }
+  .shared-resource { display:grid;grid-template-columns:72px minmax(0,1fr);align-items:center;gap:12px;min-height:86px;padding:9px;border:1px solid var(--color-border-subtle-default);border-radius:12px;background:color-mix(in srgb,var(--color-card) 84%,transparent);color:var(--color-text-primary-default);overflow-wrap:anywhere;text-decoration:none; }
+  .shared-resource img { display:block;width:72px;height:68px;object-fit:cover;border-radius:8px; }
+  .shared-resources video { grid-column:1/-1;display:block;width:100%;max-height:440px;border-radius:12px; }
   .shared-inline-image { display:block; margin:18px 0; }
   .shared-inline-image img { display:block; width:100%; height:auto; border-radius:8px; }
   .stage-chip[data-horizon="Completed"] { color:var(--color-feedback-success-text-independent-default, #187047); background:var(--color-surface-transparent-green-25, #e8f5ed); }
@@ -666,6 +680,9 @@ function css(context: ShareContext): string {
     margin-top: 22px;
   }
   .detail-section { min-width: 0; }
+  .detail-section-body-collapsed { position:relative;max-height:10rem;overflow:hidden; }
+  .detail-section-body-collapsed::after { content:'';position:absolute;inset:auto 0 0;height:6rem;pointer-events:none;background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--color-card) 98%,transparent) 74%); }
+  .detail-section-toggle { position:relative;z-index:1;min-height:34px;margin-top:12px;padding:6px 10px;border:1px solid var(--color-border-subtle-default);border-radius:8px;background:var(--color-card);color:var(--color-text-primary-default);cursor:pointer;font-size:12px;font-weight:600; }
   .detail-section p {
     margin: 8px 0 0;
     color: var(--color-text-primary-default);
@@ -764,7 +781,7 @@ function js(): string {
   const product = document.getElementById('detail-product');
   const masthead = document.querySelector('[data-detail-masthead]');
   const cover = document.querySelector('[data-detail-cover]');
-  const coverImage = document.querySelector('[data-detail-cover-image]');
+  const coverImages = Array.from(document.querySelectorAll('[data-detail-cover-image]'));
   const horizon = document.getElementById('detail-horizon');
   const stageGroup = document.querySelector('[data-detail-stage]');
   const stage = document.getElementById('detail-stage');
@@ -833,9 +850,9 @@ function js(): string {
     masthead.classList.toggle('is-completed', item.horizon === 'Completed');
     cover.hidden = !hasCover;
     if (hasCover) {
-      coverImage.src = item.cover;
-      coverImage.style.objectPosition = item.coverPosition || '50% 50%';
-    } else coverImage.removeAttribute('src');
+      coverImages.forEach(image => { image.src = item.cover; });
+      Object.entries(item.coverStyle || {}).forEach(([name, value]) => cover.style.setProperty(name, value));
+    } else coverImages.forEach(image => image.removeAttribute('src'));
     horizon.textContent = item.horizon;
     horizon.previousElementSibling.style.background = 'var(--roadmap-horizon-' + item.horizon.toLowerCase() + ')';
     stageGroup.hidden = item.horizon === 'Completed';
@@ -849,8 +866,9 @@ function js(): string {
     if (item.outcome) story.push({ heading: 'Target outcome', text: item.outcome });
     for (const section of item.sections || []) story.push(section);
     sections.replaceChildren(...story.map((section) => {
-      const wrap = el('section', 'detail-section');
-      const body = el('div');
+      const isLong = (section.text || '').trim().length > 420;
+      const wrap = el('section', 'detail-section item-reading-section item-section-surface' + (isLong ? ' item-section-preview' : ''));
+      const body = el('div', isLong ? 'detail-section-body-collapsed' : '');
       body.append(el('h3', 'roadmap-section-heading', section.heading));
       for (const block of section.blocks || [{ text: section.text }]) {
         if (block.image) {
@@ -862,11 +880,22 @@ function js(): string {
         } else body.append(el('p', '', block.text));
       }
       wrap.append(body);
+      if (isLong) {
+        const toggle = el('button', 'detail-section-toggle roadmap-action', 'Continue reading');
+        toggle.type = 'button'; toggle.setAttribute('aria-expanded', 'false');
+        toggle.addEventListener('click', () => {
+          const collapsed = body.classList.toggle('detail-section-body-collapsed');
+          toggle.textContent = collapsed ? 'Continue reading' : 'Show less';
+          toggle.setAttribute('aria-expanded', String(!collapsed));
+          wrap.classList.toggle('item-section-preview', collapsed);
+        });
+        wrap.append(toggle);
+      }
       return wrap;
     }));
     const attachments = (item.resources || []).filter(resource => !resource.inline);
     if(attachments.length){
-      const wrap=el('section','detail-section shared-resources');wrap.append(el('h3','roadmap-section-heading','Resources'));
+      const wrap=el('section','detail-section item-reading-section item-section-surface shared-resources');wrap.append(el('h3','roadmap-section-heading','Related resources'));
       for(const resource of attachments){
         const link=el('a','shared-resource',resource.label);link.href=resource.href;link.target='_blank';link.rel='noopener noreferrer';
         if(resource.image || resource.mediaType?.startsWith('image/')){const img=el('img');img.src=resource.href;img.alt=resource.label;img.loading='lazy';img.referrerPolicy='no-referrer';link.prepend(img);}
@@ -896,14 +925,18 @@ function js(): string {
     if (url.href !== location.href) history[push ? 'pushState' : 'replaceState'](null, '', url.href);
   }
 
+  function withViewTransition(update) {
+    if (!document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) { update(); return; }
+    document.startViewTransition(update);
+  }
+
   function open(i, updateUrl = true) {
     const wasClosed = shell.hidden;
     if (wasClosed) {
       lastFocus = document.activeElement;
       setExpanded(viewPreference.read());
     }
-    render(i);
-    shell.hidden = false;
+    withViewTransition(() => { render(i); shell.hidden = false; });
     document.body.classList.add('modal-open');
     if (updateUrl) writeUrl(wasClosed);
     requestAnimationFrame(() => { if (!shell.hidden) title.focus(); });
@@ -912,7 +945,7 @@ function js(): string {
   function close(updateUrl = true) {
     if (!shell || shell.hidden) return;
     imageViewer.close();
-    shell.hidden = true;
+    withViewTransition(() => { shell.hidden = true; });
     document.body.classList.remove('modal-open');
     if (updateUrl) writeUrl();
     lastFocus?.focus?.();
@@ -1065,7 +1098,7 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
 <style>${css(context)}\n${appearanceCss}\n${reviewCss}\n${timelineCss}\n${imageViewerCss}\n${readingToolbarCss}\n${titleTooltipCss}\n${itemTocCss}</style></head>
 <body>
 <a class="skip-link" href="#main-content">Skip to roadmap</a>
-<main id="main-content" class="board-root shared-roadmap" tabindex="-1">
+<main id="main-content" class="board-root shared-roadmap" tabindex="-1" data-share-view="${context.timeline ? 'timeline' : 'board'}" data-share-group="${escapeHtml(context.timeline?.group ?? group)}" data-share-sort="${escapeHtml(context.sort ?? 'manual')}" data-share-reverse-lanes="${context.reverseLanes ? 'true' : 'false'}" data-share-covers="${context.showCovers === false ? 'false' : 'true'}">
   <p data-item-link-notice role="status" hidden>This initiative is not included in this shared roadmap. Browse the available initiatives below.</p>
   <section class="roadmap-masthead">
     <span class="site-brand-tile"><img src="${logo}" alt="Product Roadmap" width="36" height="36"></span>

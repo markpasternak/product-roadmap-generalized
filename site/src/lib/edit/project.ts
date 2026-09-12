@@ -38,6 +38,10 @@ function applyUpdate(base: ItemVM, frontmatter: Record<string, string>): ItemVM 
     const n = Number(frontmatter.order);
     if (Number.isFinite(n)) next.order = n;
   }
+  if (frontmatter.coverFraming !== undefined) {
+    const framing = Number(frontmatter.coverFraming);
+    next.coverFraming = Number.isFinite(framing) ? framing : null;
+  }
   return next;
 }
 
@@ -63,6 +67,7 @@ function newItemDefaults(entry: BoardChangeset['created'][number]): ProjectedIte
     endDate: fm.endDate,
     cover: fm.cover || null,
     coverPosition: fm.coverPosition || null,
+    coverFraming: fm.coverFraming === undefined || fm.coverFraming === '' ? null : Number(fm.coverFraming),
     horizon: fm.horizon ?? 'Next',
     stage: fm.stage ?? 'Discovery',
     owner: fm.owner ?? '',

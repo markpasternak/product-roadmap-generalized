@@ -22,6 +22,7 @@ import { itemHistoryForPath } from '../../lib/itemHistory.server';
 import type { ItemLink } from '../../lib/items';
 import { isImageResource, resourceHref } from '../../lib/resources';
 import { IS_PUBLIC } from '../../lib/audience';
+import { coverPresentationCss } from '../../lib/coverPresentation';
 import {
   PhArrowSquareOut as _PhArrowSquareOut,
   PhCaretLeft as _PhCaretLeft,
@@ -69,7 +70,7 @@ const editUrl = !IS_PUBLIC && repoPath ? `${REPO_EDIT_BASE}/${repoPath}` : null;
 const created = formatDateTimeOrDate(history.createdAt, history.created);
 const updated = formatDateTimeOrDate(history.updatedAt, history.updated);
 const cover = d.cover ? resourceHref(d.cover, base) : '';
-const coverPosition = /^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(d.coverPosition ?? '') ? d.coverPosition : '50% 50%';
+const coverStyle = coverPresentationCss(d.coverPosition, d.coverFraming);
 const historyTitle = (at: string, by: string, subject: string): string =>
   [at ? formatDateTime(at) : '', by, subject].filter(Boolean).join(' · ');
 
@@ -113,9 +114,6 @@ const details: { label: string; value: string; href?: string; color?: string; da
   ...(links.length ? [{ label: 'Resources', value: String(links.length) }] : []),
   { label: 'Item ID', value: d.id },
 ];
-const resourceTypes = [...links.reduce((acc, ln) => acc.set(ln.label, (acc.get(ln.label) ?? 0) + 1), new Map<string, number>())]
-  .map(([label, count]) => ({ label, count }));
-
 function tagFilterHref(token: string): string {
   const params = new URLSearchParams();
   params.set('tag', token);
@@ -169,7 +167,7 @@ function tagFilterHref(token: string): string {
 
       <p data-copy-status role="status" class="mt-2 text-sm text-text-subtle-default empty:hidden"></p>
       <div class:list={['item-page-hero', cover && 'has-cover', d.horizon === 'Completed' && 'is-completed']}>
-        {cover && <div class="item-page-cover" aria-hidden="true"><img src={cover} alt="" decoding="async" style={`object-position:${coverPosition}`} /><span /></div>}
+        {cover && <div class="item-page-cover roadmap-cover-media" aria-hidden="true" style={coverStyle}><img class="roadmap-cover-backdrop" src={cover} alt="" decoding="async" /><img class="roadmap-cover-fill" src={cover} alt="" decoding="async" /><img class="roadmap-cover-reveal" src={cover} alt="" decoding="async" /><span class="item-page-cover-treatment" /></div>}
         <div class="item-page-hero-copy">
           <ProductMark product={d.product} size={40} />
           <div class="min-w-0">
@@ -191,11 +189,11 @@ function tagFilterHref(token: string): string {
       <article class="min-w-0">
         <PlannedDates startDate={d.startDate} endDate={d.endDate} />
 
-        <section class="roadmap-panel mt-3 rounded-[22px] p-4 sm:p-5">
+        <section class="mt-3">
           <div class="space-y-5">
             {storySections.map((s) => {
               return (
-                <section class="item-reading-section border-b border-border-subtle-default pb-5 last:border-b-0 last:pb-0">
+                <section class="item-reading-section item-section-surface">
                   <div class="min-w-0">
                     <h2 class="roadmap-section-heading">{s.heading}</h2>
                     <div class="resource-markdown item-prose mt-1.5 text-base leading-relaxed text-text-primary-default" set:html={s.html} />
@@ -216,22 +214,6 @@ function tagFilterHref(token: string): string {
                   {t}
                 </a>
               ))}
-            </div>
-          )}
-          {resourceTypes.length > 0 && (
-            <div class="mt-5 flex flex-wrap items-center gap-2">
-              <span class="roadmap-label mr-1">Resources</span>
-              {resourceTypes.map((resource) => {
-                const src = linkSource(resource.label);
-                const Icon = src.Icon as any;
-                return (
-                  <span class="text-single-sm-medium inline-flex items-center gap-2 rounded-lg border border-border-subtle-default/60 px-2.5 py-1.5" style={`background:${toneSurfaceStrong[src.tone]};color:${toneText[src.tone]}`}>
-                    <Icon size={16} />
-                    {resource.label}
-                    {resource.count > 1 && <span class="tabular-nums">×{resource.count}</span>}
-                  </span>
-                );
-              })}
             </div>
           )}
         </section>
@@ -265,7 +247,9 @@ function tagFilterHref(token: string): string {
                         {linkText(ln)}
                       </span>
                     </span>
-                    <PhArrowSquareOut size={18} class="text-icons-subtle-default" />
+                    <span class="text-single-sm-medium inline-flex shrink-0 items-center gap-1.5 text-text-subtle-default">
+                      Open <PhArrowSquareOut size={17} />
+                    </span>
                   </a>
                 );
               })}
@@ -303,14 +287,14 @@ function tagFilterHref(token: string): string {
 <style>
   .item-page-hero { position:relative; margin-top:.625rem; padding:.625rem 0 .875rem; overflow:hidden; }
   .item-page-hero.has-cover { display:flex; min-height:clamp(190px,24vw,270px); margin-inline:-1.5rem; padding:2rem 1.5rem 1.5rem; align-items:flex-end; border-radius:16px; isolation:isolate; }
-  .item-page-cover,.item-page-cover img,.item-page-cover span { position:absolute; inset:0; width:100%; height:100%; }
+  .item-page-cover,.item-page-cover-treatment { position:absolute; inset:0; width:100%; height:100%; }
   .item-page-cover { z-index:-1; overflow:hidden; background:color-mix(in srgb,var(--roadmap-product-accent) 18%,var(--color-surface-subtle-default)); }
-  .item-page-cover img { object-fit:cover; filter:saturate(.82) contrast(.94); }
-  .item-page-cover span { background:linear-gradient(to top,var(--roadmap-glass-bg) 0%,color-mix(in srgb,var(--roadmap-glass-bg) 96%,transparent) 18%,color-mix(in srgb,var(--roadmap-glass-bg) 62%,transparent) 52%,color-mix(in srgb,var(--roadmap-glass-bg) 14%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 14%,transparent); }
-  :global(:root[data-theme='dark']) .item-page-cover img { filter:brightness(.7) saturate(.68) contrast(.92); }
-  :global(:root[data-theme='dark']) .item-page-cover span { background:linear-gradient(to top,var(--roadmap-glass-bg) 0%,color-mix(in srgb,var(--roadmap-glass-bg) 97%,transparent) 20%,color-mix(in srgb,var(--roadmap-glass-bg) 68%,transparent) 54%,color-mix(in srgb,var(--roadmap-glass-bg) 20%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 20%,transparent); }
-  .item-page-hero.is-completed .item-page-cover img { filter:grayscale(.28) saturate(.65) contrast(.94); }
-  :global(:root[data-theme='dark']) .item-page-hero.is-completed .item-page-cover img { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
+  .item-page-cover .roadmap-cover-fill,.item-page-cover .roadmap-cover-reveal { filter:saturate(.82) contrast(.94); }
+  .item-page-cover-treatment { background:linear-gradient(to top,var(--roadmap-glass-bg) 0%,color-mix(in srgb,var(--roadmap-glass-bg) 96%,transparent) 18%,color-mix(in srgb,var(--roadmap-glass-bg) 62%,transparent) 52%,color-mix(in srgb,var(--roadmap-glass-bg) 14%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 14%,transparent); }
+  :global(:root[data-theme='dark']) .item-page-cover .roadmap-cover-fill,:global(:root[data-theme='dark']) .item-page-cover .roadmap-cover-reveal { filter:brightness(.7) saturate(.68) contrast(.92); }
+  :global(:root[data-theme='dark']) .item-page-cover-treatment { background:linear-gradient(to top,var(--roadmap-glass-bg) 0%,color-mix(in srgb,var(--roadmap-glass-bg) 97%,transparent) 20%,color-mix(in srgb,var(--roadmap-glass-bg) 68%,transparent) 54%,color-mix(in srgb,var(--roadmap-glass-bg) 20%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 20%,transparent); }
+  .item-page-hero.is-completed .item-page-cover .roadmap-cover-fill,.item-page-hero.is-completed .item-page-cover .roadmap-cover-reveal { filter:grayscale(.28) saturate(.65) contrast(.94); }
+  :global(:root[data-theme='dark']) .item-page-hero.is-completed .item-page-cover .roadmap-cover-fill,:global(:root[data-theme='dark']) .item-page-hero.is-completed .item-page-cover .roadmap-cover-reveal { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
   .item-page-hero-copy { position:relative; display:grid; width:100%; grid-template-columns:40px minmax(0,1fr); gap:14px; align-items:start; }
   .item-page-hero.has-cover .item-page-hero-copy { width:fit-content; max-width:100%; padding:14px 16px; border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent); border-radius:13px; background:color-mix(in srgb,var(--color-card) 92%,transparent); box-shadow:0 12px 32px rgb(10 14 20 / 18%),inset 0 1px 0 rgb(255 255 255 / 20%); -webkit-backdrop-filter:blur(12px) saturate(.86); backdrop-filter:blur(12px) saturate(.86); }
   :global(:root[data-theme='dark']) .item-page-hero.has-cover .item-page-hero-copy { border-color:rgb(255 255 255 / 14%); background:color-mix(in srgb,var(--color-card) 90%,transparent); box-shadow:0 14px 36px rgb(0 0 0 / 34%),inset 0 1px 0 rgb(255 255 255 / 7%); }

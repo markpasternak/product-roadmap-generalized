@@ -55,7 +55,7 @@ import { useEditStore } from '../../lib/edit/store';
 import { validateChangeset, type FieldError } from '../../lib/edit/validate';
 import { projectBoard } from '../../lib/edit/project';
 import { fetchDeployedCommit, watchForNewVersion } from '../../lib/edit/version';
-import { resourceTransferCount } from '../../lib/edit/resourceClient';
+import { listResources, resourceTransferCount } from '../../lib/edit/resourceClient';
 import PublicationConflicts from '../edit/PublicationConflicts.vue';
 import type { ApiItem } from '../../lib/edit/client';
 import DraftConflicts from '../edit/DraftConflicts.vue';
@@ -79,7 +79,8 @@ import {
 
 // Lazy: keeps the ~270KB md-editor (SectionEditor → MarkdownEditor) out of the initial
 // bundle — only fetched once a signed-in editor actually opens the full-screen editor.
-const ItemEditor = defineAsyncComponent(() => import('../edit/ItemEditor.vue'));
+const loadItemEditor = () => import('../edit/ItemEditor.vue');
+const ItemEditor = defineAsyncComponent(loadItemEditor);
 // Lazy for the same reason as ShareDialog/ItemEditor: this pulls in the AI client and is
 // only ever needed once an editor with AI available opens it.
 const NewWithAiDialog = defineAsyncComponent(() => import('../edit/NewWithAiDialog.vue'));
@@ -1252,6 +1253,7 @@ function onCardDuplicate(id: string) {
       endDate: src.endDate ?? '',
       cover: src.cover ?? '',
       coverPosition: src.coverPosition ?? '',
+      coverFraming: src.coverFraming == null ? '' : String(src.coverFraming),
       tags: (src.tags ?? []).join(', '),
     }),
   );
@@ -1998,6 +2000,8 @@ onMounted(async () => {
   const meRes = await me();
   canEdit.value = meRes.editor;
   if (canEdit.value) {
+    void loadItemEditor();
+    void listResources().catch(() => {});
     editStore.activate(meRes.login);
     try { dismissedPublication.value = sessionStorage.getItem(`${editStore.recoveryKey()}:publication-notice`) ?? ''; } catch {}
     await draftSync.start(meRes.login);
@@ -2137,7 +2141,10 @@ const editActionBtn =
     class="board-root"
     :data-ready="ready"
     :data-editing="canEdit && editMode ? 'true' : undefined"
-    :class="isFull ? 'bg-background overflow-y-auto p-6' : ''"
+    :class="[
+      isFull ? 'bg-background overflow-y-auto p-6' : '',
+      { 'board-presentation': present },
+    ]"
   >
     <p class="sr-only" role="status" aria-live="polite">{{ moveAnnouncement }}</p>
     <div
@@ -2262,17 +2269,22 @@ const editActionBtn =
         <div class="min-w-0 flex-1">
           <div v-if="!present" class="board-toolbar compact-toolbar mb-3 flex flex-wrap items-center">
             <div class="board-product">
+              <span
+                class="board-product-mark"
+                :style="{ background: filters.product ? productColor[filters.product as keyof typeof productColor] : 'var(--color-accent-brand-default)' }"
+                aria-hidden="true"
+              />
               <Select :model-value="filters.product ?? ''" @update:model-value="filters.product = $event || null"
                 :options="[{ value: '', label: 'All products' }, ...PRODUCTS.map(product => ({ value: product, label: product }))]"
                 aria-label="Filter by product" />
-              <span role="status" aria-live="polite">{{ focused.length }} items</span>
+              <span role="status" aria-live="polite">{{ focused.length }} initiatives</span>
             </div>
             <div class="roadmap-layout-switch" role="group" aria-label="Roadmap layout">
               <button type="button" :aria-pressed="filters.layout !== 'timeline'" @click="filters.layout = 'board'">Board</button>
               <button type="button" :aria-pressed="filters.layout === 'timeline'" @click="filters.layout = 'timeline'">Timeline</button>
             </div>
             <div ref="searchWrap" class="board-search">
-              <SearchInput v-model="filters.q" name="q" placeholder="Search roadmap items..." :debounce="150" />
+              <SearchInput v-model="filters.q" name="q" placeholder="Search initiatives…" :debounce="150" />
             </div>
             <button
               type="button"
@@ -2281,7 +2293,7 @@ const editActionBtn =
               :aria-expanded="sheetOpen"
               @click="toggleFilters"
             >
-              Filters
+              Filter
               <span v-if="toolbarFilterCount" class="board-filter-count">{{ toolbarFilterCount }}</span>
             </button>
           <SavedViews
@@ -2324,7 +2336,7 @@ const editActionBtn =
                   <input v-model="showCoverImages" type="checkbox" />
                   <span>Show cover images</span>
                 </label>
-                <p id="lane-order-hint" class="lane-order-hint">Saved in this browser and included in shared views. Items inside each lane keep their order.</p>
+                <p id="lane-order-hint" class="lane-order-hint">Stored in this browser. Presentation links and share snapshots copy these settings.</p>
               </div>
             </template>
           </SavedViews>
@@ -2341,11 +2353,11 @@ const editActionBtn =
                 aria-controls="board-more-actions"
                 @click="moreOpen = !moreOpen"
               >
-                More<span class="disclosure-caret" aria-hidden="true"></span>
+                Actions<span class="disclosure-caret" aria-hidden="true"></span>
               </button>
               <div v-if="moreOpen" id="board-more-actions" class="control-popover board-more-panel">
                 <button v-if="canEdit" type="button" @click="recoveryOpen = true; closeMore(false)">Draft recovery copies</button>
-                <button type="button" @click="openRecentChanges">Recent changes</button>
+                <span class="board-more-label">Presentation</span>
                 <button type="button" aria-label="Start presentation" @click="startPresentation">
                   Start presentation
                 </button>
@@ -2361,6 +2373,8 @@ const editActionBtn =
                 <button v-if="fullscreenAvailable" type="button" @click="toggleFull">
                   {{ isFull ? 'Exit full screen' : 'Full screen' }}
                 </button>
+                <span class="board-more-label board-more-label-history">History</span>
+                <button type="button" @click="openRecentChanges">Recent changes</button>
               </div>
             </div>
             <PresenceIndicator :viewers="viewers" :self-id="shareAuthor?.id" :realtime-available="realtimeAvailable" />
@@ -2372,7 +2386,7 @@ const editActionBtn =
                 aria-label="Publish a share link…"
                 @click="openShare"
               >
-                Share
+                Share snapshot
               </button>
               <button
                 v-if="canEdit"
@@ -2476,8 +2490,14 @@ const editActionBtn =
           />
 
           <div v-if="customHorizons && !present" class="horizon-view-summary">
-            <span>Showing horizons: {{ horizons.length ? horizons.join(', ') : 'None' }}</span>
-            <button type="button" @click="resetHorizons" aria-label="Reset visible horizons">Reset</button>
+            <span class="horizon-view-label">Visible</span>
+            <span v-if="!horizons.length">No horizons</span>
+            <span v-for="horizon in horizons" :key="horizon" class="horizon-view-token">
+              <span class="horizon-view-dot" :style="{ background: horizonDot[horizon as keyof typeof horizonDot] }" aria-hidden="true" />
+              {{ horizon }}
+            </span>
+            <span class="horizon-view-count">{{ focused.length }} initiative{{ focused.length === 1 ? '' : 's' }}</span>
+            <button type="button" @click="resetHorizons" aria-label="Reset visible horizons">Reset view</button>
           </div>
           <ActiveFilterChips
             v-if="activeChips.length && !present"
@@ -2559,7 +2579,7 @@ const editActionBtn =
                   </div>
                   <div class="border-border-subtle-default mt-2.5 border-t" />
                 </header>
-                <div class="mt-3 flex flex-col gap-2" :ref="(el) => registerLaneListEl(lane.key, el as Element | null)">
+                <div class="roadmap-lane-cards mt-3 flex flex-col gap-2" :ref="(el) => registerLaneListEl(lane.key, el as Element | null)">
                   <RoadmapCard
                     v-for="it in lane.items"
                     :key="it.id"
@@ -2685,6 +2705,7 @@ const editActionBtn =
       :all-tags="allTags"
       :all-owners="allOwners"
       :published="editingId ? (byId.get(editingId) ?? null) : null"
+      :published-body="editingId ? (rawBodies.get(editingId) ?? undefined) : undefined"
       :preview-show-product="showCardProducts"
       :preview-show-horizon="filters.group === 'product'"
       :preview-show-cover="showCoverImages"
@@ -3169,6 +3190,36 @@ const editActionBtn =
   font-style: italic;
   font-weight: 400;
   letter-spacing: 0;
+}
+
+.board-presentation .roadmap-masthead {
+  position: relative;
+  top: auto;
+  z-index: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding-inline: 0;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.board-presentation [data-test='exit-presentation'] {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 30;
+  background: color-mix(in srgb,var(--color-card) 90%,transparent);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 16%);
+  -webkit-backdrop-filter: blur(14px) saturate(.9);
+  backdrop-filter: blur(14px) saturate(.9);
+}
+.board-presentation .board-scroll { gap: 1.1rem; }
+.board-presentation .roadmap-lane { min-width: 300px; padding: .75rem; }
+.board-presentation :deep(.roadmap-card-with-cover) { min-height: 286px; }
+.board-presentation :deep(.roadmap-card:not(.roadmap-card-with-cover)) { min-height: 132px; }
+@media (prefers-reduced-transparency: reduce) {
+  .board-presentation [data-test='exit-presentation'] { background: var(--color-card); -webkit-backdrop-filter:none; backdrop-filter:none; }
 }
 
 .sheet-panel { background: var(--color-card); border-left: 1px solid var(--roadmap-glass-border); }

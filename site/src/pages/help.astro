@@ -163,8 +163,9 @@ const TOC = [
         Timeline settings are saved too. You can update, rename or delete saved views in the same menu.
         They are stored in this browser, not synced to your account; clearing browser data removes them.
         A saved “last 7 days” filter keeps rolling as time passes.</p>
-      <p><b>More</b> contains Recent changes, presentation and full-screen controls.
-        Presentation hides the editing controls on the live roadmap and keeps its existing access rules.
+      <p><b>Actions</b> contains presentation, presentation-link and full-screen controls, plus Recent changes.
+        Presentation keeps the current horizons, grouping, sort, lane order, layout and cover setting. It gives cards more room,
+        hides working controls, and keeps the roadmap's existing access rules.
         Use Account for editing sign-in and appearance; read-only deployments may show Appearance instead.</p>
       <p>Press <kbd>/</kbd> to search or <kbd>?</kbd> to see keyboard shortcuts.</p>
     </section>
@@ -219,7 +220,9 @@ const TOC = [
       <p>Edits save on this device, then sync to your account when connected. The save bar reports that status
         and your unpublished changes. <b>A saved draft is not published to GitHub or the live site.</b>
         Leaving edit mode keeps the draft. Check the save status before leaving, especially if you are offline.</p>
-      <p>Use the section editor or whole-body Markdown to write, add optional sections, and set fields and dates.
+      <p>Use the section overview to move between the same section cards readers see, expand long sections when needed,
+        or use whole-body Markdown. The left rail keeps the initiative's decisions and card preview in view while you write.
+        Choose the changed count in the header for a before-and-after review and to jump to a changed field or write-up.
         You can create, duplicate or delete items. Drag between horizon lanes to change a horizon.
         To reorder priority, choose one product, sort by Priority and clear other filters.</p>
       <h3>Review, then publish</h3>
@@ -255,7 +258,8 @@ const TOC = [
       <p>Choose <b>Edit</b> beside a resource to change its name or image description, replace the file or remove
         a use. Removing a use keeps the file in the library. Replacing a file updates this item's references;
         other items keep their chosen revision. Delete from library is available when the file has no remaining uses.</p>
-      <p>Under <b>Add resource → Choose existing</b>, image thumbnails stay visible and <b>Preview</b> opens the
+      <p>Under <b>Add resource → Choose existing</b>, resources appear in a visual gallery. Selecting one opens a side inspector
+        without moving the editor. Image thumbnails stay visible and <b>Preview</b> opens the
         original in a new tab. Use <b>Open</b> to inspect another file or document before attaching it. These actions
         remain available for resources that are already attached.</p>
       <p>An attached image can also become the card's cover. Choose <b>Use as cover</b>, then click or drag directly
@@ -282,7 +286,7 @@ const TOC = [
     <section id="latest-changes" class="mt-10 scroll-mt-24">
       <h2>Recent changes and collaboration</h2>
 <span id="presence" class="scroll-mt-24"></span>
-      <p>Open <b>More → Recent changes</b> for publication history. Entries show the changes, their author and time,
+      <p>Open <b>Actions → Recent changes</b> for publication history. Entries show the changes, their author and time,
         and a link to the Git commit. This history records publications, not private draft edits.
         Use Activity filters to find the items changed in a particular period.</p>
       <p>When live presence is enabled, the viewing indicator shows other active viewers and an editing notice
@@ -318,9 +322,10 @@ const TOC = [
         <li>Use <b>Preview as recipient</b> to check the selected content and appearance at desktop or mobile size.</li>
         <li>Choose the audience and publish a new share, or update an existing one.</li>
       </ol>
-      <p>Card titles use up to two lines. Hover or focus a card to read a clipped title in full; open the item for its full write-up.
+      <p>Card titles use up to three lines. Hover or focus a card to read a clipped title in full; open the item for its full write-up.
         Shared cards keep the board's grouping, sort, lane order and cover-image setting. Selected covers are copied
-        into the snapshot automatically. Selected empty horizon lanes stay visible.
+        into the snapshot automatically. Presentation mode and shared snapshots use the same masthead, lane, card, cover and
+        item-reader styles, so the recipient page matches the view you reviewed. Selected empty horizon lanes stay visible.
         Cards show the work stage. When horizon lanes mix products, cards show the product shorthand; the shorthand
         is hidden for a single product and when product lanes already provide that context. Product lanes show the horizon instead.
         The Completed lane is visually quieter.

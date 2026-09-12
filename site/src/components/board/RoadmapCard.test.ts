@@ -33,10 +33,12 @@ it('shows ownership internally and omits it in presentation cards', () => {
 });
 
 it('renders an explicitly selected cover at its focal point and respects the view toggle', () => {
-  const covered = item({ cover: '../../assets/ast_one/rev_one/cover.png', coverPosition: '35% 70%' });
+  const covered = item({ cover: '../../assets/ast_one/rev_one/cover.png', coverPosition: '35% 70%', coverFraming: -0.8 });
   const shown = mountCard({ item: covered });
+  expect(shown.findAll('.roadmap-card-cover img')).toHaveLength(3);
   expect(shown.get('.roadmap-card-cover img').attributes('src')).toContain('/assets/ast_one/rev_one/cover.png');
-  expect(shown.get('.roadmap-card-cover img').attributes('style')).toContain('object-position: 35% 70%');
+  expect(shown.get('.roadmap-card-cover').attributes('style')).toContain('--cover-position: 35% 70%');
+  expect(shown.get('.roadmap-card-cover').attributes('style')).toContain('--cover-reveal-opacity: 1');
   expect(shown.get('button').classes()).toContain('roadmap-card-with-cover');
   expect(shown.get('.roadmap-card-content-over-cover').text()).toContain('Existing item');
   expect(mountCard({ item: covered, showCover: false }).find('.roadmap-card-cover').exists()).toBe(false);

@@ -215,7 +215,7 @@ describe('Board — product navigation and view options', () => {
     const w = await mountBoard();
     expect(w.find('[data-test="sign-in-to-edit"]').exists()).toBe(false);
     expect(w.find('[data-test="edit-toggle"]').exists()).toBe(false);
-    expect(w.get('[aria-controls="board-more-actions"]').text()).toContain('More');
+    expect(w.get('[aria-controls="board-more-actions"]').text()).toContain('Actions');
   });
 
   it('opens a clean completed-item link with its lane and item navigation available', async () => {
