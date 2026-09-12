@@ -960,6 +960,8 @@ watch(() => props.item?.id, () => {
 .detail-masthead.is-completed .detail-cover-media img { filter:grayscale(.28) saturate(.65) contrast(.94); }
 :global(:root[data-theme='dark']) .detail-masthead.is-completed .detail-cover-media img { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
 .detail-masthead-copy { position:relative; width:100%; max-width:960px; }
+.detail-masthead.has-cover .detail-masthead-copy { width:fit-content; max-width:min(100%,960px); padding:14px 16px; border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent); border-radius:13px; background:color-mix(in srgb,var(--color-card) 92%,transparent); box-shadow:0 12px 32px rgb(10 14 20 / 18%),inset 0 1px 0 rgb(255 255 255 / 20%); -webkit-backdrop-filter:blur(12px) saturate(.86); backdrop-filter:blur(12px) saturate(.86); }
+:global(:root[data-theme='dark']) .detail-masthead.has-cover .detail-masthead-copy { border-color:rgb(255 255 255 / 14%); background:color-mix(in srgb,var(--color-card) 90%,transparent); box-shadow:0 14px 36px rgb(0 0 0 / 34%),inset 0 1px 0 rgb(255 255 255 / 7%); }
 .detail-masthead .roadmap-title { max-width:28ch; font-size:clamp(1.75rem,2.6vw,2.25rem); line-height:1.08; }
 .detail-summary { padding:14px 0; border-bottom:1px solid var(--color-border-subtle-default); }
 .detail-status-summary { display:flex; flex-wrap:wrap; gap:10px clamp(24px,4vw,48px); margin:0; }
@@ -985,6 +987,8 @@ watch(() => props.item?.id, () => {
   .detail-status-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; }
   .detail-utility-row { align-items:flex-start; }
 }
+@media (prefers-reduced-transparency:reduce) { .detail-masthead.has-cover .detail-masthead-copy { background:color-mix(in srgb,var(--color-card) 98%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none; } }
+@media (prefers-contrast:more) { .detail-masthead.has-cover .detail-masthead-copy { border-color:var(--color-text-primary-default);background:var(--color-card);box-shadow:none; } }
 .drawer-enter-active,
 .drawer-leave-active {
   transition: opacity 0.2s ease;

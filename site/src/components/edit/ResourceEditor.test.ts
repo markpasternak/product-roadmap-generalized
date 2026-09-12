@@ -270,10 +270,10 @@ describe('resource management', () => {
     await w.findAll('button').find(button => button.text() === 'Use as cover')!.trigger('click');
     expect((w.vm as any).cover).toBe('../../assets/ast_one/rev_one/cover.png');
     expect((w.vm as any).coverPosition).toBe('50% 50%');
-    await w.get('[aria-label="Edit Evidence"]').trigger('click');
-    const vertical = w.findAll('.resource-cover-position input[type="range"]')[1];
-    await vertical.setValue('25');
-    expect((w.vm as any).coverPosition).toBe('50% 25%');
+    const focus = w.get('.resource-cover-focus-map');
+    await focus.trigger('keydown', { key: 'ArrowUp' });
+    expect((w.vm as any).coverPosition).toBe('50% 45%');
+    expect(w.findAll('.resource-cover-crop')).toHaveLength(2);
     await w.findAll('button').find(button => button.text() === 'Remove cover')!.trigger('click');
     expect((w.vm as any).cover).toBe('');
   });

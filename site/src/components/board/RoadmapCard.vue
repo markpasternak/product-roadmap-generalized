@@ -345,6 +345,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
 .roadmap-card-cover img {
   object-fit: cover;
   filter: saturate(0.84) contrast(0.94);
+  transition: transform 320ms cubic-bezier(.2,.7,.2,1), filter 180ms ease;
 }
 .roadmap-card-cover-treatment {
   background:
@@ -372,8 +373,11 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
   padding: 0.8rem;
   border: 1px solid color-mix(in srgb, var(--color-border-subtle-default) 72%, transparent);
   border-radius: 13px;
-  background: color-mix(in srgb, var(--color-card) 88%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--roadmap-product-accent) 5%, transparent), transparent 62%),
+    color-mix(in srgb, var(--color-card) 92%, transparent);
   box-shadow: 0 10px 28px rgb(10 14 20 / 18%), inset 0 1px 0 rgb(255 255 255 / 22%);
+  -webkit-backdrop-filter: blur(12px) saturate(0.86);
   backdrop-filter: blur(12px) saturate(0.86);
 }
 .roadmap-card-content-over-cover .roadmap-card-oneliner {
@@ -381,8 +385,25 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
 }
 :global(:root[data-theme='dark']) .roadmap-card-content-over-cover {
   border-color: rgb(255 255 255 / 14%);
-  background: color-mix(in srgb, var(--color-card) 86%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--roadmap-product-accent) 7%, transparent), transparent 62%),
+    color-mix(in srgb, var(--color-card) 90%, transparent);
   box-shadow: 0 12px 32px rgb(0 0 0 / 32%), inset 0 1px 0 rgb(255 255 255 / 7%);
+}
+@media (hover:hover) and (pointer:fine) {
+  .roadmap-card-with-cover:hover .roadmap-card-cover img { transform:scale(1.025); }
+}
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .roadmap-card-content-over-cover { background:color-mix(in srgb,var(--color-card) 96%,transparent); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .roadmap-card-content-over-cover { background:color-mix(in srgb,var(--color-card) 98%,transparent);-webkit-backdrop-filter:none;backdrop-filter:none; }
+}
+@media (prefers-contrast: more) {
+  .roadmap-card-content-over-cover { border-color:var(--color-text-primary-default);background:var(--color-card);box-shadow:none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .roadmap-card-cover img { transition:none; }
 }
 .roadmap-card-with-cover .card-open-arrow {
   display: grid;
