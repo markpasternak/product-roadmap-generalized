@@ -43,6 +43,9 @@ function mountEditor(
     allTags?: string[];
     allOwners?: string[];
     published?: ItemVM | null;
+    previewShowProduct?: boolean;
+    previewShowHorizon?: boolean;
+    previewShowCover?: boolean;
   } = {},
 ) {
   const w = mount(ItemEditor, { props: { item: ITEM, body: BODY, ...props } });
@@ -280,27 +283,29 @@ describe('ItemEditor', () => {
     expect(document.activeElement).toBe(w.find('[data-test="title-field"]').element);
   });
 
-  // Fix #6: live card preview mirroring RoadmapCard's dot/stage-pill vocabulary.
+  // Fix #6: live preview uses the production RoadmapCard component.
   describe('card preview (fix #6)', () => {
     it("shows the item's title, horizon, stage, and product", () => {
-      const w = mountEditor();
-      expect(w.find('[data-test="preview-title"]').text()).toBe('Migrate off Supabase');
-      expect(w.find('[data-test="preview-horizon"]').text()).toContain('Now');
-      expect(w.find('[data-test="preview-stage"]').text()).toContain('Building');
-      expect(w.find('[data-test="preview-product"]').text()).toContain('Podcasts & Audiobooks');
+      const w = mountEditor({ previewShowProduct: true, previewShowHorizon: true });
+      const preview = w.find('[data-test="editor-preview"]');
+      expect(preview.find('[data-test="card-title"]').text()).toBe('Migrate off Supabase');
+      expect(preview.text()).toContain('Now');
+      expect(preview.text()).toContain('Building');
+      expect(preview.find('[aria-label="Podcasts & Audiobooks"]').exists()).toBe(true);
     });
 
     it('shows "Untitled" when the title is empty', () => {
       const w = mountEditor({ item: { ...ITEM, title: '' } });
-      expect(w.find('[data-test="preview-title"]').text()).toBe('Untitled');
+      expect(w.find('[data-test="editor-preview"] [data-test="card-title"]').text()).toBe('Untitled');
     });
 
     it('updates live as the bound item prop changes', async () => {
-      const w = mountEditor();
+      const w = mountEditor({ previewShowHorizon: true });
       await w.setProps({ item: { ...ITEM, title: 'Renamed', horizon: 'Later', stage: 'Discovery' } });
-      expect(w.find('[data-test="preview-title"]').text()).toBe('Renamed');
-      expect(w.find('[data-test="preview-horizon"]').text()).toContain('Later');
-      expect(w.find('[data-test="preview-stage"]').text()).toContain('Discovery');
+      const preview = w.find('[data-test="editor-preview"]');
+      expect(preview.find('[data-test="card-title"]').text()).toBe('Renamed');
+      expect(preview.text()).toContain('Later');
+      expect(preview.text()).toContain('Discovery');
     });
   });
 

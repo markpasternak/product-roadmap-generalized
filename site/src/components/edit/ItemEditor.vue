@@ -147,6 +147,7 @@ const previewItem = computed<ItemVM>(() => {
   return {
     ...(published ?? {}),
     ...props.item,
+    title: props.item.title.trim() || 'Untitled',
     updated: props.item.updated ?? published?.updated ?? '',
     order: published?.order ?? 0,
     themes: published?.themes ?? [],
