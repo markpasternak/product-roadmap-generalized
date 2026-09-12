@@ -38,6 +38,7 @@ func NewServer(cfg Config) *Server {
 		log.Fatal(err)
 	}
 	s := &Server{cfg: cfg, gh: gh, mux: http.NewServeMux(), dedup: newSyncDedup(syncDedupTTL, syncDedupMaxEntries)}
+	gh.startLocalBuild()
 	s.routes()
 	return s
 }

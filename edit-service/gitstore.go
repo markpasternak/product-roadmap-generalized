@@ -77,7 +77,13 @@ func (g *GitHub) worktreeRoot() string {
 }
 
 func (g *GitHub) gitEnv(token string) []string {
-	env := append([]string{}, os.Environ()...)
+	var env []string
+	for _, value := range os.Environ() {
+		// The optional Canvas credential is never needed by Git or its hooks.
+		if !strings.HasPrefix(value, "CANVAS_DROP_TOKEN=") {
+			env = append(env, value)
+		}
+	}
 	env = append(env,
 		"GIT_TERMINAL_PROMPT=0",
 		"HOME="+filepath.Dir(g.repoRoot()),
@@ -517,6 +523,9 @@ func (g *GitHub) applyCommitPush(ctx context.Context, token, wt string, cs Chang
 	if pushErr != nil {
 		return syncOutcome{}, pushOut, pushErr, nil
 	}
+	// One non-blocking wake after a real successful push, shared by /publish
+	// and legacy /sync. No-op, conflict and failed pushes never enter this path.
+	g.localBuild.enqueue()
 	out := syncOutcome{SHA: strings.TrimSpace(string(shaOut)), SkippedReorders: skippedReorders, CreatedIDs: createdIDs}
 	// Reuse the committed worktree and read history only for changed items. A
 	// post-push read failure must never turn a successful commit into a failure;
