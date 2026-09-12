@@ -10,6 +10,13 @@ describe('saved views', () => {
     filters.tags.push('later');
     expect(view.filters.tags).toEqual(['foundation']);
   });
+  it('round trips reverse lane order and defaults legacy views to canonical order', () => {
+    const reversed = snapshotView('Reverse', emptyFilters(), ['Now'], 'manual', true);
+    expect(readSavedViews(JSON.stringify([reversed]))[0].reverseLanes).toBe(true);
+    const { reverseLanes, ...legacy } = reversed;
+    expect(readSavedViews(JSON.stringify([legacy]))[0].reverseLanes).toBe(false);
+    expect(sameViewSelection(reversed, { ...reversed, reverseLanes: false })).toBe(false);
+  });
   it('ignores corrupt or obsolete entries while preserving valid views', () => {
     const valid = snapshotView('Now', emptyFilters(), ['Now'], 'manual');
     expect(readSavedViews('not json')).toEqual([]);

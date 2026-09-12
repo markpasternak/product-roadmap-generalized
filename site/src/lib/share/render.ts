@@ -12,7 +12,8 @@ import type { ProjectedItem } from './project';
 import { isStoryHeading, sectionLabel } from '../sectionHeadings';
 import { installItemImageViewer } from '../itemImageViewer';
 import imageViewerCss from '../../styles/image-viewer.css?raw';
-import { HORIZONS, type Horizon } from '../schema';
+import { HORIZONS, PRODUCTS, type Horizon } from '../schema';
+import type { SortKey } from '../filters';
 import { createItemViewPreference } from '../itemViewPreference';
 import readingToolbarCss from '../../styles/reading-toolbar.css?raw';
 import titleTooltipCss from '../../styles/title-tooltips.css?raw';
@@ -41,6 +42,11 @@ export interface ShareContext {
   /** Optional framing paragraph shown under the header. */
   intro?: string;
   product: string | null;
+  /** Board grouping captured from the publisher's current view. */
+  group?: 'horizon' | 'product';
+  /** Included for an explicit, inspectable snapshot contract; items arrive pre-sorted. */
+  sort?: SortKey;
+  reverseLanes?: boolean;
   /** Horizon lanes selected in the roadmap view, including intentionally empty lanes. */
   horizons?: readonly string[];
   generatedAt: string;
@@ -139,28 +145,34 @@ function cssString(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '');
 }
 
-function card(it: ProjectedItem, index: number, showProduct: boolean): string {
-  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}">
+function productMark(product: string): string {
+  const info = PRODUCT_META[product] ?? { short: '?', color: 'var(--roadmap-ink-muted)' };
+  return `<span class="product-mark" style="--product:${info.color};font-size:${info.short.length > 1 ? 12 : 15}px" title="${escapeHtml(product)}" role="img" aria-label="${escapeHtml(product)}"><span aria-hidden="true">${escapeHtml(info.short)}</span></span>`;
+}
+
+function card(it: ProjectedItem, index: number, showProduct: boolean, showHorizon: boolean): string {
+  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}${showProduct ? `, ${escapeHtml(it.product)}` : ''}">
     <span class="card-open" aria-hidden="true">↗</span>
     <div class="card-main">
+      ${showProduct ? productMark(it.product) : ''}
       <div class="card-copy">
-        ${showProduct ? `<span class="card-product">${escapeHtml(it.product)}</span>` : ''}
         <h3 data-title-tooltip="${escapeHtml(it.title)}">${escapeHtml(it.title)}</h3>
         ${it.oneliner ? `<p>${escapeHtml(it.oneliner)}</p>` : ''}
       </div>
     </div>
-    ${it.horizon !== 'Completed' && it.stage ? `<div class="card-meta">
-      <span class="roadmap-quiet-chip stage-chip" data-horizon="${escapeHtml(it.horizon)}">
-        ${escapeHtml(it.stage)}
-      </span>
+    ${showHorizon || (it.horizon !== 'Completed' && it.stage) ? `<div class="card-meta">
+      ${showHorizon ? `<span class="roadmap-quiet-chip stage-chip" data-horizon="${escapeHtml(it.horizon)}">${escapeHtml(it.horizon)}</span>` : ''}
+      ${it.horizon !== 'Completed' && it.stage ? `<span class="roadmap-quiet-chip stage-chip"${showHorizon ? '' : ` data-horizon="${escapeHtml(it.horizon)}"`}>${escapeHtml(it.stage)}</span>` : ''}
     </div>` : ''}
     ${scheduleLabel(it) ? `<p class="timeline-range-caption">Planned ${escapeHtml(scheduleLabel(it))}</p>` : ''}
   </button>`;
 }
 
-function lane(name: Horizon, laneItems: ProjectedItem[], allItems: ProjectedItem[]): string {
-  const accent = `var(--roadmap-horizon-${name.toLowerCase()})`;
-  const showProduct = new Set(allItems.map(item => item.product)).size > 1;
+function lane(name: string, laneItems: ProjectedItem[], allItems: ProjectedItem[], group: 'horizon' | 'product'): string {
+  const accent = group === 'product'
+    ? PRODUCT_META[name]?.color ?? 'var(--roadmap-ink-muted)'
+    : `var(--roadmap-horizon-${name.toLowerCase()})`;
+  const showProduct = group === 'horizon' && new Set(allItems.map(item => item.product)).size > 1;
   return `<section class="lane" data-lane="${escapeHtml(name)}" style="--lane-accent:${accent}">
     <header class="lane-head">
       <div class="lane-title-row">
@@ -170,7 +182,7 @@ function lane(name: Horizon, laneItems: ProjectedItem[], allItems: ProjectedItem
       </div>
       <div class="lane-rule"></div>
     </header>
-    <div class="lane-cards">${laneItems.length ? laneItems.map((it) => card(it, allItems.indexOf(it), showProduct)).join('') : '<p class="lane-empty">No items in this lane.</p>'}</div>
+    <div class="lane-cards">${laneItems.length ? laneItems.map((it) => card(it, allItems.indexOf(it), showProduct, group === 'product')).join('') : '<p class="lane-empty">No items in this lane.</p>'}</div>
   </section>`;
 }
 
@@ -928,14 +940,15 @@ function js(): string {
 }
 
 
-function renderSharedTimeline(settings: TimelineSettings & { range: TimelineRange }, items: ProjectedItem[]): string {
+function renderSharedTimeline(settings: TimelineSettings & { range: TimelineRange }, items: ProjectedItem[], reverseGroups = false): string {
   // Owner names and internal tags are not part of the customer-facing projection.
   const privateGrouping = settings.group === 'owner' || settings.group === 'tag';
   const config = timelineSettings({ ...settings, group: privateGrouping ? 'product' : settings.group });
   const model = timelineModel(items, config, settings.range);
   const ticks = model.ticks.map(t => `<span class="timeline-tick" style="left:${t.left}%;width:${t.width}%">${escapeHtml(t.label)}</span>`).join('');
   const grid = model.ticks.map(t => `<span aria-hidden="true" class="timeline-tick" style="left:${t.left}%;width:${t.width}%"></span>`).join('');
-  const groups = model.groups.map(group => `<details class="timeline-group" open><summary>${escapeHtml(group.name)}<small>${group.items.length} items</small></summary>${group.items.map(item => {
+  const visibleGroups = reverseGroups ? [...model.groups].reverse() : model.groups;
+  const groups = visibleGroups.map(group => `<details class="timeline-group" open><summary>${escapeHtml(group.name)}<small>${group.items.length} items</small></summary>${group.items.map(item => {
     const pos = model.position(item), index = items.indexOf(item);
     const color = PRODUCT_META[item.product]?.color ?? 'var(--color-accent-brand-default)';
     return `<div class="timeline-row"><button type="button" class="timeline-label" data-card-index="${index}"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(statusLabel(item))} · ${escapeHtml(item.product)}</small></button><div class="timeline-track">${grid}<button type="button" class="timeline-bar" data-card-index="${index}" data-before="${pos.before}" data-after="${pos.after}" style="left:${pos.left}%;width:${pos.width}%;padding:${pos.width < 4 ? '0' : '0 10px'};font-size:${pos.width < 4 ? '0' : '12px'};--product:${color}" aria-label="${escapeHtml(item.title + '. Planned ' + scheduleLabel(item))}" title="${escapeHtml(scheduleLabel(item))}">${escapeHtml(item.title)}</button></div></div>`;
@@ -947,10 +960,19 @@ function renderSharedTimeline(settings: TimelineSettings & { range: TimelineRang
 
 export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): string {
   const theme = context.theme ?? 'light';
-  // Keep selected empty lanes, and never omit included work if the selection is stale.
-  const selectedHorizons = new Set([...(context.horizons ?? []), ...items.map(item => item.horizon)]);
-  const lanes = HORIZONS.filter(horizon => selectedHorizons.has(horizon))
-    .map(horizon => lane(horizon, items.filter(item => item.horizon === horizon), items)).join('');
+  const group = context.group ?? 'horizon';
+  let laneNames: readonly string[];
+  if (group === 'product') {
+    const includedProducts = new Set(items.map(item => item.product));
+    laneNames = PRODUCTS.filter(product => includedProducts.has(product));
+  } else {
+    // Keep selected empty lanes, and never omit included work if the selection is stale.
+    const selectedHorizons = new Set([...(context.horizons ?? []), ...items.map(item => item.horizon)]);
+    laneNames = HORIZONS.filter(horizon => selectedHorizons.has(horizon));
+  }
+  if (context.reverseLanes) laneNames = [...laneNames].reverse();
+  const lanes = laneNames
+    .map(name => lane(name, items.filter(item => group === 'product' ? item.product === name : item.horizon === name), items, group)).join('');
   const title = escapeHtml(context.title);
   const description = shareDescription(context);
   const logo = escapeHtml(
@@ -991,7 +1013,7 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
     </div>
   </section>
   ${context.activitySummary ? `<p class="roadmap-muted" style="margin-bottom:1rem">${escapeHtml(context.activitySummary)}</p>` : ''}
-  ${context.timeline ? renderSharedTimeline(context.timeline, items) : `<div class="roadmap-glass board-shell"><div class="board-scroll">${lanes}</div></div>`}
+  ${context.timeline ? renderSharedTimeline(context.timeline, items, context.reverseLanes) : `<div class="roadmap-glass board-shell"><div class="board-scroll">${lanes}</div></div>`}
   <footer>
     <span>Shared ${escapeHtml(context.generatedAt)}</span>
     <span>${itemCount} item${itemCount === 1 ? '' : 's'}${context.timeline ? ' · Timeline' : ''}</span>
