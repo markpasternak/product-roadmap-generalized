@@ -21,7 +21,7 @@ external_visibility: Customer-safe
 Buy and manage a promotional campaign for a release directly, without going through a sales conversation.
 
 ## Why it matters
-Promotion today requires a minimum spend and a human on our side, which restricts it to major-label releases and leaves the long tail — where most of our catalogue growth is — with no way to spend money with us at all. Self-serve is how this becomes a business rather than a service line, and it is what independent artists have asked for most consistently. It also gives us a first-party demand source that does not compete with the Ads Platform.
+Promotion requires a minimum spend and a human on our side, which restricts it to major-label releases and leaves the long tail — where most of our catalogue growth is — with no way to spend money with us at all. Self-serve is how this becomes a business rather than a service line, and it is what independent artists have asked for most consistently. It also gives us a first-party demand source that does not compete with the Ads Platform.
 
 ## What ships
 Campaign creation with budget and audience controls, projected reach before commitment, in-flight performance against that projection, billing and receipts, and shared reporting infrastructure with the Ads Platform rather than a parallel stack.
