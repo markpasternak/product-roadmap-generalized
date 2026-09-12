@@ -9,7 +9,7 @@ tags: programmatic, exchange
 impact: High
 effort: High
 order: 4
-visibility: Internal
+visibility: Public
 external_visibility: Customer-safe
 ---
 
