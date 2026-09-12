@@ -389,7 +389,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
   border-radius: 13px;
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--roadmap-product-accent) 7%, transparent), transparent 62%),
-    color-mix(in srgb, var(--color-card) 82%, transparent);
+    color-mix(in srgb, var(--color-card) 76%, transparent);
   box-shadow: 0 12px 30px rgb(10 14 20 / 20%), inset 0 1px 0 rgb(255 255 255 / 28%);
   -webkit-backdrop-filter: blur(14px) saturate(0.78);
   backdrop-filter: blur(14px) saturate(0.78);
@@ -401,7 +401,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
   border-color: rgb(255 255 255 / 14%);
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--roadmap-product-accent) 9%, transparent), transparent 62%),
-    color-mix(in srgb, var(--color-card) 80%, transparent);
+    color-mix(in srgb, var(--color-card) 74%, transparent);
   box-shadow: 0 14px 34px rgb(0 0 0 / 36%), inset 0 1px 0 rgb(255 255 255 / 10%);
 }
 @media (hover:hover) and (pointer:fine) { .roadmap-card-with-cover:hover .roadmap-cover-fill,.roadmap-card-with-cover:hover .roadmap-cover-reveal { filter:saturate(.94) contrast(.97); } }
