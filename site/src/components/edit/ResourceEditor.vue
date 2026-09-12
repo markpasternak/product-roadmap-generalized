@@ -39,6 +39,7 @@ const emit = defineEmits<{
   "update:cover": [cover: string];
   "update:coverPosition": [position: string];
   "update:coverFraming": [framing: string];
+  ready: [];
 }>();
 const store = useEditStore();
 const locked = computed(() => !!store.snapshot().requestPayload);
@@ -764,6 +765,7 @@ onMounted(async () => {
       if (res.ok) documents.value = (await res.json()).documents ?? [];
     }),
   ]);
+  emit('ready');
 });
 watch(locked, (value, old) => {
   if (value) expanded.value = null;

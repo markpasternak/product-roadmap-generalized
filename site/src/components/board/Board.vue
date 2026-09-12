@@ -887,6 +887,10 @@ const editingBody = computed(() =>
   editingId.value ? (editStore.bodyValue(editingId.value) ?? rawBodies.value.get(editingId.value) ?? '') : '',
 );
 const editingIsNew = computed(() => !!editingId.value && editingId.value.startsWith('new-'));
+const editingContentReady = computed(() => {
+  const id = editingId.value;
+  return !id || id.startsWith('new-') || editStore.bodyValue(id) !== undefined || rawBodies.value.has(id);
+});
 function openEditor(id: string) {
   editingId.value = id;
 }
@@ -2734,6 +2738,8 @@ const editActionBtn =
       :validation-errors="validationIssues.filter(issue => issue.id === editingId)"
       :focus-request="focusRequest"
       :body="editingBody"
+      :content-ready="editingContentReady"
+      :load-error="workspaceError"
       :is-new="editingIsNew"
       :all-tags="allTags"
       :all-owners="allOwners"
@@ -2749,6 +2755,7 @@ const editActionBtn =
       @close="onEditorClose"
       @reset-field="onEditorResetField"
       @rewrite-accept="onEditorRewriteAccept"
+      @retry="retryWorkspace"
       ><template #save-status
         ><SaveStatus
           :detail="resourceTransferCount ? 'Finish or cancel file uploads before publishing' : draftSync.detail.value"

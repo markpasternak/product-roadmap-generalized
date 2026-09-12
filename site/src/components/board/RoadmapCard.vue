@@ -388,11 +388,11 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
   border: 1px solid color-mix(in srgb, var(--color-border-subtle-default) 72%, transparent);
   border-radius: 13px;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--roadmap-product-accent) 5%, transparent), transparent 62%),
-    color-mix(in srgb, var(--color-card) 92%, transparent);
-  box-shadow: 0 10px 28px rgb(10 14 20 / 18%), inset 0 1px 0 rgb(255 255 255 / 22%);
-  -webkit-backdrop-filter: blur(12px) saturate(0.86);
-  backdrop-filter: blur(12px) saturate(0.86);
+    linear-gradient(135deg, color-mix(in srgb, var(--roadmap-product-accent) 7%, transparent), transparent 62%),
+    color-mix(in srgb, var(--color-card) 82%, transparent);
+  box-shadow: 0 12px 30px rgb(10 14 20 / 20%), inset 0 1px 0 rgb(255 255 255 / 28%);
+  -webkit-backdrop-filter: blur(14px) saturate(0.78);
+  backdrop-filter: blur(14px) saturate(0.78);
 }
 .roadmap-card-content-over-cover .roadmap-card-oneliner {
   -webkit-line-clamp: 1;
@@ -400,9 +400,9 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
 :global(:root[data-theme='dark']) .roadmap-card-content-over-cover {
   border-color: rgb(255 255 255 / 14%);
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--roadmap-product-accent) 7%, transparent), transparent 62%),
-    color-mix(in srgb, var(--color-card) 90%, transparent);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 32%), inset 0 1px 0 rgb(255 255 255 / 7%);
+    linear-gradient(135deg, color-mix(in srgb, var(--roadmap-product-accent) 9%, transparent), transparent 62%),
+    color-mix(in srgb, var(--color-card) 80%, transparent);
+  box-shadow: 0 14px 34px rgb(0 0 0 / 36%), inset 0 1px 0 rgb(255 255 255 / 10%);
 }
 @media (hover:hover) and (pointer:fine) { .roadmap-card-with-cover:hover .roadmap-cover-fill,.roadmap-card-with-cover:hover .roadmap-cover-reveal { filter:saturate(.94) contrast(.97); } }
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
