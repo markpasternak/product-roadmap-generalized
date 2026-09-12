@@ -33,6 +33,11 @@ export function classifyChanges({ base, head, isAncestor, changed }) {
     base,
   };
 }
+// Only main pushes have a production build in deploy.yml. PRs and manual
+// checks must validate their own build, even when the files are content-only.
+export function requiresApplicationBuild(content, event, ref) {
+  return !(content === true && event === 'push' && ref === 'refs/heads/main');
+}
 const git = (...args) =>
   execFileSync('git', args, {
     encoding: 'utf8',
@@ -135,7 +140,7 @@ if (
     if (process.env.GITHUB_OUTPUT)
       appendFileSync(
         process.env.GITHUB_OUTPUT,
-        `content_only=${result.contentOnly}\n`,
+        `content_only=${result.contentOnly}\nbuild_required=${requiresApplicationBuild(result.contentOnly, process.env.GITHUB_EVENT_NAME, process.env.GITHUB_REF)}\n`,
       );
   }
 }
