@@ -1,6 +1,6 @@
 import { ref } from "vue";
 import { authedRequest, EDIT_API, getToken } from "./client";
-import { repositoryAssetPath, type ResourceAsset, type ResourceUpload } from "../resources";
+import { repositoryAssetPath, resourceHref, type ResourceAsset, type ResourceUpload } from "../resources";
 export const resourceTransferCount = ref(0);
 export const resourcePreviewURLs = ref<Record<string, string>>({});
 const imageRequests = new Map<string, Promise<void>>();
@@ -9,11 +9,22 @@ let resourceListRequest: Promise<ResourceAsset[]> | undefined;
 const RESOURCE_LIST_TTL = 5 * 60_000;
 const cloneResources = (assets: ResourceAsset[]): ResourceAsset[] =>
   typeof structuredClone === 'function' ? structuredClone(assets) : JSON.parse(JSON.stringify(assets));
-/** Load authenticated originals when the static build has not caught up yet. */
+/** Prefer deployed images; authenticated originals cover builds that have not caught up. */
 export async function loadImagePreview(path: string): Promise<void> {
   if (!repositoryAssetPath(path) || resourcePreviewURLs.value[path]) return;
   if (imageRequests.has(path)) return imageRequests.get(path)!;
   const request = (async () => {
+    const staticURL = resourceHref(path, import.meta.env.BASE_URL);
+    const available = await new Promise<boolean>((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve(true);
+      image.onerror = () => resolve(false);
+      image.src = staticURL;
+    });
+    if (available) {
+      resourcePreviewURLs.value = { ...resourcePreviewURLs.value, [path]: staticURL };
+      return;
+    }
     const res = await authedRequest(`/api/assets/content?path=${encodeURIComponent(path)}`);
     if (!res.ok || !res.headers.get('content-type')?.startsWith('image/'))
       throw new Error('Image preview unavailable');
