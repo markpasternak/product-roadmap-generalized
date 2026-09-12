@@ -2,7 +2,7 @@
 id: MUSIC-001
 title: Offline-first playback engine
 product: Music App
-horizon: Completed
+horizon: Later
 stage: Shipped
 owner: Erik Lindqvist
 tags: playback, reliability
