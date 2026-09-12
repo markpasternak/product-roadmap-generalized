@@ -156,9 +156,10 @@ function card(it: ProjectedItem, index: number, showProduct: boolean, showHorizo
   const cover = showCover && it.cover && safeResourceUrl(it.cover)
     ? `<span class="share-card-cover" aria-hidden="true"><img src="${escapeHtml(it.cover)}" alt="" loading="lazy" decoding="async" style="object-position:${/^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(it.coverPosition ?? '') ? it.coverPosition : '50% 50%'}"><span></span></span>`
     : '';
-  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card${it.horizon === 'Completed' ? ' share-card-completed' : ''}" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}${showProduct ? `, ${escapeHtml(it.product)}` : ''}">
+  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card${cover ? ' share-card-with-cover' : ''}${it.horizon === 'Completed' ? ' share-card-completed' : ''}" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" aria-label="Open ${escapeHtml(it.title)}${showProduct ? `, ${escapeHtml(it.product)}` : ''}">
     <span class="card-open" aria-hidden="true">↗</span>
     ${cover}
+    <div class="share-card-content${cover ? ' share-card-content-over-cover' : ''}">
     <div class="card-main">
       ${showProduct ? productMark(it.product) : ''}
       <div class="card-copy">
@@ -171,6 +172,7 @@ function card(it: ProjectedItem, index: number, showProduct: boolean, showHorizo
       ${it.horizon !== 'Completed' && it.stage ? `<span class="roadmap-quiet-chip stage-chip"${showHorizon ? '' : ` data-horizon="${escapeHtml(it.horizon)}"`}>${escapeHtml(it.stage)}</span>` : ''}
     </div>` : ''}
     ${scheduleLabel(it) ? `<p class="timeline-range-caption">Planned ${escapeHtml(scheduleLabel(it))}</p>` : ''}
+    </div>
   </button>`;
 }
 
@@ -462,21 +464,34 @@ function css(context: ShareContext): string {
     text-align: left;
     overflow: hidden;
   }
+  .share-card-with-cover {
+    display:flex;
+    min-height:248px;
+    flex-direction:column;
+    justify-content:flex-end;
+    isolation:isolate;
+    padding:12px;
+    background:color-mix(in srgb,var(--roadmap-product-accent) 16%,var(--color-surface-subtle-default));
+  }
   .share-card-cover {
-    position: relative;
+    position:absolute;
+    inset:0;
+    z-index:-1;
     display: block;
-    height: 88px;
-    margin: -14px -14px 14px;
     overflow: hidden;
     background: color-mix(in srgb, var(--roadmap-product-accent) 18%, var(--color-surface-subtle-default));
   }
   .share-card-cover img,
   .share-card-cover span { position:absolute;inset:0;width:100%;height:100%; }
   .share-card-cover img { object-fit:cover;filter:saturate(.84) contrast(.94); }
-  .share-card-cover span { background:linear-gradient(to bottom,transparent 46%,color-mix(in srgb,var(--color-card) 92%,transparent)),color-mix(in srgb,var(--roadmap-product-accent) 12%,transparent); }
-  [data-theme="dark"] .share-card-cover img { filter:brightness(.76) saturate(.72) contrast(.92); }
-  [data-theme="dark"] .share-card-cover span { background:linear-gradient(to bottom,transparent 42%,color-mix(in srgb,var(--color-card) 96%,transparent)),color-mix(in srgb,var(--roadmap-product-accent) 18%,transparent); }
-  .share-card-completed .share-card-cover img { filter:grayscale(.7) saturate(.35); }
+  .share-card-cover span { background:linear-gradient(to bottom,color-mix(in srgb,var(--roadmap-product-accent) 8%,transparent),rgb(10 14 20 / 24%)),color-mix(in srgb,var(--roadmap-product-accent) 10%,transparent); }
+  [data-theme="dark"] .share-card-cover img { filter:brightness(.72) saturate(.72) contrast(.94); }
+  [data-theme="dark"] .share-card-cover span { background:linear-gradient(to bottom,rgb(3 7 12 / 8%),rgb(3 7 12 / 42%)),color-mix(in srgb,var(--roadmap-product-accent) 16%,transparent); }
+  .share-card-completed .share-card-cover img { filter:grayscale(.45) saturate(.5); }
+  .share-card-content { position:relative;z-index:1;min-width:0; }
+  .share-card-content-over-cover { width:100%;padding:13px;border:1px solid color-mix(in srgb,var(--color-border-subtle-default) 72%,transparent);border-radius:13px;background:color-mix(in srgb,var(--color-card) 88%,transparent);box-shadow:0 10px 28px rgb(10 14 20 / 18%),inset 0 1px 0 rgb(255 255 255 / 22%);backdrop-filter:blur(12px) saturate(.86); }
+  .share-card-content-over-cover .card-copy p { display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden; }
+  [data-theme="dark"] .share-card-content-over-cover { border-color:rgb(255 255 255 / 14%);background:color-mix(in srgb,var(--color-card) 86%,transparent);box-shadow:0 12px 32px rgb(0 0 0 / 32%),inset 0 1px 0 rgb(255 255 255 / 7%); }
   .share-card:focus-visible,
   .stat:focus-visible {
     outline: 3px solid rgba(246, 62, 13, .36);

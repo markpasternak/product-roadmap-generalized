@@ -1353,7 +1353,9 @@ describe('Board — ItemEditor live card preview (fix #6)', () => {
     (w.vm as unknown as { editingId: string | null }).editingId = 'TALK-1';
     await flushPromises();
 
-    expect(w.find('[data-test="preview-title"]').text()).toBe('Renamed while editing');
+    const preview = w.get('[data-test="editor-preview"]');
+    expect(preview.get('[data-test="card-title"]').text()).toBe('Renamed while editing');
+    expect(preview.find('.roadmap-card').exists()).toBe(true);
   });
 });
 

@@ -7,19 +7,19 @@
 // `update:body` emit) so it can be built and tested in isolation.
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import Select from '../ui/Select.vue';
+import RoadmapCard from '../board/RoadmapCard.vue';
 import SectionEditor from './SectionEditor.vue';
 import ResourceEditor from './ResourceEditor.vue';
-import { resourcePreviewURLs, resourceTransferCount } from '../../lib/edit/resourceClient';
-import { repositoryAssetPath, resourceHref } from '../../lib/resources';
+import { resourceTransferCount } from '../../lib/edit/resourceClient';
 import TagInput from './TagInput.vue';
 import ConfirmAction from '../ui/ConfirmAction.vue';
 import OwnerInput from './OwnerInput.vue';
 import PlannedDates from '../board/PlannedDates.vue';
 import { scheduleIssue } from '../../lib/timeline';
-import { PhArrowCounterClockwise, PhX, PhTrendUp, PhSparkle } from '@phosphor-icons/vue';
+import { PhArrowCounterClockwise, PhX, PhSparkle } from '@phosphor-icons/vue';
 import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
 import { PRODUCTS, HORIZONS, STAGES, LEVELS, VISIBILITIES } from '../../lib/schema';
-import { toneText, horizonDot, productColor } from '../../lib/display';
+import { toneText, productColor } from '../../lib/display';
 import type { ItemVM } from '../../lib/filters';
 import type { ItemHistory } from '../../lib/itemHistory';
 import { formatDateTime, formatDateTimeOrDate } from '../../lib/dates';
@@ -66,8 +66,12 @@ const props = withDefaults(
      * and offer a per-field reset. Null for a brand-new (never-published) item, which
      * never shows changed markers. */
     published?: ItemVM | null;
+    /** Current board context, so this preview is the same card the editor replaced. */
+    previewShowProduct?: boolean;
+    previewShowHorizon?: boolean;
+    previewShowCover?: boolean;
   }>(),
-  { allTags: () => [], allOwners: () => [], published: null },
+  { allTags: () => [], allOwners: () => [], published: null, previewShowCover: true },
 );
 
 const emit = defineEmits<{
@@ -138,10 +142,22 @@ const effortModel = fieldModel('effort');
 const visibilityModel = fieldModel('visibility');
 const coverModel = fieldModel('cover');
 const coverPositionModel = fieldModel('coverPosition');
-const coverPreview = computed(() => {
-  if (!props.item.cover) return '';
-  const path = repositoryAssetPath(props.item.cover);
-  return (path && resourcePreviewURLs.value[path]) || resourceHref(props.item.cover, import.meta.env.BASE_URL);
+const previewItem = computed<ItemVM>(() => {
+  const published = props.published;
+  return {
+    ...(published ?? {}),
+    ...props.item,
+    updated: props.item.updated ?? published?.updated ?? '',
+    order: published?.order ?? 0,
+    themes: published?.themes ?? [],
+    oneliner: published?.oneliner ?? '',
+    outcome: published?.outcome ?? '',
+    sections: published?.sections ?? [],
+    editUrl: published?.editUrl ?? null,
+    links: published?.links ?? [],
+    text: published?.text ?? '',
+    href: published?.href ?? '#',
+  };
 });
 
 /** Tags round-trip as a comma-separated string in frontmatter (see schema.ts and
@@ -343,32 +359,16 @@ const historyRows = computed(() => [
     <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
       <div class="grid min-h-full gap-5 p-4 sm:p-6 lg:grid-cols-[320px_minmax(0,1fr)]">
         <div class="roadmap-panel min-w-0 shrink-0 rounded-xl p-4 lg:overflow-y-auto" data-test="metadata-panel">
-          <!-- Fix #6: a compact, non-interactive miniature of RoadmapCard — title, horizon
-               dot, stage, and product — so the editor always shows how the card will look,
-               live off the CURRENT (possibly-unsynced) `item` prop. -->
-          <div class="roadmap-card roadmap-product-card mb-4 rounded-2xl p-3" data-test="editor-preview">
-            <div v-if="coverPreview" class="editor-card-cover" :style="{ '--preview-accent': productColor[item.product as keyof typeof productColor] }">
-              <img :src="coverPreview" alt="" :style="{ objectPosition: item.coverPosition || '50% 50%' }" />
-            </div>
-            <div class="flex items-center gap-1.5">
-              <span class="h-3.5 w-1 shrink-0 rounded-full" :style="{ background: productColor[item.product as keyof typeof productColor] }" aria-hidden="true" />
-              <span class="text-single-sm-medium text-text-subtle-default truncate font-semibold uppercase tracking-wide" data-test="preview-product">
-                {{ item.product }}
-              </span>
-            </div>
-            <p class="mt-1.5 truncate text-[15px] font-semibold leading-snug text-text-primary-default" data-test="preview-title">
-              {{ item.title || 'Untitled' }}
-            </p>
-            <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <span class="text-single-sm-medium text-text-primary-default inline-flex items-center gap-1.5" data-test="preview-horizon">
-                <span class="h-3.5 w-1 rounded-full" :style="{ background: horizonDot[item.horizon as keyof typeof horizonDot] }" aria-hidden="true" />
-                {{ item.horizon }}
-              </span>
-              <span class="text-single-sm-medium text-text-subtle-default inline-flex items-center gap-1" data-test="preview-stage">
-                <PhTrendUp :size="12" />
-                {{ item.stage }}
-              </span>
-            </div>
+          <!-- Reuse the production card so cover crop, hierarchy, truncation and board context
+               cannot drift from what the editor is actually changing. -->
+          <div class="mb-4" data-test="editor-preview" aria-label="Card preview">
+            <RoadmapCard
+              :item="previewItem"
+              :show-product="previewShowProduct"
+              :show-horizon="previewShowHorizon"
+              :show-cover="previewShowCover"
+              preview
+            />
           </div>
 
           <dl v-if="historyRows.length" class="mb-4 grid gap-2 rounded-xl border border-border-subtle-default/70 bg-card/60 px-3 py-2.5" data-test="history-metadata">
@@ -638,6 +638,5 @@ const historyRows = computed(() => [
 </template>
 
 <style scoped>
-.editor-card-cover{position:relative;height:76px;margin:-.75rem -.75rem .75rem;overflow:hidden;border-radius:15px 15px 0 0;background:color-mix(in srgb,var(--preview-accent) 18%,var(--color-surface-subtle-default))}.editor-card-cover img{width:100%;height:100%;object-fit:cover;filter:saturate(.84) contrast(.94)}.editor-card-cover::after{content:"";position:absolute;inset:0;background:linear-gradient(to bottom,transparent 42%,color-mix(in srgb,var(--color-card) 94%,transparent)),color-mix(in srgb,var(--preview-accent) 12%,transparent)}:global(:root[data-theme='dark']) .editor-card-cover img{filter:brightness(.76) saturate(.72) contrast(.92)}
 .planned-editor{grid-column:1/-1;border-top:1px solid var(--color-border-subtle-default);padding-top:16px;margin-top:8px}.planned-editor h3{font-size:14px;font-weight:600}.planned-editor p{font-size:12px;color:var(--color-text-subtle-default);margin:5px 0 12px}.planned-editor-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.planned-editor-fields label{display:grid;gap:6px;font-size:12px}.planned-editor input{width:100%;min-width:0;min-height:40px;border:1px solid var(--color-border-subtle-default);border-radius:8px;background:var(--color-card);color:var(--color-text-primary-default);padding:8px;color-scheme:inherit}.planned-editor button{background:none;border:0;color:var(--color-text-link-default);text-decoration:underline;min-height:32px;cursor:pointer;font-size:12px}
 </style>
