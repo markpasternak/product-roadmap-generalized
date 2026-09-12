@@ -7,6 +7,8 @@ export default defineConfig({
   // version.test.ts exercise the "deployed differs / matches" branches directly.
   define: { __BUILD_COMMIT__: JSON.stringify('vitest-build-commit') },
   test: {
+    // Regular threads preserve isolation and pass the full suite; VM threads do not.
+    pool: 'threads',
     environment: 'happy-dom',
     setupFiles: ['./src/test-setup.ts'],
     // Unit tests inspect embedded resources without fetching remote pages or styles.

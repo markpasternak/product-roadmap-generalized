@@ -10,13 +10,18 @@ export const BUILD_COMMIT: string = typeof __BUILD_COMMIT__ !== 'undefined' ? __
 
 /** Fetches the commit currently deployed, bypassing caches. Null on any failure. */
 export async function fetchDeployedCommit(): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
   try {
-    const res = await fetch('/version.json?t=' + Date.now(), { cache: 'no-store' });
+    const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+    const res = await fetch(base + '/version.json?t=' + Date.now(), { cache: 'no-store', signal: controller.signal });
     if (!res.ok) return null;
     const data = await res.json();
     return typeof data?.commit === 'string' ? data.commit : null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

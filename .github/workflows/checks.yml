@@ -6,42 +6,106 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: checks-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  check:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      content_only: ${{ steps.changes.outputs.content_only }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - id: changes
+        run: node tooling/ci/changes.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.content_only != 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [test, check]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/setup-site
+      - run: npm --prefix site run ${{ matrix.task }}
+
+  build:
+    needs: changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: ./.github/actions/setup-site
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: site/package-lock.json
+          python-version: '3.12'
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: site/.cache/item-history.json
+          key: history-${{ runner.os }}-${{ hashFiles('site/scripts/build-item-history.mjs', 'site/src/lib/itemHistory.server.ts') }}-${{ github.sha }}
+          restore-keys: history-${{ runner.os }}-${{ hashFiles('site/scripts/build-item-history.mjs', 'site/src/lib/itemHistory.server.ts') }}-
+      - run: npm --prefix site audit --audit-level=moderate
+      - run: node --test tooling/ci/*.test.mjs site/scripts/build-item-history.test.mjs
+      - run: python3 tooling/validate_items.py
+      - run: npm --prefix site run build
+      - run: node site/scripts/check-demo.mjs
+      - run: node site/scripts/check-document-links.mjs
+      - name: Verify published item dates
+        run: node site/scripts/check-item-history.mjs
+
+  go:
+    needs: changes
+    if: needs.changes.outputs.content_only != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: edit-service/go.mod
           cache-dependency-path: edit-service/go.sum
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: '3.12'
-      - name: Scan Git history for secrets
-        run: |
-          go install github.com/zricethezav/gitleaks/v8@v8.30.1
-          gitleaks git . --redact=100 --log-opts=--all
-      - run: npm --prefix site ci --no-audit --no-fund
-      - run: npm --prefix site audit --audit-level=moderate
-      - run: npm --prefix site test
-      - run: npm --prefix site run check
-      - run: npm --prefix site run build
-      - run: node site/scripts/check-document-links.mjs
-      - name: Verify published item dates
-        run: node site/scripts/check-item-history.mjs
-      - run: node site/scripts/check-demo.mjs
-      - run: python3 tooling/validate_items.py
       - name: Check editing service
         working-directory: edit-service
         run: go test -race ./... && go vet ./...
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: edit-service/go.mod
+          cache-dependency-path: edit-service/go.sum
+      - name: Scan Git history for secrets, including content-only changes
+        run: |
+          go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          gitleaks git . --redact=100 --log-opts=--all
+
+  # Preserve the required check name and fail if an expected job was skipped.
+  check:
+    if: always()
+    needs: [changes, frontend, build, go, security]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all applicable checks
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node -e '
+            const jobs = JSON.parse(process.env.RESULTS);
+            const content = jobs.changes.outputs.content_only === "true";
+            for (const [name, job] of Object.entries(jobs)) {
+              const expected = content && ["frontend", "go"].includes(name) ? "skipped" : "success";
+              if (job.result !== expected) throw Error(name + ": " + job.result + ", expected " + expected);
+            }
+          '

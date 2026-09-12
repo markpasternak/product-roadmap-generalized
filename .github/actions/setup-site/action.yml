@@ -1,0 +1,24 @@
+name: Set up site dependencies
+description: Restore installed dependencies; only restore npm downloads on an install miss.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      with:
+        node-version: 24
+        package-manager-cache: false
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      id: modules
+      with:
+        path: site/node_modules
+        key: node-modules-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('site/package-lock.json') }}
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      if: steps.modules.outputs.cache-hit != 'true'
+      with:
+        path: ~/.npm
+        key: npm-${{ runner.os }}-${{ runner.arch }}-node24-${{ hashFiles('site/package-lock.json') }}
+        restore-keys: npm-${{ runner.os }}-${{ runner.arch }}-node24-
+    - shell: bash
+      if: steps.modules.outputs.cache-hit != 'true'
+      working-directory: site
+      run: npm ci --no-audit --no-fund
