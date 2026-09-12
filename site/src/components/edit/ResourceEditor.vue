@@ -112,9 +112,19 @@ const allAssets = computed(() => {
 });
 const attached = computed(() => allAssets.value.filter(a => a.placements.length));
 const rows = computed(() => allAssets.value.filter(a => a.placements.length || a.id === expanded.value || a.remove));
+function previewHref(href: string) {
+  const path = repositoryAssetPath(href);
+  return (path && resourcePreviewURLs.value[path]) || resourceHref(href, import.meta.env.BASE_URL);
+}
 const existingChoices = computed(() => [
-  ...allAssets.value.filter(a => !a.remove).map(a => ({ id: a.id, name: a.name, href: imageHref(a), image: shownRevision(a).original.mediaType.startsWith('image/'), kind: 'File', added: a.placements.some(p => ['Resources', 'Links'].includes(p.section)) })),
-  ...documents.value.map(d => ({ id: d.path, name: d.title, href: markdownAssetPath(d.path), image: false, kind: 'Document', added: external.value.some(p => resourceHref(p.href) === resourceHref(markdownAssetPath(d.path))) })),
+  ...allAssets.value.filter(a => !a.remove).map(a => {
+    const href = imageHref(a);
+    return { id: a.id, name: a.name, href, openHref: previewHref(href), image: shownRevision(a).original.mediaType.startsWith('image/'), kind: 'File', added: a.placements.some(p => ['Resources', 'Links'].includes(p.section)) };
+  }),
+  ...documents.value.map(d => {
+    const href = markdownAssetPath(d.path);
+    return { id: d.path, name: d.title, href, openHref: resourceHref(href, import.meta.env.BASE_URL), image: false, kind: 'Document', added: external.value.some(p => resourceHref(p.href) === resourceHref(href)) };
+  }),
 ].filter(choice => choice.name.toLowerCase().includes(librarySearch.value.toLowerCase())));
 function toggleAdd() {
   picker.value = picker.value ? null : 'upload';
@@ -812,7 +822,7 @@ onUnmounted(() => {
           ><button
             type="button"
             :aria-pressed="picker === 'existing'"
-            @click="picker = 'existing'"
+            @click="picker = 'existing'; selectedExisting = ''; librarySearch = ''"
           >
             Choose existing</button
           ><button type="button" @click="closeAdd">Close</button>
@@ -847,11 +857,14 @@ onUnmounted(() => {
         <form v-else @submit.prevent="addExisting">
           <label>Find a file or document<input v-model="librarySearch" type="search" placeholder="Search resources…" /></label>
           <div class="existing-resource-list" aria-label="Existing resources">
-            <button v-for="choice in existingChoices" :key="choice.id" type="button" class="existing-resource-choice" :aria-pressed="selectedExisting === choice.id" :disabled="choice.added" @click="selectedExisting = choice.id">
-              <ImageThumbnail v-if="choice.image" :href="choice.href" authenticated />
-              <span v-else class="resource-kind">{{ choice.kind === 'File' ? 'FILE' : 'DOC' }}</span>
-              <span><strong>{{ choice.name }}</strong><small>{{ choice.added ? 'Already attached' : choice.kind }}</small></span>
-            </button>
+            <div v-for="choice in existingChoices" :key="choice.id" class="existing-resource-row">
+              <button type="button" class="existing-resource-choice" :aria-pressed="selectedExisting === choice.id" :disabled="choice.added" @click="selectedExisting = choice.id">
+                <ImageThumbnail v-if="choice.image" :href="choice.href" authenticated />
+                <span v-else class="resource-kind">{{ choice.kind === 'File' ? 'FILE' : 'DOC' }}</span>
+                <span><strong>{{ choice.name }}</strong><small>{{ choice.added ? 'Already attached' : choice.kind }}</small></span>
+              </button>
+              <a class="existing-resource-open" :href="choice.openHref" target="_blank" rel="noopener">{{ choice.image ? 'Preview' : 'Open' }}</a>
+            </div>
             <p v-if="!existingChoices.length" class="resource-muted">{{ loading ? 'Loading resources…' : 'No matching resources. Try another name or upload a file.' }}</p>
           </div>
           <button type="submit" :disabled="!selectedExisting || !existingChoices.some(c => c.id === selectedExisting && !c.added)">Attach resource</button>
@@ -1177,13 +1190,19 @@ onUnmounted(() => {
 .resource-controls .resource-danger { color: var(--color-feedback-error-text-independent-default); }
 .resource-link-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .resource-link-editor { display: grid; grid-template-columns: 1fr 1.5fr auto; gap: .75rem; align-items: end; padding: 1rem 0 .25rem 3.75rem; }
-.existing-resource-list { display: grid; gap: .35rem; max-height: 18rem; overflow-y: auto; }
-.resource-controls .existing-resource-choice { display: flex; text-align: left; align-items: center; gap: .75rem; padding: .6rem; }
+.existing-resource-list { display:grid; gap:.4rem; max-height:min(28rem,50vh); overflow-y:auto; padding-right:.25rem; scrollbar-gutter:stable; }
+.existing-resource-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.4rem; align-items:stretch; }
+.resource-controls .existing-resource-choice { display: flex; width:100%; min-width:0; text-align: left; align-items: center; gap: .75rem; padding: .6rem; }
 .existing-resource-choice > span:last-child { min-width: 0; }
 .existing-resource-choice strong { display: block; overflow-wrap: anywhere; font-weight: 500; }
 .existing-resource-choice small { color: var(--color-text-subtle-default); }
 .existing-resource-choice[aria-pressed="true"] { border-color: var(--color-accent-brand-default); background: var(--color-surface-subtle-default); }
-.existing-resource-choice :deep(.image-thumbnail) { width: 48px; height: 48px; }
+.existing-resource-choice :deep(.image-thumbnail) { width:72px; height:52px; background:color-mix(in srgb,var(--color-card) 72%,var(--color-surface-subtle-default)); }
+.resource-controls .existing-resource-choice:disabled { opacity:1; color:var(--color-text-subtle-default); background:color-mix(in srgb,var(--color-card) 82%,var(--color-surface-subtle-default)); }
+.resource-controls .existing-resource-choice:disabled :deep(.image-thumbnail) { opacity:.82; }
+.resource-controls .existing-resource-open { display:inline-flex; min-width:68px; min-height:38px; align-items:center; justify-content:center; align-self:center; border-radius:7px; padding:.4rem .65rem; color:var(--color-text-link-default); font-size:.78rem; font-weight:600; text-decoration:none; }
+.resource-controls .existing-resource-open:hover { background:var(--color-surface-primary-hover); }
+.resource-controls .existing-resource-open:focus-visible { outline:2px solid var(--color-accent-brand-default); outline-offset:3px; }
 .resource-shelf .resource-picker { margin: .5rem 0 1rem; border-radius: 8px; }
 .resource-empty { padding: .75rem 0 1rem; color: var(--color-text-subtle-default); font-size: .82rem; }
 .resource-picker-tabs { gap: .25rem; padding-bottom: .75rem; border-bottom: 1px solid var(--color-border-subtle-default); }
@@ -1199,6 +1218,8 @@ onUnmounted(() => {
   .resource-link-editor > button { justify-self: start; }
   .resource-file-actions { flex-wrap: wrap; }
   .resource-delete { text-align: left; }
+  .existing-resource-row { grid-template-columns:1fr; }
+  .resource-controls .existing-resource-open { justify-self:start; min-height:34px; }
 }
 @media (pointer: coarse) {
   .resource-controls button, .resource-picker button {

@@ -372,6 +372,7 @@ it('prevents duplicate attachments and previews the existing revision when reusi
   await w.findAll('button').find(b => b.text() === 'Add resource')!.trigger('click');
   await w.findAll('button').find(b => b.text() === 'Choose existing')!.trigger('click');
   expect(w.get('.existing-resource-choice img').attributes('src')).toBe('blob:original');
+  expect(w.get('.existing-resource-open').attributes()).toMatchObject({ href: 'blob:original', target: '_blank' });
   await w.get('.existing-resource-choice').trigger('click');
   await w.get('.resource-picker form').trigger('submit');
   expect((w.vm as any).body).toContain('- [Evidence](../../assets/ast_one/rev_one/image.png)');
@@ -380,4 +381,20 @@ it('prevents duplicate attachments and previews the existing revision when reusi
   await w.findAll('button').find(b => b.text() === 'Choose existing')!.trigger('click');
   expect(w.get('.existing-resource-choice').attributes('disabled')).toBeDefined();
   expect(w.get('.existing-resource-choice').text()).toContain('Already attached');
+});
+
+it('keeps attached images previewable and lets authors inspect documents before attaching them', async () => {
+  const image = { ...result.revision, original: { ...result.revision.original, path: 'rev_one/image.png', mediaType: 'image/png' } };
+  vi.mocked(listResources).mockResolvedValueOnce([{ schemaVersion: 1, id: result.assetId, name: 'Screenshot', visibility: 'Internal', sha: 'manifest', revisions: [image] }]);
+  resourcePreviewURLs.value['content/assets/ast_one/rev_one/image.png'] = 'blob:original';
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ documents: [{ title: 'Research brief', path: 'research/brief.md' }] }))));
+  await setup('## Resources\n\n- [Screenshot](../../assets/ast_one/rev_one/image.png)\n');
+  await w.findAll('button').find(b => b.text() === 'Add resource')!.trigger('click');
+  await w.findAll('button').find(b => b.text() === 'Choose existing')!.trigger('click');
+  const choices = w.findAll('.existing-resource-choice');
+  expect(choices[0].attributes('disabled')).toBeDefined();
+  expect(w.findAll('.existing-resource-open').map(link => link.text())).toEqual(['Preview', 'Open']);
+  expect(w.findAll('.existing-resource-open')[0].attributes('href')).toBe('blob:original');
+  expect(w.findAll('.existing-resource-open')[1].attributes('href')).toContain('/docs/research/brief');
+  expect(w.findAll('.existing-resource-open').every(link => link.attributes('target') === '_blank')).toBe(true);
 });

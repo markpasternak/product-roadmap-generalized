@@ -1,12 +1,14 @@
 [data-reading-body] { min-width: 0; }
-.item-toc { position: sticky; top: 24px; align-self: start; max-height: calc(100dvh - 120px); overflow-y: auto; padding-left: 18px; border-left: 1px solid var(--roadmap-glass-border); }
+.item-toc { position: sticky; top: 24px; align-self: start; max-height: calc(100dvh - 120px); overflow-y: auto; padding-left: 14px; border-left: 1px solid var(--roadmap-glass-border); }
 .item-toc[hidden] { display: none; }
-.item-toc > p { margin: 0 0 10px; font-size: 11px; font-weight: 600; color: var(--roadmap-ink-muted); }
-.item-toc > a { display: block; padding: 7px 0; color: var(--roadmap-ink-muted); font-size: 12px; line-height: 1.4; text-decoration: none; }
+.item-toc > p { margin: 0 0 10px; padding-left: 10px; font-size: 11px; font-weight: 600; color: var(--roadmap-ink); }
+.item-toc > a { position: relative; display: block; margin: 2px 0; padding: 7px 10px; border-radius: 7px; color: var(--roadmap-ink-muted); font-size: 12px; line-height: 1.4; text-decoration: none; transition: background-color 120ms ease, color 120ms ease; }
 .item-toc > a:hover, .item-toc > a[aria-current] { color: var(--roadmap-ink); }
-.item-toc > a[aria-current] { font-weight: 600; }
+.item-toc > a:hover { background: color-mix(in srgb, var(--roadmap-ink) 5%, transparent); }
+.item-toc > a[aria-current] { background: color-mix(in srgb, var(--roadmap-product-accent, var(--color-accent-brand-default)) 10%, transparent); font-weight: 600; }
+.item-toc > a[aria-current]::before { content: ''; position: absolute; left: -17px; top: 8px; width: 3px; height: 16px; border-radius: 999px; background: var(--roadmap-product-accent, var(--color-accent-brand-default)); }
 .item-toc > a:focus-visible { outline: 2px solid var(--color-accent-brand-default); outline-offset: 2px; border-radius: 2px; }
 [data-reading-body] h3[tabindex='-1']:focus { outline: none; }
 @media (min-width: 1200px) {
-  :root .detail-expanded .drawer-reading-content.has-item-toc, .detail-shell.is-expanded .has-item-toc { display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 48px; width: 100%; max-width: 1340px; margin-inline: auto; }
+  :root .detail-expanded .detail-reading-grid.has-item-toc, .detail-shell.is-expanded .detail-reading-grid.has-item-toc { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 48px; width: 100%; max-width: 1340px; margin-inline: auto; }
 }

@@ -9,7 +9,6 @@ import ProductMark from '../../components/ui/ProductMark.vue';
 import {
   horizonDot,
   productColor,
-  horizonTone,
   toneSurface,
   toneSurfaceStrong,
   toneText,
@@ -21,7 +20,7 @@ import { productSlug } from '../../lib/slugs';
 import { formatDateTime, formatDateTimeOrDate } from '../../lib/dates';
 import { itemHistoryForPath } from '../../lib/itemHistory.server';
 import type { ItemLink } from '../../lib/items';
-import { isImageResource } from '../../lib/resources';
+import { isImageResource, resourceHref } from '../../lib/resources';
 import { IS_PUBLIC } from '../../lib/audience';
 import {
   PhArrowSquareOut as _PhArrowSquareOut,
@@ -30,7 +29,6 @@ import {
   PhFileText as _PhFileText,
   PhLink as _PhLink,
   PhPencilSimple as _PhPencilSimple,
-  PhStack as _PhStack,
 } from '@phosphor-icons/vue';
 import { getVisibleDocCollections } from '../../lib/docs';
 
@@ -40,7 +38,6 @@ const PhCaretRight = _PhCaretRight as any;
 const PhFileText = _PhFileText as any;
 const PhLink = _PhLink as any;
 const PhPencilSimple = _PhPencilSimple as any;
-const PhStack = _PhStack as any;
 
 export async function getStaticPaths() {
   const items = (await getCollection('items')).filter(
@@ -71,6 +68,8 @@ const history = itemHistoryForPath(repoPath);
 const editUrl = !IS_PUBLIC && repoPath ? `${REPO_EDIT_BASE}/${repoPath}` : null;
 const created = formatDateTimeOrDate(history.createdAt, history.created);
 const updated = formatDateTimeOrDate(history.updatedAt, history.updated);
+const cover = d.cover ? resourceHref(d.cover, base) : '';
+const coverPosition = /^(?:100|\d{1,2})% (?:100|\d{1,2})%$/.test(d.coverPosition ?? '') ? d.coverPosition : '50% 50%';
 const historyTitle = (at: string, by: string, subject: string): string =>
   [at ? formatDateTime(at) : '', by, subject].filter(Boolean).join(' · ');
 
@@ -169,44 +168,30 @@ function tagFilterHref(token: string): string {
       </div>
 
       <p data-copy-status role="status" class="mt-2 text-sm text-text-subtle-default empty:hidden"></p>
-      <div class="mt-2.5 grid gap-3.5 lg:grid-cols-[42px_minmax(0,1fr)] lg:items-start">
-        <ProductMark product={d.product} size={40} />
-        <div>
-          <div class="flex flex-wrap items-center gap-2">
-            <span
-              class="text-single-sm-medium inline-flex items-center gap-2 rounded-lg border border-border-subtle-default/60 px-2.5 py-1 text-text-primary-default"
-              style={`background:${toneSurfaceStrong[horizonTone[d.horizon]]}`}
-            >
-              <span class="h-4 w-1 rounded-full" style={`background:${horizonDot[d.horizon]}`} />
-              {d.horizon}
-            </span>
-            <span class="roadmap-quiet-chip text-single-sm-medium rounded-lg px-2.5 py-1 text-text-subtle-default">
-              {d.stage}
-            </span>
-            {links.length > 0 && (
-              <span class="text-single-sm-medium inline-flex items-center gap-2 rounded-lg border border-border-subtle-default/60 bg-surface-transparent-orange-25 px-2.5 py-1 text-text-primary-default">
-                <PhStack size={17} /> {links.length} resources
-              </span>
-            )}
+      <div class:list={['item-page-hero', cover && 'has-cover', d.horizon === 'Completed' && 'is-completed']}>
+        {cover && <div class="item-page-cover" aria-hidden="true"><img src={cover} alt="" decoding="async" style={`object-position:${coverPosition}`} /><span /></div>}
+        <div class="item-page-hero-copy">
+          <ProductMark product={d.product} size={40} />
+          <div class="min-w-0">
+            <h1 class="roadmap-display roadmap-title">{title}</h1>
+            {lede && <p class="roadmap-muted mt-1.5 max-w-3xl text-sm leading-relaxed sm:text-base">{lede}</p>}
           </div>
-          <h1 class="roadmap-display roadmap-title mt-1.5 max-w-5xl text-[1.6rem] sm:text-[1.9rem] lg:text-[2.15rem]">
-            {title}
-          </h1>
-          {lede && <p class="roadmap-muted mt-1.5 max-w-3xl text-sm leading-relaxed sm:text-base">{lede}</p>}
         </div>
       </div>
+
+      <dl class="item-page-status-summary">
+        <div><dt>Horizon</dt><dd><span style={`background:${horizonDot[d.horizon]}`} />{d.horizon}</dd></div>
+        <div><dt>Stage</dt><dd>{d.stage}</dd></div>
+        <div><dt>Impact</dt><dd>{d.impact || 'Not scored'}</dd></div>
+        <div><dt>Effort</dt><dd>{d.effort || 'Not scoped'}</dd></div>
+      </dl>
     </section>
 
     <div class="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
       <article class="min-w-0">
         <PlannedDates startDate={d.startDate} endDate={d.endDate} />
-        <dl class="item-facts">
-          <div><dt>Stage</dt><dd>{d.stage}</dd></div>
-          <div><dt>Impact</dt><dd>{d.impact || 'Not scored'}</dd></div>
-          <div><dt>Effort</dt><dd>{d.effort || 'Not scoped'}</dd></div>
-        </dl>
 
-        <section class="roadmap-panel mt-5 rounded-[22px] p-4 sm:p-5">
+        <section class="roadmap-panel mt-3 rounded-[22px] p-4 sm:p-5">
           <div class="space-y-5">
             {storySections.map((s) => {
               return (
@@ -314,6 +299,32 @@ function tagFilterHref(token: string): string {
     </div>
   </main>
 </Base>
+
+<style>
+  .item-page-hero { position:relative; margin-top:.625rem; padding:.625rem 0 .875rem; overflow:hidden; }
+  .item-page-hero.has-cover { display:flex; min-height:clamp(190px,24vw,270px); margin-inline:-1.5rem; padding:2rem 1.5rem 1.5rem; align-items:flex-end; border-radius:16px; isolation:isolate; }
+  .item-page-cover,.item-page-cover img,.item-page-cover span { position:absolute; inset:0; width:100%; height:100%; }
+  .item-page-cover { z-index:-1; overflow:hidden; background:color-mix(in srgb,var(--roadmap-product-accent) 18%,var(--color-surface-subtle-default)); }
+  .item-page-cover img { object-fit:cover; filter:saturate(.82) contrast(.94); }
+  .item-page-cover span { background:linear-gradient(to top,var(--roadmap-glass-bg) 0%,color-mix(in srgb,var(--roadmap-glass-bg) 96%,transparent) 18%,color-mix(in srgb,var(--roadmap-glass-bg) 62%,transparent) 52%,color-mix(in srgb,var(--roadmap-glass-bg) 14%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 14%,transparent); }
+  :global(:root[data-theme='dark']) .item-page-cover img { filter:brightness(.7) saturate(.68) contrast(.92); }
+  :global(:root[data-theme='dark']) .item-page-cover span { background:linear-gradient(to top,var(--roadmap-glass-bg) 0%,color-mix(in srgb,var(--roadmap-glass-bg) 97%,transparent) 20%,color-mix(in srgb,var(--roadmap-glass-bg) 68%,transparent) 54%,color-mix(in srgb,var(--roadmap-glass-bg) 20%,transparent) 100%),color-mix(in srgb,var(--roadmap-product-accent) 20%,transparent); }
+  .item-page-hero.is-completed .item-page-cover img { filter:grayscale(.28) saturate(.65) contrast(.94); }
+  :global(:root[data-theme='dark']) .item-page-hero.is-completed .item-page-cover img { filter:brightness(.72) grayscale(.3) saturate(.52) contrast(.92); }
+  .item-page-hero-copy { position:relative; display:grid; width:100%; grid-template-columns:40px minmax(0,1fr); gap:14px; align-items:start; }
+  .item-page-hero h1 { max-width:30ch; margin:0; font-size:clamp(1.8rem,3vw,2.5rem); line-height:1.06; }
+  .item-page-status-summary { display:flex; flex-wrap:wrap; gap:10px clamp(24px,4vw,48px); margin:0; padding:14px 0 2px; border-top:1px solid var(--color-border-subtle-default); }
+  .item-page-status-summary dt { color:var(--color-text-subtle-default); font-size:11px; font-weight:600; line-height:1.3; }
+  .item-page-status-summary dd { display:flex; align-items:center; gap:7px; margin:4px 0 0; color:var(--color-text-primary-default); font-size:14px; font-weight:600; line-height:1.35; }
+  .item-page-status-summary dd span { width:4px; height:16px; border-radius:999px; }
+  @media (max-width:639px) {
+    .item-page-hero.has-cover { min-height:165px; margin-inline:-1rem; padding:1.5rem 1rem 1.125rem; }
+    .item-page-hero-copy { grid-template-columns:1fr; }
+    .item-page-hero-copy :global(.product-mark) { display:none; }
+    .item-page-hero h1 { font-size:clamp(1.7rem,8vw,2.1rem); }
+    .item-page-status-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+  }
+</style>
 
 <script>
   import { installItemImageViewer } from '../../lib/itemImageViewer';
