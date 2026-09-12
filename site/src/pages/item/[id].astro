@@ -182,6 +182,7 @@ function tagFilterHref(token: string): string {
         <div><dt>Stage</dt><dd>{d.stage}</dd></div>
         <div><dt>Impact</dt><dd>{d.impact || 'Not scored'}</dd></div>
         <div><dt>Effort</dt><dd>{d.effort || 'Not scoped'}</dd></div>
+        {!IS_PUBLIC && <div><dt>Visibility</dt><dd>{d.visibility}</dd></div>}
       </dl>
     </section>
 

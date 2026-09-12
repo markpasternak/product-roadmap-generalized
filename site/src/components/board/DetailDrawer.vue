@@ -660,6 +660,7 @@ watch(() => props.item?.id, () => {
                 <div><dt>Stage</dt><dd>{{ item.stage }}</dd></div>
                 <div v-if="!client"><dt>Impact</dt><dd>{{ item.impact || 'Not scored' }}</dd></div>
                 <div v-if="!client"><dt>Effort</dt><dd>{{ item.effort || 'Not scoped' }}</dd></div>
+                <div v-if="!client"><dt>Visibility</dt><dd>{{ item.visibility }}</dd></div>
               </dl>
 
               <div class="detail-utility-row">
