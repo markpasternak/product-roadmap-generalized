@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -25,6 +26,7 @@ import (
 const maxUploadBytes int64 = 25 << 20
 const maxPublishBytes int64 = 100 << 20
 const maxStagingBytes int64 = 250 << 20
+const assetResponseWriteTimeout = 60 * time.Second
 
 type AssetFile struct {
 	Path      string `json:"path"`
@@ -315,16 +317,11 @@ func readAssets(root string) ([]Asset, error) {
 		if err = json.Unmarshal(data, &a); err != nil {
 			return nil, err
 		}
-		if a.ID != entry.Name() || a.SchemaVersion != 1 || !strings.HasPrefix(a.ID, "ast_") || (a.Visibility != "Public" && a.Visibility != "Internal") || strings.TrimSpace(a.Name) == "" || len(a.Name) > 250 || len(a.Revisions) == 0 {
-			return nil, fmt.Errorf("invalid asset manifest: %s", entry.Name())
+		if err := validateAssetManifest(a, entry.Name()); err != nil {
+			return nil, err
 		}
-		seen := map[string]bool{}
 		for _, rev := range a.Revisions {
 			f := rev.Original
-			if !safeStateID(rev.ID) || !strings.HasPrefix(rev.ID, "rev_") || seen[rev.ID] || path.Dir(f.Path) != rev.ID || sanitizedFilename(path.Base(f.Path)) != path.Base(f.Path) || f.Bytes <= 0 || f.Bytes > maxUploadBytes {
-				return nil, fmt.Errorf("invalid revision in %s", a.ID)
-			}
-			seen[rev.ID] = true
 			file, err := confinedPath(root, "content/assets/"+a.ID+"/"+f.Path)
 			if err != nil {
 				return nil, err
@@ -333,13 +330,8 @@ func readAssets(root string) ([]Asset, error) {
 			if err != nil {
 				return nil, err
 			}
-			hash := sha256.Sum256(bytes)
-			if int64(len(bytes)) != f.Bytes || hex.EncodeToString(hash[:]) != f.SHA256 {
-				return nil, fmt.Errorf("resource checksum mismatch: %s", a.Name)
-			}
-			mediaType, err := detectedFileType(bytes, path.Base(f.Path))
-			if err != nil || mediaType != f.MediaType {
-				return nil, fmt.Errorf("resource media type mismatch: %s", a.Name)
+			if err := validateAssetOriginal(f, bytes); err != nil {
+				return nil, err
 			}
 		}
 		a.SHA = gitBlobSha(data)
@@ -509,32 +501,42 @@ func (s *Server) handleAssetContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	requested := r.URL.Query().Get("path")
-	var data []byte
-	var file AssetFile
-	err := s.gh.withRepository(r.Context(), func(root string) error {
-		assets, err := readAssets(root)
-		if err != nil {
-			return err
-		}
-		for _, a := range assets {
-			for _, rev := range a.Revisions {
-				if "content/assets/"+a.ID+"/"+rev.Original.Path == requested {
-					p, err := confinedPath(root, requested)
-					if err != nil {
-						return err
-					}
-					data, err = os.ReadFile(p)
-					file = rev.Original
-					return err
-				}
-			}
-		}
-		return os.ErrNotExist
-	})
-	if err != nil {
+	if !safeAssetRequest(requested) {
 		http.NotFound(w, r)
 		return
 	}
+	c := s.gh.assetCache()
+	select {
+	case c.slots <- struct{}{}:
+	case <-r.Context().Done():
+		http.NotFound(w, r)
+		return
+	}
+	defer func() { <-c.slots }()
+	snapshot, release, err := s.gh.acquireAssetSnapshot(r.Context())
+	if err != nil {
+		log.Printf("asset snapshot unavailable: %v", err)
+		http.NotFound(w, r)
+		return
+	}
+	defer release()
+	file, data, err := s.gh.assetOriginal(r.Context(), snapshot, requested)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Printf("asset original unavailable: %v", err)
+		}
+		http.NotFound(w, r)
+		return
+	}
+
+	// A stalled download must not pin one of the bounded response slots forever.
+	controller := http.NewResponseController(w)
+	if err := controller.SetWriteDeadline(time.Now().Add(assetResponseWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		log.Printf("asset write deadline unavailable: %v", err)
+		http.NotFound(w, r)
+		return
+	}
+	defer controller.SetWriteDeadline(time.Time{})
 	serveAsset(w, r, file, data)
 }
 
@@ -719,4 +721,16 @@ func writeConfined(root, rel string, data []byte) error {
 		return err
 	}
 	return os.WriteFile(p, data, 0644)
+}
+
+func validateAssetOriginal(file AssetFile, data []byte) error {
+	hash := sha256.Sum256(data)
+	if int64(len(data)) != file.Bytes || hex.EncodeToString(hash[:]) != file.SHA256 {
+		return errors.New("resource checksum mismatch")
+	}
+	mediaType, err := detectedFileType(data, path.Base(file.Path))
+	if err != nil || mediaType != file.MediaType {
+		return errors.New("resource media type mismatch")
+	}
+	return nil
 }

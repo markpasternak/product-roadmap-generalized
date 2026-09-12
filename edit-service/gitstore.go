@@ -445,6 +445,9 @@ func (g *GitHub) syncChangeset(ctx context.Context, cs Changeset, msg, login str
 			return syncOutcome{}, err
 		}
 		if len(outcome.Errors) > 0 || len(outcome.Conflicts) > 0 || pushErr == nil {
+			if pushErr == nil && len(outcome.Errors) == 0 && len(outcome.Conflicts) == 0 {
+				g.invalidateAssetSnapshots()
+			}
 			return outcome, pushErr
 		}
 		lastErr = pushErr

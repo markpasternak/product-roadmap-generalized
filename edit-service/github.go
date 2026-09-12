@@ -39,6 +39,8 @@ type GitHub struct {
 	httpc             *http.Client
 	mu                sync.Mutex
 	repoMu            sync.Mutex
+	assetsOnce        sync.Once
+	assets            *assetSnapshotCache
 	itemsMu           sync.Mutex
 	itemSnapshots     map[string]map[string]RepoFile
 	itemSnapshotOrder []string

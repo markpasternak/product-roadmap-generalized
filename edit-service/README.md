@@ -70,3 +70,20 @@ Limits: 25 MiB per file, 100 MiB of uploads per publication, 250 MiB of staged f
 ## Verify and release
 
 Run `go test -race ./...` and `go vet ./...`. Tests include an actual local bare Git repository to verify atomic asset/item/receipt commits and recovery after a simulated restart. Build the production binary with `-X main.version=<git-sha>`. Preserve the previous binary, deploy the service before the frontend, then verify `/health`, `/api/capabilities`, systemd health, the frontend workflow and the deployed `version.json`.
+
+## Committed image reads
+
+`GET /api/assets/content` authenticates each request, then reads the declared original
+from a pinned Git commit without creating a worktree. Concurrent requests share a
+refresh; a warm snapshot is reused for five seconds. Service publication invalidates
+it before returning success. External pushes are discovered at the next refresh;
+refresh failure returns an error rather than stale content.
+
+The cache holds at most eight commit snapshots and an 8 MiB metadata budget. Four
+responses may hold original buffers at once (25 MiB each); capacity remains held
+through the HTTP response, including slow clients. A 60-second write deadline
+prevents stalled downloads from holding that capacity indefinitely. Git refs under
+`refs/roadmap-asset-cache/` keep cached commits reachable and are cleaned on eviction
+or service restart. Cached metadata never includes permission decisions or staged
+uploads. Originals still pass size, SHA-256 and MIME checks and use
+`Cache-Control: private, no-store`.
