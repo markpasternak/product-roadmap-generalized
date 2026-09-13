@@ -5,7 +5,7 @@ import { EMPTY_ITEM_HISTORY } from '../itemHistory';
 import { itemSchema } from '../schema';
 
 const model: PublishedContent = { ...buildPublishedModel({
-  items: ['A', 'B', 'C', 'D'].map(id => ({ id, data: itemSchema.parse({ id, title: id, product: 'Studio', horizon: 'Now', stage: 'Building', owner: 'Owner', visibility: 'Internal', order: id.charCodeAt(0) }), body: `## Context\n${id}` })),
+  items: ['A', 'B', 'C', 'D'].map(id => ({ id, data: itemSchema.parse({ id, title: id, product: 'Music App', horizon: 'Now', stage: 'Building', owner: 'Owner', visibility: 'Internal', order: id.charCodeAt(0) }), body: `## Context\n${id}` })),
   documents: [],
 }, { base: '/', audience: 'internal', historyForPath: () => EMPTY_ITEM_HISTORY }), audience: 'internal', documentHtml: {} };
 

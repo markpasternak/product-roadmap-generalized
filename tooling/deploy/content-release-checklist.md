@@ -1,7 +1,7 @@
-# SeenThis content-publication release and operations
+# Roadmap demo content-publication release and operations
 
-This release changes only product-roadmap. Do not change generalized, Canvas
-Drop, neighboring services, or branch protection. Preserve later Git publications.
+This runbook applies to the generalized roadmap demo. Keep its fictional content,
+public-link Canvas, repository policy and service credentials isolated from other roadmaps.
 
 ## Package and publisher contract
 
@@ -37,7 +37,8 @@ Drop, neighboring services, or branch protection. Preserve later Git publication
 4. Verify the exact live source/application/package and authenticated file hashes.
    Save the previous binary, environment and approved package for rollback.
 5. Install the reviewed editor binary with its commit embedded. Verify local and
-   remote SHA-256, health/capabilities and the running binary. Restart only SeenThis.
+   remote SHA-256, health/capabilities and the running binary. Restart only
+   `roadmap-demo-editor`.
 6. Explicitly download/promote the successful canonical artifact, then configure
    shadow mode. Verify a real immutable snapshot can prepare without activation.
 7. Configure and verify the GitHub push webhook below. Enable `content` mode only
@@ -74,7 +75,8 @@ ROADMAP_LOCAL_BUILD_MODE=content
 ROADMAP_APPLICATION_POINTER=/absolute/private/path/approved-pointer.json
 GITHUB_WEBHOOK_SECRET=<separate random webhook secret>
 CANVAS_DROP_TOKEN=<existing per-canvas deployment token>
-CANVAS_API_URL=https://seenthisroadmap.canvas-drop.com/v1/canvases/019f2c0f-d0a0-7488-aeec-204f5d803c22
+CANVAS_API_URL=https://roadmapdemo.canvas-drop.com/v1/canvases/01a0152e-2c0d-726b-9235-298bf5d46ff8
+ROADMAP_APPLICATION_GROUP=roadmap-demo-editor
 ```
 
 Keep the five existing profile variables exactly matching Actions. Empty/disabled
@@ -89,9 +91,9 @@ through the worker itself, including on startup.
 
 ## Webhook setup and proof (part of this release)
 
-- Repository: `seenthis-ab/product-roadmap`, push events only. Prepare inactive;
+- Repository: `markpasternak/product-roadmap-generalized`, push events only. Prepare inactive;
   save/activate only once the matching server secret and handler are installed.
-- URL: `https://seenthisapi.roadmapvisualizer.com/webhooks/github`.
+- URL: `https://roadmapdemoapi.canvas-drop.com/webhooks/github`.
 - JSON body; TLS verification enabled; a dedicated random secret matching
   `GITHUB_WEBHOOK_SECRET`. Do not reuse the Canvas key or editor-session secret.
 - Verify endpoint/proxy reachability and GitHub delivery status after installation.
@@ -103,7 +105,7 @@ through the worker itself, including on startup.
   disabling the webhook must still allow the timer to find latest main; Actions
   remains the fallback if the worker is disabled or unhealthy.
 
-## Live acceptance with Mark
+## Live acceptance
 
 Browser verification uses the browser automation MCP, including its supported
 network/navigation inspection. The repeatable procedure is in
@@ -127,7 +129,7 @@ Do not substitute a development server or a separate browser-driver script.
 ## Pause, rollback and limits
 
 For the controlled local race only, set `ROADMAP_CONTENT_RACE_BARRIER=true` in
-protected SeenThis service configuration and restart that service. In its private
+protected demo service configuration and restart that service. In its private
 `local-build` state directory, create an empty mode-0600 file named
 `race-arm-<exact-target-commit>` owned by the service account. After preparation,
 the worker consumes it and creates `race-waiting-<exact-target-commit>`. Make the
@@ -153,7 +155,7 @@ downloaded files or images already held in page memory.
 
 ## Automatic handover after Actions application releases
 
-SeenThis now runs `roadmap-application-sync.timer` every 20 seconds. Its separate
+The demo runs `roadmap-demo-application-sync.timer` every 20 seconds. Its separate
 root-owned operator code reads the authenticated active application identity,
 then independently authenticates the exact successful main Actions workflow,
 private artifact/archive digest, package digest, profile and complete file
@@ -174,11 +176,11 @@ operator automatically prepares the new baseline for subsequent content edits.
 It does not restart the editor or interrupt drafts/publications.
 
 Install the reviewed operator files preserving their repository-relative paths
-under `/opt/roadmap-operator`: `tooling/deploy/{reconcile-application,application-artifact,coordinate,staged}.mjs`,
+under `/opt/roadmap-demo-operator`: `tooling/deploy/{reconcile-application,application-artifact,coordinate,staged}.mjs`,
 `tooling/deploy/extract-application.py` and `site/scripts/application-package.mjs`.
 Keep that directory root-owned and not writable by the editor. Install the two
 units from `tooling/deploy/systemd/`, then enable the timer. Systemd permits
-writes only to `/opt/roadmap-applications` and private temporary storage; the
+writes only to `/opt/roadmap-demo-applications` and private temporary storage; the
 GitHub App key is supplied through a systemd credential. Explicit `promote`
 remains available for recovery. When pausing for rollback/unpublish, stop the
 sync timer too, in addition to both publication paths, and restart it only after

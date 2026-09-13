@@ -157,8 +157,8 @@ describe('published revisions preserve the editor working base', () => {
     const context = publication();
     const w = await mountBoard([item()], context);
     const store = useEditStore();
-    store.setField('CM-1', 'title', 'My draft'); store.setBody('CM-1', 'My unpublished body');
-    (w.vm as any).openEditor('CM-1');
+    store.setField('TALK-1', 'title', 'My draft'); store.setBody('TALK-1', 'My unpublished body');
+    (w.vm as any).openEditor('TALK-1');
     await flushPromises();
     expect(context.blocked.value).toBe(true);
     const before = store.snapshot();
@@ -198,7 +198,7 @@ describe('published revisions preserve the editor working base', () => {
     const context = publication();
     const w = await mountBoard([item()], context);
     const vm = w.vm as any;
-    vm.draggingId = 'CM-1'; await flushPromises();
+    vm.draggingId = 'TALK-1'; await flushPromises();
     expect(context.blocked.value).toBe(true);
     await w.setProps({ items: [item({ title: 'Remote title' })] });
     expect(vm.liveItems[0].title).toBe('Existing item');
@@ -482,7 +482,7 @@ describe("account drafts and recoverable publication", () => {
     vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout', 'Date']});
     vi.mocked(fetchDeployedCommit).mockResolvedValue('c'.repeat(40));
     deployStatusMock.mockImplementationOnce(() => new Promise(() => {}));
-    useEditStore().setField('CM-1', 'title', 'Mine');
+    useEditStore().setField('TALK-1', 'title', 'Mine');
     syncMock.mockResolvedValueOnce({ok: true, sha: 'a'.repeat(40)});
     await send(w);
     await flushPromises();

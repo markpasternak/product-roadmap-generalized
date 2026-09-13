@@ -5,7 +5,8 @@ import type { PublishedContent } from './model';
 it('owns every live content surface even when all collections are empty', () => {
   const model: PublishedContent = { items: [], boardItems: [], documents: [], documentHtml: {}, audience: 'internal' };
   const routes = contentRoutes(model, '/roadmap/');
-  expect(routes.map(route => route.path)).toEqual(['', 'core-tech', 'infra', 'data', 'studio', 'creative-manager', 'revenue-ops', 'docs', 'themes', 'changelog', 'changes']);
+  expect(routes.map(route => route.path)).toEqual(['', 'music-app', 'podcasts-&-audiobooks', 'spotify-for-artists', 'ads-platform', 'core-platform-&-data', 'docs', 'themes', 'changelog', 'changes']);
+  expect(routes[0]).toMatchObject({ title: 'Product Roadmap' });
   expect(new Set(routes.map(route => route.path)).size).toBe(routes.length);
   expect(routes.find(route => route.path === 'docs')).toMatchObject({ kind: 'documents', active: 'docs' });
   expect(pageKind('item/deleted')).toBe('item');

@@ -4,10 +4,15 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, readdir } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { generateKeyPairSync, verify as verifySignature } from 'node:crypto';
-import { reconcileApplication, selectedApplication, installationToken } from '../deploy/reconcile-application.mjs';
+import { applicationGroup, reconcileApplication, selectedApplication, installationToken } from '../deploy/reconcile-application.mjs';
 import { sha256 } from '../../site/scripts/application-package.mjs';
 const profile = { siteUrl: 'https://example.test', base: '/', audience: 'internal', editApi: 'https://api.example.test', canvasBackend: 'true' };
 const release = { applicationCommit: 'a'.repeat(40), applicationPackage: 'b'.repeat(64), contentSchema: 1, profile: sha256(JSON.stringify(profile)) };
+test('uses a configurable, validated editor group for package access', () => {
+  assert.equal(applicationGroup({}), 'roadmap-editor');
+  assert.equal(applicationGroup({ ROADMAP_APPLICATION_GROUP: 'roadmap-demo-editor' }), 'roadmap-demo-editor');
+  assert.throws(() => applicationGroup({ ROADMAP_APPLICATION_GROUP: '../root' }), /INVALID_APPLICATION_GROUP/);
+});
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'roadmap-reconcile-'));
   t.after(() => rm(root, { recursive: true, force: true }));

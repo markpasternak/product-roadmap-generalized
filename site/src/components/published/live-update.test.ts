@@ -10,7 +10,7 @@ import { EMPTY_ITEM_HISTORY } from '../../lib/itemHistory';
 import type { PublishedRelease } from '../../lib/published/client';
 
 function fixture(title: string, cover = '../../assets/ast_cover/rev_one/cover.png'): PublishedContent {
-  return { ...buildPublishedModel({ items: [{ id: 'A', filePath: 'content/items/A.md', data: itemSchema.parse({ id: 'A', title, product: 'Studio', horizon: 'Now', stage: 'Pilot', owner: 'Test', visibility: 'Public', order: 1, cover }), body: '## One-liner\nSummary\n\n## Why it matters\nReasoning' }], documents: [] }, { base: '/', audience: 'internal', historyForPath: () => EMPTY_ITEM_HISTORY }), audience: 'internal', documentHtml: {} };
+  return { ...buildPublishedModel({ items: [{ id: 'A', filePath: 'content/items/A.md', data: itemSchema.parse({ id: 'A', title, product: 'Music App', horizon: 'Now', stage: 'Pilot', owner: 'Test', visibility: 'Public', order: 1, cover }), body: '## One-liner\nSummary\n\n## Why it matters\nReasoning' }], documents: [] }, { base: '/', audience: 'internal', historyForPath: () => EMPTY_ITEM_HISTORY }), audience: 'internal', documentHtml: {} };
 }
 function candidate(model: PublishedContent, commit = 'a'.repeat(40)) {
   const bytes = JSON.stringify(model);
@@ -62,7 +62,7 @@ describe('hydrated content replacement', () => {
     expect(host.querySelector('[data-copy-link]')).toBe(button);
     expect(document.activeElement).toBe(button);
     expect(host.querySelector('.roadmap-cover-fill')?.getAttribute('src')).toBe('/assets/ast_cover/rev_two/cover.png');
-    expect(document.title).toBe('Published title · SeenThis Roadmap');
+    expect(document.title).toBe('Published title · Product Roadmap');
     expect(host.dataset.contentCommit).toBe(live.release.commit);
     expect(warnings.filter(warning => /hydration|mismatch/i.test(warning))).toEqual([]);
     expect(window.location.reload).not.toHaveBeenCalled();

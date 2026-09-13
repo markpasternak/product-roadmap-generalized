@@ -69,11 +69,6 @@ it('renders an explicitly selected cover at its focal point and respects the vie
   expect(mountCard({ item: covered, showCover: false }).find('.roadmap-card-cover').exists()).toBe(false);
 });
 
-it('shows product identity only when the board supplies mixed-product context', () => {
-  expect(mountCard().findComponent({ name: 'ProductMark' }).exists()).toBe(false);
-  expect(mountCard({ showProduct: true }).getComponent({ name: 'ProductMark' }).props('product')).toBe('Podcasts & Audiobooks');
-});
-
 afterEach(() => {
   for (const w of wrappers) w.unmount();
   wrappers = [];

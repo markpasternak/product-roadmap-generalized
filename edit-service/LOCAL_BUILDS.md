@@ -214,16 +214,16 @@ disables child metrics for that attempt without blocking publishing. Go stage
 timings remain available. The probe stays outside the site and ZIP and is
 removed with the attempt.
 
-For the current SeenThis-only iteration loop, make the requested changes on local
-`main`, run tests, and commit locally. Cross-compile the committed `edit-service`
+For the generalized demo deployment loop, make changes on a feature branch, run
+tests, and merge through the repository's normal PR path. Cross-compile the merged `edit-service`
 with `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`, `-trimpath`, and
-`-ldflags "-s -w -X main.version=<local-commit>"`. Transfer the binary to a private
+`-ldflags "-s -w -X main.version=<merged-commit>"`. Transfer the binary to a private
 server staging directory, compare SHA-256 checksums, preserve the running binary
-for rollback, atomically replace `/usr/local/bin/roadmap-editor`, and restart only
-`roadmap-editor`. Verify `/health`, `/api/capabilities`, and the running binary
-checksum. Do not push or modify generalized as part of this temporary loop.
+for rollback, atomically replace `/usr/local/bin/roadmap-demo-editor`, and restart only
+`roadmap-demo-editor`. Verify `/health`, `/api/capabilities`, and the running binary
+checksum. Keep the primary roadmap editor untouched.
 
-**Do not set the content baseline to an unpushed local commit.** The content
+**Do not set the content baseline to an unmerged local commit.** The content
 worker still fetches GitHub main, validates its approved baseline, and builds
 that immutable snapshot. The timing preload ships inside the Go binary, so it
 works without changing that snapshot, deploying frontend code, or changing the

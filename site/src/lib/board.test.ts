@@ -10,23 +10,23 @@ const buildBoardItems = (base: string) => buildPublishedModel(fixtures, { base, 
 
 beforeEach(() => {
   fixtures.items = [{
-    id: 'studio/studio-001-test', filePath: '../content/items/studio/STUDIO-001-test.md',
-    data: itemSchema.parse({ id: 'STUDIO-001', title: 'New creative', product: 'Studio', horizon: 'Now', stage: 'Pilot', owner: 'Mark', tags: 'creative, theme:delivery', cover: '../../assets/ast_test/rev_one/cover.png' }),
-    body: '## One-liner\nFaster creation.\n\n## Why it matters\n- Useful\n\n## Links\n- PRD: content/prds/studio/brief.md\n',
+    id: 'music-app/music-001-test', filePath: '../content/items/music-app/MUSIC-001-test.md',
+    data: itemSchema.parse({ id: 'MUSIC-001', title: 'New listening mode', product: 'Music App', horizon: 'Now', stage: 'Pilot', owner: 'Mark', tags: 'discovery, theme:delivery', cover: '../../assets/ast_test/rev_one/cover.png' }),
+    body: '## One-liner\nFaster discovery.\n\n## Why it matters\n- Useful\n\n## Links\n- PRD: content/prds/music-app/brief.md\n',
   }];
-  fixtures.documents = [{ coll: 'prds', entries: [{ id: 'studio/brief', data: { title: 'Creative brief', roadmap_item: 'STUDIO-001', visibility: 'Internal' }, body: 'Document-only search phrase.' }] }];
+  fixtures.documents = [{ coll: 'prds', entries: [{ id: 'music-app/brief', data: { title: 'Listening brief', roadmap_item: 'MUSIC-001', visibility: 'Internal' }, body: 'Document-only search phrase.' }] }];
 });
 
 it('preserves the characterized document search, managed cover, history and base URLs', () => {
   const [item] = buildBoardItems('/roadmap/');
   expect(item).toMatchObject({
-    id: 'STUDIO-001', owner: 'Mark', horizon: 'Now', stage: 'Pilot', updated: '2026-09-12',
-    tags: ['creative'], themes: ['delivery'], oneliner: 'Faster creation.',
-    cover: '../../assets/ast_test/rev_one/cover.png', href: '/roadmap/item/STUDIO-001',
-    editUrl: 'https://github.com/seenthis-ab/product-roadmap/edit/main/content/items/studio/STUDIO-001-test.md',
+    id: 'MUSIC-001', owner: 'Mark', horizon: 'Now', stage: 'Pilot', updated: '2026-09-12',
+    tags: ['discovery'], themes: ['delivery'], oneliner: 'Faster discovery.',
+    cover: '../../assets/ast_test/rev_one/cover.png', href: '/roadmap/item/MUSIC-001',
+    editUrl: 'https://github.com/markpasternak/product-roadmap-generalized/edit/main/content/items/music-app/MUSIC-001-test.md',
     sections: [{ heading: 'Why it matters', text: '•  Useful', markdown: '- Useful' }],
   });
-  expect(item.links[0]).toMatchObject({ title: 'Creative brief', href: '/roadmap/docs/prd/brief' });
+  expect(item.links[0]).toMatchObject({ title: 'Listening brief', href: '/roadmap/docs/prd/brief' });
   expect(item.text).toContain('document-only search phrase');
 });
 

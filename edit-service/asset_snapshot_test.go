@@ -226,7 +226,7 @@ func TestAssetPublicationAndRecoveryInvalidateWarmSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	release()
-	cs := Changeset{RequestID: "publication-asset-cache", Created: []ItemNew{{ID: "new-cache-test", Product: "Creative Manager", Title: "Cache publication", Frontmatter: map[string]string{"owner": "Alice", "horizon": "Next", "stage": "Discovery", "visibility": "Internal"}}}}
+	cs := Changeset{RequestID: "publication-asset-cache", Created: []ItemNew{{ID: "new-cache-test", Product: "Music App", Title: "Cache publication", Frontmatter: map[string]string{"owner": "Alice", "horizon": "Next", "stage": "Discovery", "visibility": "Internal"}}}}
 	for range 2 {
 		out, err := g.syncChangeset(context.Background(), cs, "Publish", "alice")
 		if err != nil || len(out.Errors) > 0 || len(out.Conflicts) > 0 {

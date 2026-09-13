@@ -126,6 +126,14 @@ CI checks source history for secrets, validates the fictional dataset, and build
 
 Build with `npm --prefix site run build` and serve `site/dist/` using a static host. Configure `SITE_URL` for canonical URLs and `SITE_BASE` for a path prefix.
 
+Every push to `main` runs the deployment workflow. Content-only changes reuse the
+last verified application package and publish through the fast content renderer;
+application changes run the complete build and become the approved package for
+later content updates. The optional Go worker uses the same release identity and
+staged publication contract, while GitHub Actions remains the durable fallback.
+See [content publication operations](tooling/deploy/content-release-checklist.md)
+for package promotion, webhook setup, pausing, rollback and release verification.
+
 The included showcase workflow targets the maintained demo. Forks must configure their own deployment target and credentials; do not reuse the showcase's API or canvas. [The self-hosting guide](docs/self-hosting.md) covers static hosting, the GitHub App, the Go service, and optional Canvas Drop integration.
 
 ## Source and third-party software

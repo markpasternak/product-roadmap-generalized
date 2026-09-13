@@ -1,8 +1,9 @@
+import { formatDateTime } from '../dates';
+import { escapeHtml } from '../utils';
+
 export function escapeSeed(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 }
-
-const escapeHtml = (text: string) => text.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
 
 export function fillTemplate(template: string, input: { title: string; html: string; seed: unknown; description?: string; path?: string; client?: string; styles?: string[]; publishedAt?: string; ogType?: 'website' | 'article' }) {
   for (const marker of ['<!--ROADMAP_CONTENT-->', '<!--ROADMAP_STYLES-->', '__ROADMAP_SEED__', '__ROADMAP_CLIENT__']) {
@@ -23,4 +24,3 @@ export function fillTemplate(template: string, input: { title: string; html: str
   // One pass: content can legitimately contain text that looks like a template marker.
   return template.replace(/<!--ROADMAP_(?:CONTENT|STYLES)-->|__ROADMAP_(?:TITLE|DESCRIPTION|PATH|SEED|CLIENT|OG_TYPE|PUBLISHED_AT|PUBLISHED_LABEL)__/g, marker => replacements[marker]);
 }
-import { formatDateTime } from '../dates';

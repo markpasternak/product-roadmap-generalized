@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import PlannedDates from './PlannedDates.vue';
 import ItemLabels from './ItemLabels.vue';
-import { itemLabels, namedOwner } from '../../lib/cardMetadata';
+import { namedOwner } from '../../lib/cardMetadata';
 import { computed, nextTick, ref } from 'vue';
 import HighlightedText from '../ui/HighlightedText.vue';
 import {
@@ -65,7 +65,6 @@ const emit = defineEmits<{
 const editStore = useEditStore();
 const dirty = computed(() => !!props.editing && editStore.isDirty(props.item.id));
 const owner = computed(() => props.client ? '' : namedOwner(props.item.owner));
-const hasLabels = computed(() => props.showLabels && !props.client && itemLabels(props.item).length > 0);
 
 // SortableJS (driven from Board.vue) owns drag-and-drop entirely — it's configured with
 // `handle: '.roadmap-drag-handle'`, so a drag can only ever start from the grip below, never
@@ -265,7 +264,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
       </div>
     </div>
 
-    <ItemLabels v-if="hasLabels" class="mt-2" :item="item" :preview="preview" @filter="emit('filter', $event)" />
+    <ItemLabels v-if="showLabels && !client" class="mt-2" :item="item" :preview="preview" @filter="emit('filter', $event)" />
     <div class="card-meta mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5" :class="editing ? 'pr-16' : ''">
       <span v-if="showProduct" class="card-product-badge" :title="item.product" role="img" :aria-label="item.product">
         <span aria-hidden="true">{{ productShort[item.product as keyof typeof productShort] ?? '?' }}</span>

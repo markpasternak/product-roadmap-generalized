@@ -13,6 +13,11 @@ import { responseJSON } from './staged.mjs';
 
 const fail = code => { throw new Error(code); };
 const same = (a, b) => a?.applicationCommit === b?.applicationCommit && a?.applicationPackage === b?.applicationPackage;
+export function applicationGroup(env) {
+  const name = env.ROADMAP_APPLICATION_GROUP || 'roadmap-editor';
+  if (!/^[a-z_][a-z0-9_-]{0,31}$/.test(name)) fail('INVALID_APPLICATION_GROUP');
+  return name;
+}
 export function selectedApplication(release, repo, profile) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo ?? '') || !/^[a-f0-9]{40}$/.test(release?.applicationCommit ?? '') ||
       !/^[a-f0-9]{64}$/.test(release?.applicationPackage ?? '') || release.contentSchema !== 1 ||
@@ -97,7 +102,7 @@ async function main() {
   if (env.ROADMAP_LOCAL_BUILD_MODE !== 'content' || env.ROADMAP_PUBLICATION_PAUSED === 'true') return;
   const profile = { siteUrl: env.SITE_URL, base: env.SITE_BASE, audience: env.SITE_AUDIENCE, editApi: env.PUBLIC_EDIT_API, canvasBackend: env.PUBLIC_CANVAS_BACKEND };
   const config = { repo: env.REPO, api: env.CANVAS_API_URL, token: env.CANVAS_DROP_TOKEN };
-  const group = execFileSync('getent', ['group', 'roadmap-editor'], { encoding: 'utf8' }).trim().split(':');
+  const group = execFileSync('getent', ['group', applicationGroup(env)], { encoding: 'utf8' }).trim().split(':');
   const result = await reconcileApplication({ config, profile, pointer: env.ROADMAP_APPLICATION_POINTER,
     groupId: Number(group[2]), token: () => installationToken(env) });
   if (result.outcome === 'promoted') console.log(JSON.stringify(result));

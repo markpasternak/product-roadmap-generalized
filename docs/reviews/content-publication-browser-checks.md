@@ -1,8 +1,8 @@
 # Compiled content-publication browser checks
 
 Use the browser automation MCP for every browser action and observation. This
-procedure replaces the planned standalone browser-driver test at Mark's request
-on 2026-09-13. Preparation commands create immutable local fixtures; they do not
+procedure uses the project's approved interactive browser workflow. Preparation
+commands create immutable local fixtures; they do not
 automate the browser or publish anything externally.
 
 1. Compile an internal application with a loopback editor fixture profile. Prepare

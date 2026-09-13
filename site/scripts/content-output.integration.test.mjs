@@ -34,9 +34,9 @@ test('compiled publication keeps references and bytes atomic through upload, rep
   const attachment = await asset('ast_attachment', 'zip', 'application/zip');
   const privateAsset = await asset('ast_private', 'txt', 'text/plain; charset=utf-8', 'Internal');
   await asset('ast_unused', 'txt', 'text/plain; charset=utf-8');
-  const publicItem = cover => `---\nid: PUBLIC-1\ntitle: Public initiative\nproduct: Studio\nhorizon: Now\nstage: Pilot\nowner: PRIVATE OWNER\nvisibility: Public\ncover: ${cover}\ntags: theme:Delivery\n---\n## One-liner\nPublic summary.\n\n## Why it matters\nPublic explanation.\n\n## Current behavior\nPRIVATE SECTION\n\n## Links\n- PRD: content/prds/public-brief.md\n- Internal: content/prds/private-brief.md\n- Video: ${video}\n- PDF: ${pdf}\n- Download: ${attachment}\n`;
+  const publicItem = cover => `---\nid: PUBLIC-1\ntitle: Public initiative\nproduct: Music App\nhorizon: Now\nstage: Pilot\nowner: PRIVATE OWNER\nvisibility: Public\ncover: ${cover}\ntags: theme:Delivery\n---\n## One-liner\nPublic summary.\n\n## Why it matters\nPublic explanation.\n\n## Current behavior\nPRIVATE SECTION\n\n## Links\n- PRD: content/prds/public-brief.md\n- Internal: content/prds/private-brief.md\n- Video: ${video}\n- PDF: ${pdf}\n- Download: ${attachment}\n`;
   await put('content/items/public.md', publicItem(image));
-  await put('content/items/private.md', `---\nid: PRIVATE-1\ntitle: PRIVATE ITEM\nproduct: Studio\nhorizon: Now\nstage: Pilot\nowner: PRIVATE OWNER\nvisibility: Internal\n---\n## Links\n- Private: ${privateAsset}\n`);
+  await put('content/items/private.md', `---\nid: PRIVATE-1\ntitle: PRIVATE ITEM\nproduct: Music App\nhorizon: Now\nstage: Pilot\nowner: PRIVATE OWNER\nvisibility: Internal\n---\n## Links\n- Private: ${privateAsset}\n`);
   await put('content/prds/public-brief.md', `---\ntitle: Public brief\nvisibility: Public\nowner: PRIVATE DOC OWNER\nroadmap_item: PUBLIC-1\n---\n## Evidence\nPublic evidence.\n\n[PDF](${pdf})\n\n<video controls src="${video}"></video>\n\n## Open questions\nPRIVATE QUESTION\n`);
   await put('content/prds/private-brief.md', '---\ntitle: PRIVATE DOCUMENT\nvisibility: Internal\n---\nPRIVATE DOCUMENT BODY');
   const firstCommit = commit('PRIVATE COMMIT SUBJECT');
@@ -88,7 +88,7 @@ test('compiled publication keeps references and bytes atomic through upload, rep
   for (const path of ['item/PUBLIC-1/index.html', 'docs/prd/public-brief/index.html', 'assets/ast_image/rev_two/file.png']) assert(!third.files.has(path));
   assert(!(await third.text('sitemap-0.xml')).includes('/item/PUBLIC-1'));
   assert(!(await third.text('resources.json')).includes('ast_image'));
-  for (const path of ['index.html', 'studio/index.html', 'docs/index.html', 'themes/index.html', 'changes/index.html', 'changelog/index.html', 'help/index.html', 'shares/index.html']) assert(third.files.has(path));
+  for (const path of ['index.html', 'music-app/index.html', 'docs/index.html', 'themes/index.html', 'changes/index.html', 'changelog/index.html', 'help/index.html', 'shares/index.html']) assert(third.files.has(path));
   await put('content/assets/ast_pdf/rev_one/file.pdf', 'Corrupted fixture');
   commit('Corrupt asset fixture');
   await assert.rejects(prepare('invalid'), /checksum mismatch/);

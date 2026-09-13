@@ -80,7 +80,7 @@ async function inventory(dir) {
 }
 await inventory(output);
 const dependencyDigest = sha256(await readFile(join(root, 'package-lock.json')));
-const profile = { siteUrl: process.env.SITE_URL ?? 'https://seenthisroadmap.canvas-drop.com', base, audience,
+const profile = { siteUrl: process.env.SITE_URL ?? 'https://roadmapdemo.canvas-drop.com', base, audience,
   editApi: process.env.PUBLIC_EDIT_API ?? '', canvasBackend: process.env.PUBLIC_CANVAS_BACKEND ?? '' };
 const manifestBytes = JSON.stringify({ type: 'module', protocol: 1, source, base, audience, profile, dependencyDigest, nodeMajor: Number(process.versions.node.split('.')[0]), files }, null, 2);
 await writeFile(join(output, 'package.json'), manifestBytes, { mode: 0o600 });

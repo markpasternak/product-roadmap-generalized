@@ -14,7 +14,7 @@ import { EMPTY_ITEM_HISTORY } from '../../lib/itemHistory';
 function fixture(audience: 'internal' | 'public' = 'internal'): PublishedContent {
   const model = buildPublishedModel({
     items: ['A', 'B', 'C', 'D'].map(id => ({ id, filePath: `content/items/${id}.md`,
-      data: itemSchema.parse({ id, title: `Item ${id}`, product: 'Studio', horizon: 'Now', stage: 'Pilot', owner: 'Private owner', visibility: 'Public', order: id.charCodeAt(0) }),
+      data: itemSchema.parse({ id, title: `Item ${id}`, product: 'Music App', horizon: 'Now', stage: 'Pilot', owner: 'Private owner', visibility: 'Public', order: id.charCodeAt(0) }),
       body: '## One-liner\nA helpful summary.\n\n## Why it matters\nPublic reasoning.\n\n## Current behavior\nPRIVATE SECTION\n\n## Links\n- PRD: content/prds/brief.md\n' })),
     documents: [{ coll: 'prds', entries: [{ id: 'brief', data: { title: 'Launch brief', visibility: 'Public', updated: '2026-09-13', roadmap_item: 'B' }, body: 'Document body' }] }],
   }, { base: '/roadmap/', audience, historyForPath: () => ({ ...EMPTY_ITEM_HISTORY, created: '2026-09-01', updated: '2026-09-13', updatedBy: 'Private author', updatedSubject: 'Private subject' }) });
