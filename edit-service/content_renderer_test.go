@@ -13,7 +13,7 @@ import (
 
 func TestNewHintCancelsOnlyVerifiedSupersededPreparation(t *testing.T) {
 	hints := make(chan time.Time, 4)
-	ctx := context.WithValue(context.Background(), buildWakeKey{}, (<-chan time.Time)(hints))
+	ctx := context.WithValue(context.Background(), buildWakeKey{}, hints)
 	var changed atomic.Bool
 	read := make(chan struct{}, 4)
 	prep, stop := monitorContentHead(ctx, "old", func(context.Context) (string, error) {
@@ -41,7 +41,7 @@ func TestNewHintCancelsOnlyVerifiedSupersededPreparation(t *testing.T) {
 }
 func TestUnverifiedHintCannotCancelPreparation(t *testing.T) {
 	hints := make(chan time.Time, 1)
-	ctx := context.WithValue(context.Background(), buildWakeKey{}, (<-chan time.Time)(hints))
+	ctx := context.WithValue(context.Background(), buildWakeKey{}, hints)
 	read := make(chan struct{})
 	prep, stop := monitorContentHead(ctx, "old", func(context.Context) (string, error) { defer close(read); return "", errors.New("unavailable") })
 	hints <- time.Now()
@@ -112,5 +112,30 @@ func TestRendererSupportsPreviousApplicationPackage(t *testing.T) {
 	}
 	if r.cmd != nil {
 		t.Fatal("old package started a worker")
+	}
+}
+
+func TestPreparationBoundaryPreservesUnresolvedWebhookHint(t *testing.T) {
+	hints := make(chan time.Time, 1)
+	ctx := context.WithValue(context.Background(), buildWakeKey{}, hints)
+	started := make(chan struct{})
+	_, stop := monitorContentHead(ctx, "old", func(ctx context.Context) (string, error) {
+		close(started)
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+	queued := time.Now()
+	hints <- queued
+	<-started
+	if stop() {
+		t.Fatal("unverified lookup claimed supersession")
+	}
+	select {
+	case retry := <-hints:
+		if !retry.Equal(queued) {
+			t.Fatal("lost original wake time")
+		}
+	default:
+		t.Fatal("webhook hint lost at preparation boundary")
 	}
 }

@@ -132,7 +132,7 @@ func newReconcilingBuildWorker(run func(context.Context) error, interval, timeou
 				return
 			}
 			job, cancelJob := context.WithTimeout(ctx, timeout)
-			job = context.WithValue(job, buildWakeKey{}, (<-chan time.Time)(w.wake))
+			job = context.WithValue(job, buildWakeKey{}, w.wake)
 			err := run(context.WithValue(job, buildQueuedAtKey{}, queued))
 			cancelJob()
 			if errors.Is(err, errContentSuperseded) {

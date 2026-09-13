@@ -143,10 +143,11 @@ type buildWakeKey struct{}
 // Hints cannot authorize cancellation. Resolve authoritative main and cancel
 // only preparation; drain this monitor before entering publication/finalization.
 func monitorContentHead(ctx context.Context, head string, latest func(context.Context) (string, error)) (context.Context, func() bool) {
-	hints, _ := ctx.Value(buildWakeKey{}).(<-chan time.Time)
+	hints, _ := ctx.Value(buildWakeKey{}).(chan time.Time)
 	preparation, cancel := context.WithCancel(ctx)
 	stopped, done := make(chan struct{}), make(chan struct{})
 	superseded := false
+	var unresolved time.Time
 	go func() {
 		defer close(done)
 		for {
@@ -155,8 +156,12 @@ func monitorContentHead(ctx context.Context, head string, latest func(context.Co
 				return
 			case <-ctx.Done():
 				return
-			case <-hints:
+			case hint := <-hints:
+				unresolved = hint
 				current, err := latest(preparation)
+				if err == nil {
+					unresolved = time.Time{}
+				}
 				if err == nil && current != head {
 					superseded = true
 					cancel()
@@ -165,5 +170,18 @@ func monitorContentHead(ctx context.Context, head string, latest func(context.Co
 			}
 		}
 	}()
-	return preparation, func() bool { close(stopped); cancel(); <-done; return superseded }
+	return preparation, func() bool {
+		close(stopped)
+		cancel()
+		<-done
+		// A lookup interrupted by the preparation boundary has not consumed the
+		// hint's obligation. Give it back to the worker for immediate reconciliation.
+		if !superseded && !unresolved.IsZero() {
+			select {
+			case hints <- unresolved:
+			default:
+			}
+		}
+		return superseded
+	}
 }
