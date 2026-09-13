@@ -28,6 +28,7 @@ test('only artifact work is conditional and missing classifier output builds by 
   const commands = [
     'python3 tooling/validate_items.py',
     'npm --prefix site run build',
+    'node site/scripts/test-content-output.mjs',
     'node site/scripts/check-document-links.mjs',
     'node site/scripts/check-item-history.mjs',
   ];
@@ -35,6 +36,9 @@ test('only artifact work is conditional and missing classifier output builds by 
   for (const command of commands) {
     assert.equal(checks.jobs.build.steps.find((step) => step.run === command)?.if, guarded, command);
   }
+  const steps = checks.jobs.build.steps;
+  assert.ok(steps.findIndex(step => step.run === 'node site/scripts/test-content-output.mjs') >
+    steps.findIndex(step => step.run === 'npm --prefix site run build'));
 });
 
 test('deployment preflights before building and owns checks for every new artifact', () => {

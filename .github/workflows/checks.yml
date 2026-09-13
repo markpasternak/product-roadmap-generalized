@@ -66,14 +66,9 @@ jobs:
         if: steps.changes.outputs.build_required != 'false'
       - run: npm --prefix site run build
         if: steps.changes.outputs.build_required != 'false'
-      - name: Verify compiled content publication contract
+      - name: Test compiled internal and public content output
         if: steps.changes.outputs.build_required != 'false'
-        run: |
-          application="$RUNNER_TEMP/roadmap-application-${GITHUB_SHA}"
-          node site/scripts/build-application.mjs "$application"
-          CONTENT_TEST_APPLICATION="$application" \
-          CONTENT_TEST_PACKAGE_DIGEST="$(sha256sum "$application/package.json" | cut -d ' ' -f1)" \
-            node --test site/scripts/content-output.integration.test.mjs
+        run: node site/scripts/test-content-output.mjs
       - run: node site/scripts/check-demo.mjs
         if: steps.changes.outputs.build_required != 'false'
       - run: node site/scripts/check-document-links.mjs

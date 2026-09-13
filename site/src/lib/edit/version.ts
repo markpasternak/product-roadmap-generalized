@@ -1,8 +1,8 @@
-// Detects when a newer build of the roadmap has been deployed (after an editor Syncs, the
-// site rebuilds/redeploys behind CI). BUILD_COMMIT is the commit this bundle was built from,
-// injected at build time via vite `define` in astro.config.mjs (the typeof guard covers
-// vitest, matching the pattern in ../audience.ts). Each publication writes the same commit
-// to version.json; polling that file lets a running tab notice its bundle is stale.
+// Legacy commit polling. BUILD_COMMIT identifies this bundle's application source,
+// injected by the application compiler and Astro's Vite configuration (the typeof
+// guard covers tests). scripts/prepare-content.mjs writes the published content
+// commit to version.json. The publication client separately distinguishes content
+// updates from application updates.
 declare const __BUILD_COMMIT__: string | undefined;
 
 export const BUILD_COMMIT: string = typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : 'dev';
