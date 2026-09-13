@@ -15,7 +15,7 @@ func approvedPackageFixture(t *testing.T) (localBuildConfig, string) {
 	root := t.TempDir()
 	profile := buildProfile{SiteURL: "https://example.test", Base: "/", Audience: "internal", EditAPI: "https://edit.example.test", CanvasBackend: "true"}
 	files := []map[string]any{}
-	for _, path := range []string{"private/renderer.mjs", "private/template.html", "private/template-docs.html", "public/.vite/manifest.json", "private/commands/prepare-content.mjs", "private/commands/coordinate.mjs", "private/commands/staged.mjs", "private/commands/application-package.mjs", "private/commands/client-assets.mjs", "private/commands/content-output.mjs", "private/commands/build-item-history.mjs", "private/commands/check-document-links.mjs", "private/commands/check-item-history.mjs", "private/commands/validate_items.py"} {
+	for _, path := range []string{"private/renderer.mjs", "private/template.html", "private/template-docs.html", "public/.vite/manifest.json", "private/commands/prepare-content.mjs", "private/commands/coordinate.mjs", "private/commands/staged.mjs", "private/commands/application-package.mjs", "private/commands/client-assets.mjs", "private/commands/content-output.mjs", "private/commands/build-item-history.mjs", "private/commands/check-demo.mjs", "private/commands/check-document-links.mjs", "private/commands/check-item-history.mjs", "private/commands/validate_items.py"} {
 		if err := writeConfined(root, path, []byte("fixture")); err != nil {
 			t.Fatal(err)
 		}
@@ -64,4 +64,33 @@ func TestApprovedApplicationPackage(t *testing.T) {
 			}
 		})
 	}
+	t.Run("missing-required-demo-check", func(t *testing.T) {
+		cfg, root := approvedPackageFixture(t)
+		var manifest map[string]any
+		if err := readJSON(filepath.Join(root, "package.json"), &manifest); err != nil {
+			t.Fatal(err)
+		}
+		files := manifest["files"].([]any)
+		filtered := files[:0]
+		for _, value := range files {
+			if value.(map[string]any)["path"] != "private/commands/check-demo.mjs" {
+				filtered = append(filtered, value)
+			}
+		}
+		manifest["files"] = filtered
+		bytes, _ := json.Marshal(manifest)
+		if err := os.WriteFile(filepath.Join(root, "package.json"), bytes, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(filepath.Join(root, "private/commands/check-demo.mjs")); err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(bytes)
+		if err := writeJSONAtomic(cfg.ApplicationPointer, approvedApplication{Directory: root, Digest: hex.EncodeToString(sum[:]), Source: strings.Repeat("a", 40), Repo: "example/roadmap", WorkflowRunID: 123}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadApprovedApplication(cfg, "example/roadmap"); err == nil || !strings.Contains(err.Error(), "incomplete") {
+			t.Fatalf("package without demo checker accepted: %v", err)
+		}
+	})
 }

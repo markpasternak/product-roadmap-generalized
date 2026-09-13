@@ -11,7 +11,7 @@ async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'roadmap-package-test-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const files = [];
-  for (const path of ['private/renderer.mjs', 'private/template.html', 'private/template-docs.html', 'public/.vite/manifest.json']) {
+  for (const path of ['private/renderer.mjs', 'private/template.html', 'private/template-docs.html', 'public/.vite/manifest.json', 'private/commands/check-demo.mjs']) {
     await mkdir(join(root, path, '..'), { recursive: true });
     await writeFile(join(root, path), 'fixture');
     files.push({ path, hash: hash('fixture'), size: 7 });

@@ -64,7 +64,7 @@ for (const entry of await readdir(shell, { withFileTypes: true })) {
 // Content workers never execute commands from the incoming Git checkout.
 const commands = join(output, 'private/commands');
 await mkdir(commands);
-for (const script of ['prepare-content.mjs', 'content-cache.mjs', 'application-package.mjs', 'client-assets.mjs', 'content-output.mjs', 'build-item-history.mjs', 'check-document-links.mjs', 'check-item-history.mjs'])
+for (const script of ['prepare-content.mjs', 'content-cache.mjs', 'application-package.mjs', 'client-assets.mjs', 'content-output.mjs', 'build-item-history.mjs', 'check-demo.mjs', 'check-document-links.mjs', 'check-item-history.mjs'])
   await copyFile(join(root, 'scripts', script), join(commands, script));
 for (const script of ['coordinate.mjs', 'staged.mjs'])
   await copyFile(join(root, '../tooling/deploy', script), join(commands, script));

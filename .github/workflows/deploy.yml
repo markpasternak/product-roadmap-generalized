@@ -87,7 +87,7 @@ jobs:
         run: node site/scripts/check-item-history.mjs
 
       - name: Verify fictional demo content
-        if: steps.coordination.outputs.full_build == 'true'
+        if: steps.coordination.outputs.already_current != 'true'
         run: node site/scripts/check-demo.mjs
 
       - name: Prepare content using the verified application package

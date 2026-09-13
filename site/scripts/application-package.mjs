@@ -50,7 +50,7 @@ export async function verifyApplicationPackage(directory, { digest, profile } = 
     const failure = results.find(result => result.status === 'rejected');
     if (failure) throw failure.reason;
   }
-  for (const required of ['private/renderer.mjs', 'private/template.html', 'private/template-docs.html', 'public/.vite/manifest.json'])
+  for (const required of ['private/renderer.mjs', 'private/template.html', 'private/template-docs.html', 'public/.vite/manifest.json', 'private/commands/check-demo.mjs'])
     if (!seen.has(required)) throw new Error('Incomplete application inventory');
   async function checkInventory(relative = '') {
     for (const entry of await readdir(join(root, relative), { withFileTypes: true })) {

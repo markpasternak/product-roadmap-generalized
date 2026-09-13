@@ -56,7 +56,10 @@ test('deployment preflights before building and owns checks for every new artifa
   for (const command of commands) {
     const index = steps.findIndex((step) => step.run === command);
     assert.ok(index >= 0 && index < upload, command);
-    assert.equal(steps[index].if, "steps.coordination.outputs.full_build == 'true'", command);
+    const expectedCondition = command === 'node site/scripts/check-demo.mjs'
+      ? "steps.coordination.outputs.already_current != 'true'"
+      : "steps.coordination.outputs.full_build == 'true'";
+    assert.equal(steps[index].if, expectedCondition, command);
   }
   assert.ok(steps.findIndex((step) => step.run === 'node tooling/ci/changes.mjs wait') < upload);
   for (const key of ['SITE_URL', 'SITE_BASE', 'SITE_AUDIENCE', 'PUBLIC_EDIT_API', 'PUBLIC_CANVAS_BACKEND']) assert.ok(deploy.env[key]);
@@ -67,6 +70,11 @@ test('deployment preflights before building and owns checks for every new artifa
   assert.equal(content.env?.CANVAS_DROP_TOKEN, undefined);
   const artifact = steps.find(step => step.name === 'Store canonical private application package');
   assert.equal(artifact.if, "steps.coordination.outputs.full_build == 'true'");
+  const compiledContent = checks.jobs.build.steps.find(step => step.name === 'Verify compiled content publication contract');
+  assert.equal(compiledContent.if, "steps.changes.outputs.build_required != 'false'");
+  assert.match(compiledContent.run, /CONTENT_TEST_APPLICATION/);
+  assert.match(compiledContent.run, /CONTENT_TEST_PACKAGE_DIGEST/);
+  assert.match(compiledContent.run, /content-output\.integration\.test\.mjs/);
   assert.equal(artifact.with['include-hidden-files'], true);
   assert.ok(steps.indexOf(artifact) > steps.findIndex(step => step.run === 'node tooling/ci/changes.mjs wait'));
   assert.ok(steps.indexOf(artifact) < upload);

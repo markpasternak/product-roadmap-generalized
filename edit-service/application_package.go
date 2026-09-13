@@ -130,7 +130,7 @@ func loadApprovedApplication(c localBuildConfig, repo string) (approvedApplicati
 		}
 		seen[file.Path], folded[strings.ToLower(file.Path)] = true, true
 	}
-	for _, required := range []string{"private/renderer.mjs", "private/template.html", "private/template-docs.html", "public/.vite/manifest.json", "private/commands/prepare-content.mjs", "private/commands/coordinate.mjs", "private/commands/staged.mjs", "private/commands/application-package.mjs", "private/commands/client-assets.mjs", "private/commands/content-output.mjs", "private/commands/build-item-history.mjs", "private/commands/check-document-links.mjs", "private/commands/check-item-history.mjs", "private/commands/validate_items.py"} {
+	for _, required := range []string{"private/renderer.mjs", "private/template.html", "private/template-docs.html", "public/.vite/manifest.json", "private/commands/prepare-content.mjs", "private/commands/coordinate.mjs", "private/commands/staged.mjs", "private/commands/application-package.mjs", "private/commands/client-assets.mjs", "private/commands/content-output.mjs", "private/commands/build-item-history.mjs", "private/commands/check-demo.mjs", "private/commands/check-document-links.mjs", "private/commands/check-item-history.mjs", "private/commands/validate_items.py"} {
 		if !seen[required] {
 			return app, errors.New("incomplete application package")
 		}

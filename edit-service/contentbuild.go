@@ -108,6 +108,7 @@ func (g *GitHub) prepareContent(ctx context.Context, latest func(context.Context
 		args []string
 	}{
 		{"validate content", []string{"python3", filepath.Join(commands, "validate_items.py"), wt}},
+		{"verify demo isolation", []string{"node", filepath.Join(commands, "check-demo.mjs"), wt}},
 		{"item history", []string{"node", filepath.Join(commands, "build-item-history.mjs")}},
 		{"prepare content", []string{"node", filepath.Join(commands, "prepare-content.mjs"), app.Directory, wt, candidate, app.Digest, filepath.Join(root, "content-cache")}},
 		{"document link check", []string{"node", filepath.Join(commands, "check-document-links.mjs"), filepath.Join(candidate, "public")}},

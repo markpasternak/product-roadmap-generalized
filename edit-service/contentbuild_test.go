@@ -42,6 +42,7 @@ func TestContentWorkerPreparation(t *testing.T) {
 				head = gitTest(t, g.repoRoot(), "rev-parse", "HEAD")
 			}
 			reads, runs := 0, 0
+			var commands []string
 			latest := func(context.Context) (string, error) {
 				reads++
 				if scenario == "superseded" && reads > 1 {
@@ -51,6 +52,7 @@ func TestContentWorkerPreparation(t *testing.T) {
 			}
 			run := func(ctx context.Context, root string, env, args []string) error {
 				runs++
+				commands = append(commands, filepath.Base(args[1]))
 				if !strings.HasPrefix(args[1], filepath.Join(appRoot, "private/commands")+"/") {
 					t.Fatalf("untrusted command %v", args)
 				}
@@ -78,8 +80,11 @@ func TestContentWorkerPreparation(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if runs != 5 {
+				if runs != 6 {
 					t.Fatalf("commands %d", runs)
+				}
+				if strings.Join(commands, ",") != "validate_items.py,check-demo.mjs,build-item-history.mjs,prepare-content.mjs,check-document-links.mjs,check-item-history.mjs" {
+					t.Fatalf("unexpected command order %v", commands)
 				}
 			} else if err == nil {
 				t.Fatal("unsafe preparation accepted")

@@ -33,7 +33,7 @@ test('download verifies archive and every package byte without forwarding creden
   const app = join(root, 'application'); await mkdir(app);
   const hash = b => createHash('sha256').update(b).digest('hex');
   const files = [];
-  for (const path of ['private/renderer.mjs', 'private/template.html', 'private/template-docs.html', 'public/.vite/manifest.json']) {
+  for (const path of ['private/renderer.mjs', 'private/template.html', 'private/template-docs.html', 'public/.vite/manifest.json', 'private/commands/check-demo.mjs']) {
     await mkdir(join(app, path, '..'), { recursive: true }); await writeFile(join(app, path), 'fixture');
     files.push({ path, hash: hash('fixture'), size: 7 });
   }
