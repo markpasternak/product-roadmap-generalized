@@ -416,7 +416,7 @@ async function pollLiveVersion(epoch: number) {
     liveVersionFailures = deployed === null ? Math.min(liveVersionFailures + 1, 3) : 0;
   }
   const elapsed = Date.now() - deployPollStartedAt;
-  const healthyDelay = elapsed < 30000 ? LIVE_VERSION_FAST_POLL_MS : elapsed < 120000 ? 2000 : LIVE_VERSION_POLL_MS;
+  const healthyDelay = elapsed < 20000 ? LIVE_VERSION_FAST_POLL_MS : elapsed < 60000 ? 1000 : 3000;
   const delay = document.hidden || navigator.onLine === false ? 30000
     : liveVersionFailures ? Math.min(LIVE_VERSION_POLL_MS * 2 ** liveVersionFailures, 30000) : healthyDelay;
   liveVersionTimer = setTimeout(() => void pollLiveVersion(epoch), delay);
@@ -439,6 +439,7 @@ function applyDeployRun(run: DeployStatus) {
       publishing.value = { ...publishing.value, stage: 'live' };
       // Nothing left to resume on a later reload — the build is confirmed live.
       editStore.clearCommit();
+      publishedContent?.refresh();
     } else if (run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'action_required') {
       publishing.value = { ...publishing.value, stage: 'failed', htmlUrl: run.htmlUrl };
     } else {

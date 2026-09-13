@@ -117,13 +117,17 @@ export function watchPublishedContent(options: {
   let inFlight = false;
   let failures = 0;
   let checkedAt = 0;
+  let burstUntil = 0;
+  let observedRevision = `${current.commit}:${current.content.hash}`;
+  let refreshRequested = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
   const available = () => !doc.hidden && win.navigator.onLine !== false;
   const status = (value: RefreshStatus) => { if (!stopped) options.status(win.navigator.onLine === false ? 'offline' : value); };
   const schedule = () => {
     clearTimeout(timer);
-    if (!stopped && available()) timer = setTimeout(check, failures ? Math.min(3000 * 2 ** failures, 30000) : 1000);
+    const interval = Date.now() < burstUntil ? 2000 : 20000;
+    if (!stopped && available()) timer = setTimeout(check, refreshRequested ? 0 : Math.min(interval * 2 ** failures, 60000));
   };
   function flush() {
     if (stopped || !pending || inFlight || !available()) return;
@@ -141,6 +145,7 @@ export function watchPublishedContent(options: {
     if (stopped || inFlight) return;
     clearTimeout(timer);
     if (!available()) { if (win.navigator.onLine === false) status('offline'); return; }
+    refreshRequested = false;
     inFlight = true;
     controller = new AbortController();
     const timeout = setTimeout(() => controller?.abort(), 8000);
@@ -159,6 +164,8 @@ export function watchPublishedContent(options: {
           pending = undefined; status('application'); break;
         }
         const release = parseRelease(value);
+        const revision = `${release.commit}:${release.content.hash}`;
+        if (revision !== observedRevision) { observedRevision = revision; burstUntil = Date.now() + 60000; }
         if (release.commit === current.commit && release.content.hash === current.content.hash) { pending = undefined; status('current'); break; }
         if (pending?.release.content.hash === release.content.hash) { pending.release = release; break; }
         pending = undefined;
@@ -188,6 +195,7 @@ export function watchPublishedContent(options: {
   void check();
   return {
     check, flush,
+    refresh() { refreshRequested = true; void check(); },
     stop() {
       stopped = true; pending = undefined; controller?.abort(); clearTimeout(timer);
       doc.removeEventListener('visibilitychange', wake);

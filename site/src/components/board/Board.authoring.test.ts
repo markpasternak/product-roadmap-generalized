@@ -477,7 +477,7 @@ describe("account drafts and recoverable publication", () => {
     await vi.advanceTimersByTimeAsync(4000);
     expect(status(w).text()).toContain('Your changes are live');
   });
-  it('backs off the initiating client after the thirty-second fast window', async () => {
+  it('backs off the initiating client after the twenty-second fast window', async () => {
     const w = await editing();
     vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout', 'Date']});
     vi.mocked(fetchDeployedCommit).mockResolvedValue('c'.repeat(40));
@@ -486,9 +486,9 @@ describe("account drafts and recoverable publication", () => {
     syncMock.mockResolvedValueOnce({ok: true, sha: 'a'.repeat(40)});
     await send(w);
     await flushPromises();
-    await vi.advanceTimersByTimeAsync(30000);
+    await vi.advanceTimersByTimeAsync(20000);
     const count = vi.mocked(fetchDeployedCommit).mock.calls.length;
-    await vi.advanceTimersByTimeAsync(1999);
+    await vi.advanceTimersByTimeAsync(999);
     expect(fetchDeployedCommit).toHaveBeenCalledTimes(count);
     await vi.advanceTimersByTimeAsync(1);
     expect(fetchDeployedCommit).toHaveBeenCalledTimes(count + 1);

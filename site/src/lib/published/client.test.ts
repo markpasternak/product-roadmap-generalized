@@ -39,8 +39,41 @@ describe('published content watcher', () => {
   it('does not refetch the snapshot on unchanged revision polls', async () => {
     const request = vi.fn<typeof fetch>().mockImplementation(async () => response(initial));
     const watcher = start(request);
-    await settle(); await vi.advanceTimersByTimeAsync(1000);
+    await settle(); await vi.advanceTimersByTimeAsync(20000);
     expect(request).toHaveBeenCalledTimes(2); expect(watcher.apply).not.toHaveBeenCalled();
+  });
+  it('checks every two seconds during a burst, extends it on a new revision, then returns to idle', async () => {
+    let release = initial;
+    const checkTimes: number[] = [];
+    const request = vi.fn<typeof fetch>().mockImplementation(async url => {
+      if (String(url).includes('version.json')) { checkTimes.push(Date.now()); return response(release); }
+      return new Response(bytes);
+    });
+    start(request); await settle();
+    const checks = () => request.mock.calls.filter(([url]) => String(url).includes('version.json')).length;
+    await vi.advanceTimersByTimeAsync(19999); expect(checks()).toBe(1);
+    release = latest;
+    await vi.advanceTimersByTimeAsync(1); await settle();
+    await vi.advanceTimersByTimeAsync(40000);
+    release = { ...latest, commit: 'f'.repeat(40) };
+    await vi.advanceTimersByTimeAsync(2000); await settle();
+    await vi.advanceTimersByTimeAsync(38000);
+    const duringBurst = checks();
+    await vi.advanceTimersByTimeAsync(2000); expect(checks()).toBe(duringBurst + 1);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(checkTimes.at(-1)! - checkTimes.at(-2)!).toBe(20000);
+  });
+  it('queues an immediate publication refresh behind an older in-flight check', async () => {
+    let finish!: (value: Response) => void;
+    const request = vi.fn<typeof fetch>().mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
+      .mockResolvedValueOnce(response(latest)).mockResolvedValueOnce(new Response(bytes));
+    const watcher = start(request);
+    watcher.refresh(); watcher.refresh();
+    expect(request).toHaveBeenCalledOnce();
+    finish(response(initial)); await settle();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(watcher.apply).toHaveBeenCalledOnce());
+    expect(request).toHaveBeenCalledTimes(3);
   });
   it('keeps a checked candidate while blocked, then applies without a reload', async () => {
     let blocked = true;
@@ -113,8 +146,8 @@ describe('published content watcher', () => {
   it('bounds error backoff and releases timers/listeners on stop', async () => {
     const request = vi.fn<typeof fetch>().mockRejectedValue(new Error('Offline'));
     const watcher = start(request); await settle();
-    await vi.advanceTimersByTimeAsync(3000); expect(request).toHaveBeenCalledOnce();
-    await vi.advanceTimersByTimeAsync(3000); expect(request).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(20000); expect(request).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(20000); expect(request).toHaveBeenCalledTimes(2);
     watcher.stop(); window.dispatchEvent(new Event('online'));
     await vi.advanceTimersByTimeAsync(60000); expect(request).toHaveBeenCalledTimes(2); expect(vi.getTimerCount()).toBe(0);
   });

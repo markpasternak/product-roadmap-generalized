@@ -1,12 +1,12 @@
 import { computed, inject, onUnmounted, ref, shallowReactive, type InjectionKey, type Ref, type ShallowRef } from 'vue';
 import type { PublishedCandidate, RefreshStatus } from './client';
 
-export function createPublishedContext(current: ShallowRef<PublishedCandidate>) {
+export function createPublishedContext(current: ShallowRef<PublishedCandidate>, refresh = () => {}) {
   const guards = shallowReactive(new Set<() => boolean>());
   const blocked = computed(() => [...guards].some(guard => guard()));
   const status = ref<RefreshStatus>('current');
   return {
-    current, status, blocked,
+    current, status, blocked, refresh,
     guard(check: () => boolean) { guards.add(check); return () => guards.delete(check); },
   };
 }

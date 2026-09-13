@@ -18,7 +18,8 @@ function mount() {
   // hydrating. Claim this host immediately, not only when Suspense resolves.
   host.dataset.publishedMounting = 'true';
   const current = shallowRef<PublishedCandidate>({ model: props.model, release: props.release });
-  const context = createPublishedContext(current);
+  let watcher: ReturnType<typeof watchPublishedContent> | undefined;
+  const context = createPublishedContext(current, () => watcher?.refresh());
   const composing = ref(false);
   context.guard(() => composing.value);
   const compositionStart = () => { composing.value = true; };
@@ -26,7 +27,6 @@ function mount() {
   document.addEventListener('compositionstart', compositionStart);
   document.addEventListener('compositionend', compositionEnd);
   window.addEventListener('blur', compositionEnd);
-  let watcher: ReturnType<typeof watchPublishedContent> | undefined;
   let stopped = false;
   const stopGuardWatch = watch(context.blocked, blocked => { if (!blocked) watcher?.flush(); }, { flush: 'post' });
   function ready() {
