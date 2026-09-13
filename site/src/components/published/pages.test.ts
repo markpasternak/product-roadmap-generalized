@@ -27,7 +27,7 @@ describe('published presentation parity', () => {
     const model = fixture();
     const html = await renderItem(model);
     expect(html).toBe(await renderItem(pageSeed(model, '/roadmap/', 'item/B')));
-    for (const value of ['Item B', 'A helpful summary.', 'Why it matters', 'PRIVATE SECTION', 'Private owner', 'Launch brief', '/roadmap/item/A', '/roadmap/item/C', 'Sep 13, 2026']) expect(html).toContain(value);
+    for (const value of ['Item B', 'A helpful summary.', 'Why it matters', 'PRIVATE SECTION', 'Private owner', 'Launch brief', '/roadmap/docs/prd/brief', '/roadmap/item/A', '/roadmap/item/C', 'Sep 13, 2026']) expect(html).toContain(value);
     expect(html).not.toContain('data-local-date-time'); // Date-only Git fallback must not acquire a timezone.
   });
   it('filters private data before any public HTML or seed serialization', async () => {

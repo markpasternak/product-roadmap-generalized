@@ -73,8 +73,8 @@ export function buildPublishedBoardItems(raw: ContentItem[], docCollections: Con
         .filter(Boolean)
         .join('\n');
     };
-    // The card/drawer is the fixed layer: headline + Target outcome + Why it matters +
-    // What ships. Everything else in the body renders on the full item page only.
+    // Keep the concise projection for cards and recipient shares. Item readers use
+    // readingBody below so custom sections and original ordering are preserved.
     const sections = STORY_HEADINGS
       .map((heading) => ({ heading: sectionLabel(heading), text: sectionBlock(heading), markdown: extractSection(body, heading) }))
       .filter((s) => s.text || resourcePlacements(s.markdown).some(placement => placement.image));
@@ -117,6 +117,7 @@ export function buildPublishedBoardItems(raw: ContentItem[], docCollections: Con
       themes,
       oneliner,
       outcome: sectionText(body, 'Target outcome'),
+      readingBody: body,
       sections,
       editUrl,
       links: parseLinks(body, base).map((l) => ({

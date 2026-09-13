@@ -42,7 +42,7 @@ export function installItemToc(panel: HTMLElement) {
     layout = panel.querySelector<HTMLElement>('[data-reading-layout]');
     nav = layout?.querySelector<HTMLElement>('[data-item-toc]') ?? null;
     if (!nav || !layout) return;
-    headings = [...layout.querySelectorAll<HTMLElement>('[data-reading-body] h3.roadmap-section-heading, [data-reading-body] h3[data-toc-heading]')];
+    headings = [...layout.querySelectorAll<HTMLElement>('[data-reading-body] .roadmap-section-heading, [data-reading-body] [data-toc-heading]')];
     const label = document.createElement('p');
     label.textContent = 'On this page';
     links = headings.map((heading, index) => {

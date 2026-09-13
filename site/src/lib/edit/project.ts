@@ -50,6 +50,7 @@ function applyBody(item: ItemVM, body: string): ItemVM {
     ...item,
     oneliner: sectionText(body, 'One-liner'),
     outcome: sectionText(body, 'Target outcome'),
+    readingBody: body,
     sections: parseSections(body)
       .filter((s) => isStoryHeading(s.heading))
       .map((s) => ({ heading: sectionLabel(s.heading), text: inlineMdToText(s.raw), markdown: s.raw })),

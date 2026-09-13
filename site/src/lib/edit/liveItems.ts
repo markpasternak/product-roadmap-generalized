@@ -88,6 +88,7 @@ export function itemsFromApi(apiItems: ApiItem[], base: string): ItemVM[] {
       themes,
       oneliner,
       outcome: sectionText(body, 'Target outcome'),
+      ...(!IS_PUBLIC ? { readingBody: body } : {}),
       sections,
       editUrl,
       links: parseLinks(body, base).map((l) => ({ ...l, title: null })),

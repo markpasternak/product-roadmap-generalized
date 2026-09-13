@@ -34,6 +34,8 @@ export interface ItemVM extends ItemHistory {
   themes: string[];
   oneliner: string;
   outcome: string;
+  /** Complete audience-filtered source for item readers; never exported to shares. */
+  readingBody?: string;
   /** Body sections for the drawer (plain text, line breaks preserved), placeholders excluded. */
   sections: { heading: string; text: string; markdown?: string }[];
   /** GitHub edit link for the source markdown (null on public builds). */
