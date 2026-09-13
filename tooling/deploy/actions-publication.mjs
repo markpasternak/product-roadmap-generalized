@@ -23,6 +23,18 @@ export function artifactFallbackReason(error) {
 }
 
 export async function selectPublication(config = configFromEnv()) {
+  // Selection is read-only and precedes preparation or upload. A local publisher
+  // may finish between these reads; restart selection only when the token proves
+  // that happened. Never retry a stable checksum failure or refresh an upload's token.
+  for (let attempt = 0; ; attempt++) {
+    try { return await selectAttempt(config); }
+    catch (error) {
+      if (attempt >= 2 || error.message !== 'PUBLICATION_CHANGED_DURING_VERIFICATION') throw error;
+    }
+  }
+}
+
+async function selectAttempt(config) {
   if (await config.latest() !== config.commit) throw new Error('SOURCE_SUPERSEDED');
   const { canvas, release } = await readCurrentRelease(config);
   const state = { commit: config.commit, api: config.api, canvas, profile: config.profile, fullBuild: true, alreadyCurrent: false, fallbackReason: '' };

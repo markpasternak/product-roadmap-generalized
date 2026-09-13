@@ -14,7 +14,7 @@ test('Actions selects reuse only for an exact trusted live application and prese
   t.after(async () => { process.chdir(cwd);globalThis.fetch=fetch;if(token===undefined)delete process.env.GH_TOKEN;else process.env.GH_TOKEN=token;await rm(root,{recursive:true,force:true}); });
   process.env.GH_TOKEN='fixture-github-token';
   const sha = b => createHash('sha256').update(b).digest('hex');
-  for (const scenario of ['already-current', 'code-change', 'missing-artifact', 'profile-mismatch', 'download-failed', 'invalid-canvas']) {
+  for (const scenario of ['already-current', 'publication-race', 'persistent-race', 'stable-corruption', 'code-change', 'missing-artifact', 'profile-mismatch', 'download-failed', 'invalid-canvas']) {
     const dir=join(root,scenario);await mkdir(join(dir,'content/items'),{recursive:true});process.chdir(dir);
     const git=(...args)=>execFileSync('git',args,{encoding:'utf8',stdio:'pipe'}).trim();
     git('init','-q');git('config','user.email','fixture@example.test');git('config','user.name','Test');
@@ -31,13 +31,16 @@ test('Actions selects reuse only for an exact trusted live application and prese
     const manifest=[{path:'version.json',hash:sha(version),size:version.length},{path:release.content.path,hash:sha(snapshot),size:snapshot.length}];
     const canvas={publicationState:'published',publicationToken:'captured-before-work',currentVersionId:'v1',currentVersion:{id:'v1',number:1,
       releaseId:scenario==='download-failed'?'previous':releaseIdentity({...config,application:{source,digest}})}};
-    let downloads=0;
+    let downloads=0, statusReads=0;
     globalThis.fetch=async(url,options)=>{
       const u=new URL(url);
       if(u.hostname==='example.test'){
         assert.equal(options.headers.Authorization,'Bearer fixture-canvas-token');
         if(u.searchParams.has('path'))return new Response(u.searchParams.get('path')==='version.json'?version:snapshot);
-        if(u.pathname.endsWith('/files'))return Response.json({version:1,fileCount:manifest.length,files:manifest});
+        if(u.pathname.endsWith('/files'))return Response.json({version:scenario==='stable-corruption'?99:1,fileCount:manifest.length,files:manifest});
+        statusReads++;
+        if(scenario==='publication-race' && statusReads===1)return Response.json({...canvas,publicationToken:'old-token',currentVersion:{...canvas.currentVersion,number:0}});
+        if(scenario==='persistent-race')return Response.json({...canvas,publicationToken:`token-${statusReads}`});
         return Response.json(scenario==='invalid-canvas'?{}:canvas);
       }
       assert.equal(u.hostname,'api.github.com');assert.equal(options.headers.Authorization,'Bearer fixture-github-token');
@@ -48,10 +51,19 @@ test('Actions selects reuse only for an exact trusted live application and prese
       throw new Error('unexpected request');
     };
     if(scenario==='invalid-canvas'){await assert.rejects(selectPublication(config),/COORDINATION_UNAVAILABLE/);continue;}
+    if(scenario==='persistent-race'){
+      await assert.rejects(selectPublication(config),/PUBLICATION_CHANGED_DURING_VERIFICATION/);
+      assert.equal(statusReads,6);assert.equal(downloads,0);
+      await assert.rejects(readFile('.publication-selection.json'),{code:'ENOENT'});continue;
+    }
+    if(scenario==='stable-corruption'){
+      await assert.rejects(selectPublication(config),/MANIFEST_MISMATCH/);
+      assert.equal(statusReads,2);assert.equal(downloads,0);continue;
+    }
     await selectPublication(config);
     const state=JSON.parse(await readFile('.publication-selection.json','utf8'));
-    assert.equal(state.fullBuild,scenario!=='already-current');
-    assert.equal(state.alreadyCurrent,scenario==='already-current');
+    assert.equal(state.fullBuild,!['already-current','publication-race'].includes(scenario));
+    assert.equal(state.alreadyCurrent,['already-current','publication-race'].includes(scenario));
     assert.equal(state.canvas.publicationToken,'captured-before-work');
     const expectedReason = { 'missing-artifact': 'UNTRUSTED_APPLICATION_ARTIFACT', 'profile-mismatch': 'PROFILE_MISMATCH', 'download-failed': 'ARTIFACT_HTTP_410' }[scenario] ?? '';
     assert.equal(state.fallbackReason, expectedReason);

@@ -69,9 +69,9 @@ export async function readCurrentRelease(config, observed) {
   if (!response.ok) fail(`READBACK_HTTP_${response.status}`);
   const bytes = await responseBytes(response);
   const file = manifest.files.find(file => file.path === 'version.json');
-  if (manifest.version !== canvas.currentVersion.number || manifest.fileCount !== manifest.files.length || file?.hash !== digest(bytes) || file?.size !== bytes.length) fail('MANIFEST_MISMATCH');
   const after = await status(config);
   if (after.publicationToken !== canvas.publicationToken || after.currentVersionId !== canvas.currentVersionId) fail('PUBLICATION_CHANGED_DURING_VERIFICATION');
+  if (manifest.version !== canvas.currentVersion.number || manifest.fileCount !== manifest.files.length || file?.hash !== digest(bytes) || file?.size !== bytes.length) fail('MANIFEST_MISMATCH');
   return { canvas, release: JSON.parse(bytes) };
 }
 
