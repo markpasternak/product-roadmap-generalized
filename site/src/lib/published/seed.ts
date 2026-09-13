@@ -11,5 +11,6 @@ export function pageSeed(model: PublishedContent, base: string, route: string): 
   }
   const document = model.documents.find(doc => doc.href === `${base}${route}`);
   if (document) return { ...empty, documents: [document], documentHtml: { [document.href]: model.documentHtml[document.href] } };
+  if (route === 'docs') return { ...empty, boardItems: model.boardItems, documents: model.documents.map(doc => ({ ...doc, body: '' })) };
   return { ...empty, boardItems: model.boardItems };
 }

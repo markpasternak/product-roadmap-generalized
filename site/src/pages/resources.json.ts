@@ -3,6 +3,7 @@ import { IS_PUBLIC } from "../lib/audience";
 import { repositoryRoot } from "../lib/server/repositoryRoot";
 import { assetCatalog } from "../../scripts/managed-assets.mjs";
 export async function GET() {
+  if (process.env.CONTENT_APPLICATION_BUILD === '1') return Response.json({ documents: [], assets: [] });
   const documents = (await getVisibleDocCollections()).flatMap(
     ({ root, entries }) =>
       entries.map((e) => ({

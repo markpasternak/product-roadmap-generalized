@@ -58,7 +58,8 @@ export default defineConfig({
   site: process.env.SITE_URL || 'https://roadmapdemo.canvas-drop.com',
   base,
   trailingSlash: 'ignore',
-  integrations: [vue(), sitemap(), presentationIndexes(), managedAssets(audience, base),
+  integrations: [vue(), sitemap(), presentationIndexes(),
+    ...(process.env.CONTENT_APPLICATION_BUILD === '1' ? [] : [managedAssets(audience, base)]),
     ...(process.env.CONTENT_APPLICATION_BUILD === '1' ? [{ name: 'publication-template', hooks: {
       'astro:config:setup'({ injectRoute }) {
         injectRoute({ pattern: '/_publication-template', entrypoint: './src/layouts/PublishedTemplate.astro' });

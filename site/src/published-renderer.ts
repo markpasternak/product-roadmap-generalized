@@ -9,6 +9,7 @@ import { createItemHistoryReader } from './lib/itemHistory.server';
 import { fillTemplate } from './lib/published/application';
 export { assetCatalog, confinedFile } from '../scripts/managed-assets.mjs';
 export { pageSeed } from './lib/published/seed';
+export { contentRoutes, pageComponents } from './lib/published/routes';
 export { buildPublishedModel, loadContentSource, fillTemplate };
 
 export async function prepareModel(root: string, base: string, audience: 'internal' | 'public') {

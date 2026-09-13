@@ -31,7 +31,9 @@ export function rehypeLinks(base) {
   return (tree) => {
     /** @param {any} node */
     const walk = (node) => {
-      if (node.type === 'element' && node.tagName === 'img' && typeof node.properties?.src === 'string') node.properties.src = node.properties.src.replace(/^(?:\.\.\/\.\.\/|content\/|\/)assets\//, `${prefix}/assets/`);
+      if (node.type === 'element') for (const property of ['src', 'href', 'poster']) {
+        if (typeof node.properties?.[property] === 'string') node.properties[property] = node.properties[property].replace(/^(?:\.\.\/\.\.\/|content\/|\/)assets\//, `${prefix}/assets/`);
+      }
       if (node.type === 'element' && node.tagName === 'a' && node.properties?.href) {
         const href = String(node.properties.href);
         const m = href.match(/(?:^|\/)(prds|technical-design|research)\/(?:.*\/)?([^/]+)\.md$/);

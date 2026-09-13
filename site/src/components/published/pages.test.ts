@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createSSRApp } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import ItemPage from './ItemPage.vue';
 import DocumentPage from './DocumentPage.vue';
+import DocumentsIndex from './DocumentsIndex.vue';
+import ThemesPage from './ThemesPage.vue';
+import ChangelogPage from './ChangelogPage.vue';
 import { buildPublishedModel, type PublishedContent } from '../../lib/published/model';
 import { pageSeed } from '../../lib/published/seed';
 import { itemSchema } from '../../lib/schema';
@@ -34,6 +37,18 @@ describe('published presentation parity', () => {
     expect(html + JSON.stringify(model)).not.toMatch(/Private owner|Private author|Private subject|PRIVATE SECTION|Edit on GitHub/);
     expect(await renderItem(model, 'removed')).toContain('Item unavailable');
   });
+  it('renders deterministic timestamp labels independently of the publisher timezone', async () => {
+    const model = fixture();
+    model.boardItems[1].updatedAt = '2026-09-13T08:20:00Z';
+    const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles' });
+    const original = Intl.DateTimeFormat;
+    const first = await renderItem(model);
+    // A host default must not affect HTML bytes or the initial hydration labels.
+    const spy = vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function (locale, options) {
+      return new original(locale, { ...options, timeZone: options?.timeZone ?? formatter.resolvedOptions().timeZone });
+    } as typeof Intl.DateTimeFormat);
+    try { expect(await renderItem(model)).toBe(first); } finally { spy.mockRestore(); }
+  });
   it('renders a directly reachable document with its same-revision backlinks and date', async () => {
     const model = fixture();
     const entry = model.documents[0];
@@ -55,5 +70,21 @@ describe('published presentation parity', () => {
       expect(host.querySelector('h1')?.textContent).toBe('Item B');
       expect(host.querySelector('[data-copy-link]')).not.toBeNull();
     } finally { app.unmount(); host.remove(); }
+  });
+  it('keeps index, themes and item activity on the shared revision and handles deletion', async () => {
+    const model = fixture();
+    model.boardItems[0].themes = ['Delivery'];
+    const render = (component: typeof DocumentsIndex | typeof ThemesPage | typeof ChangelogPage, content = model) => renderToString(createSSRApp(component, { model: content, base: '/roadmap/' }));
+    expect(await render(DocumentsIndex)).toContain('For Item B (B)');
+    const themed = await render(ThemesPage);
+    expect(themed).toContain('Delivery');
+    expect(themed).toContain('/roadmap/item/A');
+    const activity = await render(ChangelogPage);
+    expect(activity).toContain('Sep 13, 2026');
+    expect(activity).toContain('Item D');
+    const empty = { ...model, items: [], boardItems: [], documents: [], documentHtml: {} };
+    expect(await render(DocumentsIndex, empty)).toContain('No source documents available');
+    expect(await render(ThemesPage, empty)).toContain('No themes yet');
+    expect(await render(ChangelogPage, empty)).not.toContain('/roadmap/item/');
   });
 });

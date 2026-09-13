@@ -27,6 +27,7 @@ await build({ root, configFile: false, base, publicDir: false, plugins: [vue()],
 
 // Astro owns the shell, navigation, CSS and its own documented island lifecycle.
 const astroPackage = JSON.parse(await readFile(join(root, 'node_modules/astro/package.json'), 'utf8'));
+execFileSync(process.execPath, [join(root, 'scripts/sync-presentations.mjs')], { cwd: root, stdio: 'inherit' });
 execFileSync(process.execPath, [join(root, 'node_modules/astro', astroPackage.bin.astro), 'build'], { cwd: root, stdio: 'inherit',
   env: { ...process.env, CONTENT_APPLICATION_BUILD: '1', GITHUB_SHA: source } });
 const template = await readFile(join(root, 'dist/_publication-template/index.html'), 'utf8');
@@ -44,6 +45,8 @@ async function copyTree(from, to) {
 }
 await copyTree(join(root, 'dist/_astro'), join(output, 'public/_astro'));
 await copyTree(join(root, 'dist/brand'), join(output, 'public/brand'));
+for (const directory of ['p', 'help', 'shares']) await copyTree(join(root, 'dist', directory), join(output, 'public', directory));
+await copyFile(join(root, 'dist/404.html'), join(output, 'public/404.html'));
 const files = [];
 async function inventory(dir) {
   for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a,b) => a.name.localeCompare(b.name))) {

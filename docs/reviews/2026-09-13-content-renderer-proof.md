@@ -21,3 +21,16 @@ The existing delivery path remains active. Remaining work includes complete rout
 ## Simplification checkpoint
 
 Applied the three ce-simplify-code rubrics inline per repository instructions. Reuse: shared SHA-256 helper (one finding). Quality: clarified invocation-scoped history reader formatting (one finding). Efficiency: indexed available asset paths once instead of nested scans per reference (one finding). Deliberate legacy/new route duplication was retained for parity proof as required by the migration plan. No safety checks were removed.
+
+## U3 complete-output checkpoint
+
+- The candidate writer now owns every emitted path, enforces Canvas file/count/byte limits and rejects duplicate/case-colliding paths. Its private receipt stays outside the public directory. Current HTML, content-addressed snapshot, version descriptor, sitemap and resource catalog are generated from one revision; application-owned help/shares/presentations/branding remain reusable.
+- All current content routes are rendered: board and six products, item/document pages, document index, themes, changelog and activity page. The current corpus produced 104 content routes.
+- Controlled Git fixtures passed for an internal root deployment and public `/roadmap/` deployment: new resources, cover replacement, item/document deletion, empty public output, private/unused resource exclusion and corrupted resource checksum rejection. Fixture attachment bytes prove manifest/URL handling, not media decoding or playback.
+- Semantic comparisons passed for all 88 item pages and five full document pages against the existing Astro output. This checks content fields/sections, dates, links, covers, document headings/paragraphs/code/tables/backlinks, not pixel equivalence of every route.
+- Existing full-build fallback passed: 107 pages, 66 document links and 88 item-history records checked. The full frontend suite passed 1,033 tests; typecheck had zero errors/warnings and nine existing hints. The subsequent HTML-allowlist regression suite passed four tests.
+- A warm-history local preparation sample took 0.674 seconds, including the complete candidate manifest. This remains a single workstation preparation sample, not activation latency or the ten-pair same-server performance gate.
+
+The application package build uses empty content loaders and does not package roadmap Markdown into the reusable shell. Document HTML now has an explicit element/attribute allowlist; raw managed attachment/media links receive the same deployment base as images. Initial item dates are deterministic UTC through hydration, then localize on mount.
+
+Legacy/new route duplication is intentional until final parity and release checks pass. Browser refresh/draft protection, staged coordinator, Go/CI integration, provenance and rollout gates remain unfinished at this checkpoint. No migration code has been pushed or deployed.

@@ -54,20 +54,26 @@ function optionalMarkdownGlob(base: string): Loader {
 }
 
 // Read the repo markdown natively - the files under ../content stay the source of truth.
+// Application templates must not contain or depend on a particular content revision.
+function applicationAware(loader: Loader): Loader {
+  return process.env.CONTENT_APPLICATION_BUILD === '1'
+    ? { name: 'application-empty-content', load: async ({ store }) => { store.clear(); } }
+    : loader;
+}
 const items = defineCollection({
-  loader: glob({ pattern: '**/*.md', base: '../content/items' }),
+  loader: applicationAware(glob({ pattern: '**/*.md', base: '../content/items' })),
   schema: itemSchema,
 });
 const prds = defineCollection({
-  loader: optionalMarkdownGlob('../content/prds'),
+  loader: applicationAware(optionalMarkdownGlob('../content/prds')),
   schema: docSchema,
 });
 const techDesign = defineCollection({
-  loader: optionalMarkdownGlob('../content/technical-design'),
+  loader: applicationAware(optionalMarkdownGlob('../content/technical-design')),
   schema: docSchema,
 });
 const research = defineCollection({
-  loader: optionalMarkdownGlob('../content/research'),
+  loader: applicationAware(optionalMarkdownGlob('../content/research')),
   schema: docSchema,
 });
 

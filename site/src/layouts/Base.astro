@@ -20,9 +20,8 @@ interface Props {
 const { title, active, description, ogType = 'website', ogImage, canonicalPath, publicationTemplate = false } = Astro.props;
 const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/`;
 const buildGlobal = globalThis as typeof globalThis & { __ROADMAP_BUILD_TIME__?: string };
-const builtIso = buildGlobal.__ROADMAP_BUILD_TIME__ ??= new Date().toISOString();
-const builtAt = new Date(builtIso);
-const built = formatDateTime(builtAt, { timeZone: 'UTC', suffix: 'UTC' });
+const builtIso = publicationTemplate ? '__ROADMAP_PUBLISHED_AT__' : (buildGlobal.__ROADMAP_BUILD_TIME__ ??= new Date().toISOString());
+const built = publicationTemplate ? '__ROADMAP_PUBLISHED_LABEL__' : formatDateTime(builtIso, { timeZone: 'UTC', suffix: 'UTC' });
 // Absolute URLs for canonical/OG — Astro.site comes from SITE_URL in astro.config.
 const canonical = new URL(canonicalPath ?? Astro.url.pathname, Astro.site).href;
 const ogImageUrl = new URL(ogImage ?? `${base}brand/og-card.png`, Astro.site).href;
@@ -38,7 +37,7 @@ const ogImageUrl = new URL(ogImage ?? `${base}brand/og-card.png`, Astro.site).hr
     <link rel="canonical" href={canonical} />
     <meta property="og:title" content={title} />
     {description && <meta property="og:description" content={description} />}
-    <meta property="og:type" content={ogType} />
+    <meta property="og:type" content={publicationTemplate ? '__ROADMAP_OG_TYPE__' : ogType} />
     <meta property="og:site_name" content="Product Roadmap" />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={ogImageUrl} />

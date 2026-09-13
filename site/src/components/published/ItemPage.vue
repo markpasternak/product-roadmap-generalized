@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, watch } from 'vue';
+import { computed, onMounted, onUnmounted, watch, ref } from 'vue';
 import Breadcrumb from '../ui/Breadcrumb.vue';
 import ProductMark from '../ui/ProductMark.vue';
 import PlannedDates from '../board/PlannedDates.vue';
@@ -32,27 +32,28 @@ function linkText(link: NonNullable<typeof item.value>['links'][number]) {
   return link.title ?? link.target.split('/').at(-1) ?? link.target;
 }
 const links = computed(() => (item.value?.links ?? []).map(link => ({ ...link, source: linkSource(link.label, link.target), display: linkText(link) })));
-const historyTitle = (at?: string, by?: string, subject?: string) => [at ? formatDateTime(at) : '', by, subject].filter(Boolean).join(' · ');
+const mounted = ref(false);
+const dateOptions = computed(() => mounted.value ? {} : { timeZone: 'UTC', suffix: 'UTC' });
+const historyTitle = (at?: string, by?: string, subject?: string) => [at ? formatDateTime(at, dateOptions.value) : '', by, subject].filter(Boolean).join(' · ');
 const details = computed(() => item.value ? [
   { label: 'Product', value: item.value.product, href: `${props.base}${productSlug(item.value.product)}/` },
   ...(props.audience === 'internal' && item.value.owner ? [{ label: 'Owner', value: item.value.owner }] : []),
-  { label: 'Created', value: formatDateTimeOrDate(item.value.createdAt, item.value.created), datetime: item.value.createdAt || item.value.created, localDateTime: !!item.value.createdAt, title: historyTitle(item.value.createdAt, item.value.createdBy, item.value.createdSubject) },
-  { label: 'Updated', value: formatDateTimeOrDate(item.value.updatedAt, item.value.updated), datetime: item.value.updatedAt || item.value.updated, localDateTime: !!item.value.updatedAt, title: historyTitle(item.value.updatedAt, item.value.updatedBy, item.value.updatedSubject) },
+  { label: 'Created', value: formatDateTimeOrDate(item.value.createdAt, item.value.created, dateOptions.value), datetime: item.value.createdAt || item.value.created, title: historyTitle(item.value.createdAt, item.value.createdBy, item.value.createdSubject) },
+  { label: 'Updated', value: formatDateTimeOrDate(item.value.updatedAt, item.value.updated, dateOptions.value), datetime: item.value.updatedAt || item.value.updated, title: historyTitle(item.value.updatedAt, item.value.updatedBy, item.value.updatedSubject) },
   ...(links.value.length ? [{ label: 'Resources', value: String(links.value.length) }] : []),
   { label: 'Item ID', value: item.value.id },
 ].filter(row => row.value) : []);
 const tagHref = (tag: string) => `${props.base}?${new URLSearchParams({ tag })}`;
 let viewer: ReturnType<typeof installItemImageViewer> | undefined;
-let mounted = false;
 function updateViewer() {
-  if (!mounted) return;
+  if (!mounted.value) return;
   viewer?.destroy();
   const root = document.querySelector<HTMLElement>('[data-item-page]');
   viewer = root ? installItemImageViewer(root) : undefined;
 }
-onMounted(() => { mounted = true; updateViewer(); });
+onMounted(() => { mounted.value = true; updateViewer(); });
 watch(() => props.model, updateViewer, { flush: 'post' });
-onUnmounted(() => { mounted = false; viewer?.destroy(); });
+onUnmounted(() => { mounted.value = false; viewer?.destroy(); });
 </script>
 
 <template>
@@ -100,7 +101,7 @@ onUnmounted(() => { mounted = false; viewer?.destroy(); });
               <dt class="text-single-sm-medium text-text-subtle-default">{{ row.label }}</dt>
               <dd class="text-single-sm-medium text-text-primary-default text-right">
                 <a v-if="'href' in row" :href="row.href" class="text-text-link-default hover:underline">{{ row.value }}</a>
-                <time v-else-if="'datetime' in row" :datetime="row.datetime" :title="row.title" :data-local-date-time="row.localDateTime || undefined">{{ row.value }}</time>
+                <time v-else-if="'datetime' in row" :datetime="row.datetime" :title="row.title">{{ row.value }}</time>
                 <template v-else>{{ row.value }}</template>
               </dd>
             </div>
