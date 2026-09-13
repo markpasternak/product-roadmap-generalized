@@ -1,6 +1,6 @@
 ---
 id: MUSIC-009
-title: Conversational listening companion · Actions fallback check
+title: Conversational listening companion
 product: Music App
 horizon: Later
 startDate: 2027-02-01
