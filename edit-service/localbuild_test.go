@@ -233,6 +233,13 @@ func TestLocalBuildEnvironmentContainsNoCredentials(t *testing.T) {
 	}
 }
 
+func TestCoordinatorEnvironmentPropagatesPublicationPause(t *testing.T) {
+	env := strings.Join((localBuildConfig{PublicationPaused: true}).coordinatorEnvironment(strings.Repeat("a", 40)), "\n")
+	if !strings.Contains(env, "ROADMAP_PUBLICATION_PAUSED=true") {
+		t.Fatal("coordinator did not receive publication pause")
+	}
+}
+
 func TestLocalBuildEligibility(t *testing.T) {
 	root := t.TempDir()
 	gitTest(t, root, "init", "-b", "main")
