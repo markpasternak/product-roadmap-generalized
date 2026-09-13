@@ -1,5 +1,5 @@
-import { readdir, readFile, lstat, mkdir, copyFile } from "node:fs/promises";
-import { resolve, join, dirname, relative } from "node:path";
+import { readdir, readFile, lstat } from "node:fs/promises";
+import { resolve, join, relative } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 const identity = /^ast_[a-z0-9_-]+$/;
@@ -90,13 +90,28 @@ export async function assetCatalog(root) {
   }
   return out;
 }
-async function walk(dir) {
-  const out = [];
-  for (const e of await readdir(dir, { withFileTypes: true })) {
-    if (e.isDirectory()) out.push(...(await walk(join(dir, e.name))));
-    else if (e.isFile()) out.push(join(dir, e.name));
+/** One resource policy for full builds, content jobs and the development model. */
+export async function prepareResources(root, model, audience) {
+  try { await confinedFile(root, 'content/assets'); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const assets = await assetCatalog(root);
+  const available = new Map(assets.flatMap(asset => asset.revisions.map(revision => [`assets/${asset.id}/${revision.original.path}`, { asset, revision }])));
+  const refs = new Set([...JSON.stringify(model).matchAll(/assets\/(ast_[a-z0-9_-]+)\/(rev_[a-z0-9_-]+)\/([A-Za-z0-9_-][A-Za-z0-9_.-]*)/g)].map(match => match[0]));
+  const originals = [];
+  for (const path of refs) {
+    const entry = available.get(path);
+    if (!entry) throw new Error(`Published content references a missing resource: ${path}`);
+    if (audience === 'public' && entry.asset.visibility !== 'Public') throw new Error('Public content references an Internal resource');
+    originals.push({ path, source: await confinedFile(root, `content/${path}`) });
   }
-  return out;
+  const catalog = {
+    documents: model.documents.map(doc => ({ title: doc.data.title ?? doc.id, path: doc.filePath })),
+    assets: assets.filter(asset => audience !== 'public' || asset.visibility === 'Public').map(asset => ({
+      id: asset.id, name: asset.name, visibility: asset.visibility,
+      revisions: asset.revisions.filter(revision => refs.has(`assets/${asset.id}/${revision.original.path}`)).map(revision => ({ id: revision.id, original: revision.original })),
+    })).filter(asset => asset.revisions.length),
+  };
+  return { catalog, originals };
 }
 export default function managedAssets(
   audience,
@@ -140,37 +155,6 @@ export default function managedAssets(
             res.end("Resource unavailable");
           }
         });
-      },
-      async "astro:build:done"({ dir }) {
-        const output = fileURLToPath(dir);
-        const catalog = await assetCatalog(root);
-        const refs = new Set();
-        for (const file of await walk(output)) {
-          if (!/\.(html|json)$/.test(file) || file.endsWith("/resources.json"))
-            continue;
-          const text = await readFile(file, "utf8");
-          for (const match of text.matchAll(
-            /assets\/(ast_[a-z0-9_-]+)\/(rev_[a-z0-9_-]+)\/([A-Za-z0-9_-][A-Za-z0-9_.-]*)/g,
-          ))
-            refs.add(match[0]);
-        }
-        for (const path of refs) {
-          const asset = catalog.find((a) => path.startsWith(`assets/${a.id}/`));
-          const revision = asset?.revisions.find(
-            (r) => path === `assets/${asset.id}/${r.original.path}`,
-          );
-          if (!asset || !revision)
-            throw new Error(
-              `Published content references a missing resource: ${path}`,
-            );
-          if (audience === "public" && asset.visibility !== "Public")
-            throw new Error(
-              `Public content references an Internal resource: ${asset.name}`,
-            );
-          const dst = join(output, path);
-          await mkdir(dirname(dst), { recursive: true });
-          await copyFile(await confinedFile(root, `content/${path}`), dst);
-        }
       },
     },
   };

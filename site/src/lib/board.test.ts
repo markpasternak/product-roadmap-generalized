@@ -1,13 +1,12 @@
 // @vitest-environment node
-import { beforeEach, expect, it, vi } from 'vitest';
+import { beforeEach, expect, it } from 'vitest';
 import { itemSchema } from './schema';
 import { EMPTY_ITEM_HISTORY } from './itemHistory';
 
-const fixtures = vi.hoisted(() => ({ items: [] as unknown[], docs: [] as unknown[] }));
-vi.mock('astro:content', () => ({ getCollection: async () => fixtures.items }));
-vi.mock('./docs', () => ({ getVisibleDocCollections: async () => fixtures.docs }));
-vi.mock('./itemHistory.server', () => ({ itemHistoryForPath: () => ({ ...EMPTY_ITEM_HISTORY, updated: '2026-09-12' }) }));
-import { buildBoardItems } from './board';
+import { buildPublishedModel } from './published/model';
+import type { ContentSource } from './published/schema';
+const fixtures: ContentSource = { items: [], documents: [] };
+const buildBoardItems = (base: string) => buildPublishedModel(fixtures, { base, audience: 'internal', historyForPath: () => ({ ...EMPTY_ITEM_HISTORY, updated: '2026-09-12' }) }).boardItems;
 
 beforeEach(() => {
   fixtures.items = [{
@@ -15,11 +14,11 @@ beforeEach(() => {
     data: itemSchema.parse({ id: 'STUDIO-001', title: 'New creative', product: 'Studio', horizon: 'Now', stage: 'Pilot', owner: 'Mark', tags: 'creative, theme:delivery', cover: '../../assets/ast_test/rev_one/cover.png' }),
     body: '## One-liner\nFaster creation.\n\n## Why it matters\n- Useful\n\n## Links\n- PRD: content/prds/studio/brief.md\n',
   }];
-  fixtures.docs = [{ root: 'prds', coll: 'prds', entries: [{ id: 'studio/brief', data: { title: 'Creative brief', roadmap_item: 'STUDIO-001', visibility: 'Internal' }, body: 'Document-only search phrase.' }] }];
+  fixtures.documents = [{ coll: 'prds', entries: [{ id: 'studio/brief', data: { title: 'Creative brief', roadmap_item: 'STUDIO-001', visibility: 'Internal' }, body: 'Document-only search phrase.' }] }];
 });
 
-it('characterizes the Astro adapter including document search, managed cover, history and base URLs', async () => {
-  const [item] = await buildBoardItems('/roadmap/');
+it('preserves the characterized document search, managed cover, history and base URLs', () => {
+  const [item] = buildBoardItems('/roadmap/');
   expect(item).toMatchObject({
     id: 'STUDIO-001', owner: 'Mark', horizon: 'Now', stage: 'Pilot', updated: '2026-09-12',
     tags: ['creative'], themes: ['delivery'], oneliner: 'Faster creation.',
@@ -31,8 +30,8 @@ it('characterizes the Astro adapter including document search, managed cover, hi
   expect(item.text).toContain('document-only search phrase');
 });
 
-it('accepts empty collections', async () => {
+it('accepts empty collections', () => {
   fixtures.items = [];
-  fixtures.docs = [];
-  expect(await buildBoardItems('/')).toEqual([]);
+  fixtures.documents = [];
+  expect(buildBoardItems('/')).toEqual([]);
 });

@@ -10,9 +10,8 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
-import managedAssets, { assetCatalog } from "../../scripts/managed-assets.mjs";
+import { assetCatalog, prepareResources } from "../../scripts/managed-assets.mjs";
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(
@@ -53,9 +52,14 @@ async function fixture(visibility = "Internal") {
   return { root, bytes, path, asset };
 }
 async function bake(root: string, audience: string) {
-  await managedAssets(audience, "/roadmap/", root).hooks["astro:build:done"]({
-    dir: pathToFileURL(join(root, "dist/")),
-  });
+  const body = await readFile(join(root, 'dist/index.html'), 'utf8').catch(() => '');
+  const prepared = await prepareResources(root, { body, documents: [] }, audience);
+  for (const original of prepared.originals) {
+    const destination = join(root, 'dist', original.path);
+    await mkdir(join(destination, '..'), { recursive: true });
+    await writeFile(destination, await readFile(original.source));
+  }
+  return prepared.catalog;
 }
 describe("Git originals in static builds", () => {
   it("copies exact referenced originals and excludes unused originals", async () => {
@@ -64,12 +68,13 @@ describe("Git originals in static builds", () => {
       join(f.root, "dist/index.html"),
       '<a href="/roadmap/assets/ast_test/rev_one/notes.txt">Notes</a>',
     );
-    await bake(f.root, "internal");
+    const catalog = await bake(f.root, "internal");
+    expect(catalog.assets[0].revisions[0].original.sha256).toBe(f.asset.revisions[0].original.sha256);
     expect(
       await readFile(join(f.root, "dist/assets/ast_test/rev_one/notes.txt")),
     ).toEqual(f.bytes);
     const unused = await fixture();
-    await bake(unused.root, "internal");
+    expect((await bake(unused.root, "internal")).assets).toEqual([]);
     await expect(
       readFile(join(unused.root, "dist/assets/ast_test/rev_one/notes.txt")),
     ).rejects.toThrow();

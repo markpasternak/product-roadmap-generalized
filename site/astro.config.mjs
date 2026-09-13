@@ -1,13 +1,12 @@
 import managedAssets from './scripts/managed-assets.mjs';
 import { defineConfig } from 'astro/config';
-import { unified } from '@astrojs/markdown-remark';
 import vue from '@astrojs/vue';
-import sitemap from '@astrojs/sitemap';
 import tailwindcss from '@tailwindcss/vite';
 import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 // The commit this build was built from, stamped into the client bundle so it can compare
-// itself against public/version.json (scripts/gen-version.mjs, same derivation) and detect
+// itself against the publication's version.json and detect
 // when a newer deploy is live.
 const BUILD_COMMIT =
   process.env.GITHUB_SHA ||
@@ -19,7 +18,6 @@ const BUILD_COMMIT =
     }
   })();
 
-import { rehypeMermaid, rehypeLinks, rehypeStripSections, rehypeStripPlaceholders } from './scripts/markdown-plugins.mjs';
 
 // Presentations are static sites staged into public/p/ (scripts/sync-presentations.mjs).
 // Vite's static middleware doesn't resolve directory indexes in dev, so /p/<slug>/
@@ -47,25 +45,38 @@ const base = process.env.SITE_BASE || '/';
 // SITE_AUDIENCE=public builds the external site: Public items only, no owners,
 // internal-only sections stripped. Default is the full internal site.
 const audience = process.env.SITE_AUDIENCE === 'public' ? 'public' : 'internal';
-// 'One-liner' renders as the item-page lede, not as a body section.
-const strippedSections =
-  audience === 'public' ? ['Links', 'One-liner', 'Open questions'] : ['Links', 'One-liner'];
 
 export default defineConfig({
   // Preserve spacing between inline elements across the Astro 7 upgrade.
   compressHTML: true,
   build: { concurrency: 2 },
+  outDir: process.env.CONTENT_APPLICATION_OUTPUT,
   site: process.env.SITE_URL || 'https://roadmapdemo.canvas-drop.com',
   base,
   trailingSlash: 'ignore',
-  integrations: [vue(), sitemap(), presentationIndexes(),
+  integrations: [vue(), presentationIndexes(),
     ...(process.env.CONTENT_APPLICATION_BUILD === '1' ? [] : [managedAssets(audience, base)]),
-    ...(process.env.CONTENT_APPLICATION_BUILD === '1' ? [{ name: 'publication-template', hooks: {
-      'astro:config:setup'({ injectRoute }) {
-        injectRoute({ pattern: '/_publication-template', entrypoint: './src/layouts/PublishedTemplate.astro' });
-        injectRoute({ pattern: '/_publication-template-docs', entrypoint: './src/layouts/PublishedTemplate.astro' });
+    { name: 'publication-routes', hooks: {
+      'astro:config:setup'({ injectRoute, command }) {
+        if (command === 'dev') {
+          injectRoute({ pattern: '/resources.json', entrypoint: './src/layouts/DevelopmentResources.ts', prerender: false });
+          injectRoute({ pattern: '/[...path]', entrypoint: './src/layouts/DevelopmentContent.astro', prerender: false });
+        } else if (process.env.CONTENT_APPLICATION_BUILD === '1') {
+          injectRoute({ pattern: '/_publication-template', entrypoint: './src/layouts/PublishedTemplate.astro' });
+          injectRoute({ pattern: '/_publication-template-docs', entrypoint: './src/layouts/PublishedTemplate.astro' });
+        }
       },
-    } }] : []),
+      'astro:build:start'() {
+        if (process.env.CONTENT_APPLICATION_BUILD !== '1') throw new Error('Use npm run build to assemble the application and content together.');
+      },
+      'astro:server:setup'({ server }) {
+        const content = fileURLToPath(new URL('../content/', import.meta.url));
+        server.watcher.add(content);
+        server.watcher.on('all', (_event, path) => {
+          if (path.startsWith(content)) server.ws.send({ type: 'full-reload' });
+        });
+      },
+    } },
   ],
   vite: {
     plugins: [tailwindcss()],
@@ -90,18 +101,5 @@ export default defineConfig({
         },
       },
     },
-  },
-  markdown: {
-    // Keep the resource-link and Mermaid rehype transformations.
-    processor: unified({
-      rehypePlugins: [
-        rehypeMermaid,
-        [rehypeLinks, base],
-        [rehypeStripSections, strippedSections],
-        rehypeStripPlaceholders,
-      ],
-    }),
-    syntaxHighlight: { type: 'shiki', excludeLangs: ['mermaid'] },
-    shikiConfig: { themes: { light: 'github-light', dark: 'github-dark' }, wrap: true },
   },
 });

@@ -32,7 +32,8 @@ it('uses a matching snapshot without launching an item Git log', async () => {
       logs: { 'content/items/A.md': log },
     }),
   );
-  const { itemHistoryForPath } = await import('./itemHistory.server');
+  const { createItemHistoryReader } = await import('./itemHistory.server');
+  const itemHistoryForPath = createItemHistoryReader();
   expect(itemHistoryForPath('content/items/A.md').updatedCommit).toBe('abc');
   expect(git.mock.calls.some(([, args]) => args[0] === 'log')).toBe(false);
 });
@@ -50,7 +51,8 @@ it.each([
   'falls back to Git for an invalid, stale or incomplete snapshot: %s',
   async (snapshot) => {
     readFile.mockReturnValue(snapshot);
-    const { itemHistoryForPath } = await import('./itemHistory.server');
+    const { createItemHistoryReader } = await import('./itemHistory.server');
+    const itemHistoryForPath = createItemHistoryReader();
     expect(itemHistoryForPath('content/items/A.md').updatedCommit).toBe('abc');
     expect(git.mock.calls.filter(([, args]) => args[0] === 'log')).toHaveLength(
       1,

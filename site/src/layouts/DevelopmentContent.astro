@@ -1,0 +1,23 @@
+---
+// Development-only route adapter. Production HTML comes from prepare-content.mjs.
+import Base from './Base.astro';
+import PublishedPage from '../components/published/PublishedPage.vue';
+import { prepareModel } from '../lib/published/prepare.server';
+import { contentRoutes } from '../lib/published/routes';
+import { pageSeed } from '../lib/published/seed';
+import { AUDIENCE } from '../lib/audience';
+import { fileURLToPath } from 'node:url';
+import { prepareResources } from '../../scripts/managed-assets.mjs';
+export const prerender = false;
+const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/`;
+const path = (Astro.params.path ?? '').replace(/\/$/, '');
+const root = fileURLToPath(new URL('../../../', import.meta.url));
+const prepared = await prepareModel(root, base, AUDIENCE);
+const model = { ...prepared, resourceCatalog: (await prepareResources(root, prepared, AUDIENCE)).catalog };
+const route = contentRoutes(model, base).find(route => route.path === path);
+if (!route) return Astro.rewrite('/404');
+const seed = pageSeed(model, base, path);
+---
+<Base title={route.title} description={route.description} active={route.active} ogType={route.kind === 'item' ? 'article' : 'website'}>
+  <PublishedPage client:load model={seed} base={base} route={path} />
+</Base>

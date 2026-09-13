@@ -6,11 +6,8 @@ import { resolve } from 'node:path';
 const html = await readFile(process.argv[2] ? resolve(process.argv[2], 'index.html') : new URL('../dist/index.html', import.meta.url), 'utf8');
 const document = new JSDOM(html).window.document;
 const seed = document.getElementById('published-seed');
-const board = [...document.querySelectorAll('astro-island')].find(island =>
-  /\/Board\./.test(island.getAttribute('component-url') || ''));
-if (!board && !seed) throw new Error('The built roadmap has no board data to verify.');
-const items = seed ? JSON.parse(seed.textContent).model.boardItems
-  : JSON.parse(board.getAttribute('props')).items[1].map(([, item]) => Object.fromEntries(Object.entries(item).map(([key, value]) => [key, value[1]])));
+if (!seed) throw new Error('The built roadmap has no published content seed to verify.');
+const items = JSON.parse(seed.textContent).model.boardItems;
 const missing = items.filter(item =>
   !item.createdAt || !item.updatedAt || !item.activityDates?.length);
 if (missing.length) {

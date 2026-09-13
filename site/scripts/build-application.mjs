@@ -2,7 +2,8 @@
 // never Vite or uncompiled source from the candidate content checkout.
 import { build } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import { mkdir, readFile, writeFile, readdir, copyFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, readdir, copyFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -27,11 +28,13 @@ await build({ root, configFile: false, base, publicDir: false, plugins: [vue()],
 
 // Astro owns the shell, navigation, CSS and its own documented island lifecycle.
 const astroPackage = JSON.parse(await readFile(join(root, 'node_modules/astro/package.json'), 'utf8'));
+const shell = await mkdtemp(join(tmpdir(), 'roadmap-application-shell-'));
 execFileSync(process.execPath, [join(root, 'scripts/sync-presentations.mjs')], { cwd: root, stdio: 'inherit' });
+try {
 execFileSync(process.execPath, [join(root, 'node_modules/astro', astroPackage.bin.astro), 'build'], { cwd: root, stdio: 'inherit',
-  env: { ...process.env, CONTENT_APPLICATION_BUILD: '1', GITHUB_SHA: source } });
+  env: { ...process.env, CONTENT_APPLICATION_BUILD: '1', CONTENT_APPLICATION_OUTPUT: shell, GITHUB_SHA: source } });
 for (const suffix of ['', '-docs']) {
-  const template = await readFile(join(root, `dist/_publication-template${suffix}/index.html`), 'utf8');
+  const template = await readFile(join(shell, `_publication-template${suffix}/index.html`), 'utf8');
   for (const marker of ['<!--ROADMAP_CONTENT-->', '<!--ROADMAP_STYLES-->', '__ROADMAP_SEED__', '__ROADMAP_CLIENT__']) {
     if (template.split(marker).length !== 2) throw new Error(`Astro removed or duplicated the template insertion point: ${marker}`);
   }
@@ -45,10 +48,11 @@ async function copyTree(from, to) {
     else throw new Error('Non-regular application input');
   }
 }
-await copyTree(join(root, 'dist/_astro'), join(output, 'public/_astro'));
-await copyTree(join(root, 'dist/brand'), join(output, 'public/brand'));
-for (const directory of ['p', 'help', 'shares']) await copyTree(join(root, 'dist', directory), join(output, 'public', directory));
-await copyFile(join(root, 'dist/404.html'), join(output, 'public/404.html'));
+await copyTree(join(shell, '_astro'), join(output, 'public/_astro'));
+await copyTree(join(shell, 'brand'), join(output, 'public/brand'));
+for (const directory of ['p', 'help', 'shares']) await copyTree(join(shell, directory), join(output, 'public', directory));
+await copyFile(join(shell, '404.html'), join(output, 'public/404.html'));
+} finally { await rm(shell, { recursive: true, force: true }); }
 const files = [];
 async function inventory(dir) {
   for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a,b) => a.name.localeCompare(b.name))) {

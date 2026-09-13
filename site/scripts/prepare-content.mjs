@@ -21,15 +21,7 @@ const verified = performance.now();
 const renderer = await import(pathToFileURL(join(app, 'private/renderer.mjs')).href);
 const model = await renderer.prepareModel(checkout, manifest.base, manifest.audience);
 if (model.boardItems.some(item => !item.createdAt || !item.updatedAt || !item.activityDates?.length)) throw new Error('Missing published item history; prepare from a full Git checkout');
-// Check asset ancestors as well as manifests, including an empty symlinked root.
-try { await renderer.confinedFile(checkout, 'content/assets'); }
-catch (error) { if (error.code !== 'ENOENT') throw error; }
-const assets = (await renderer.assetCatalog(checkout)).filter(asset => manifest.audience !== 'public' || asset.visibility === 'Public');
-const availableAssets = new Set(assets.flatMap(asset => asset.revisions.map(revision => `assets/${asset.id}/${revision.original.path}`)));
-const refs = new Set([...JSON.stringify(model).matchAll(/assets\/(ast_[a-z0-9_-]+)\/(rev_[a-z0-9_-]+)\/([A-Za-z0-9_-][A-Za-z0-9_.-]*)/g)].map(match => match[0]));
-for (const path of refs) {
-  if (!availableAssets.has(path)) throw new Error('Missing or private referenced resource');
-}
+const { catalog: resources, originals } = await renderer.prepareResources(checkout, model, manifest.audience);
 const prepared = performance.now();
 const clientManifest = JSON.parse(await readFile(join(app, 'public/.vite/manifest.json'), 'utf8'));
 const client = clientManifest['src/published-client.ts'];
@@ -43,12 +35,9 @@ const writer = createOutputWriter(publicOutput);
 for (const file of manifest.files.filter(file => file.path.startsWith('public/') && !file.path.startsWith('public/.'))) {
   await writer.add(file.path.slice('public/'.length), await readFile(join(app, file.path)));
 }
-for (const path of refs) {
-  await writer.add(path, await readFile(await renderer.confinedFile(checkout, `content/${path}`)));
+for (const original of originals) {
+  await writer.add(original.path, await readFile(original.source));
 }
-const resources = { documents: model.documents.map(doc => ({ title: doc.data.title ?? doc.id, path: doc.filePath })),
-  assets: assets.map(asset => ({ id: asset.id, name: asset.name, visibility: asset.visibility,
-    revisions: asset.revisions.filter(revision => refs.has(`assets/${asset.id}/${revision.original.path}`)).map(revision => ({ id: revision.id, original: revision.original })) })).filter(asset => asset.revisions.length) };
 // Shares opened from this model must validate against this revision's originals,
 // not a moving resources.json fetched after another publication becomes live.
 model.resourceCatalog = resources;
@@ -76,5 +65,5 @@ await writer.add('sitemap-0.xml', `<?xml version="1.0" encoding="UTF-8"?><urlset
 await writer.add('sitemap-index.xml', `<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>${escapeXml(new URL(`${manifest.base}sitemap-0.xml`, manifest.profile.siteUrl).href)}</loc></sitemap></sitemapindex>`);
 if (git(['rev-parse', 'HEAD']) !== commit || git(['status', '--porcelain', '--untracked-files=all', '--', 'content'])) throw new Error('Content checkout changed during preparation');
 await writeFile(join(output, 'candidate.json'), JSON.stringify({ release, manifest: writer.manifest() }), { flag: 'wx', mode: 0o600 });
-console.log(JSON.stringify({ output, items: model.items.length, documents: model.documents.length, resources: refs.size, pages: routes.length,
+console.log(JSON.stringify({ output, items: model.items.length, documents: model.documents.length, resources: originals.length, pages: routes.length,
   timings: { verifyPackageMs: verified - start, prepareMs: prepared - verified, renderAndWriteMs: performance.now() - prepared, totalMs: performance.now() - start } }));

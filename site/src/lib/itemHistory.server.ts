@@ -59,5 +59,3 @@ export function createItemHistoryReader(checkout?: string) {
     } catch { return EMPTY_ITEM_HISTORY; }
   };
 }
-
-export const itemHistoryForPath = createItemHistoryReader();
