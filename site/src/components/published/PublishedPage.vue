@@ -4,6 +4,7 @@ import { PRODUCTS } from '../../lib/schema';
 import { productSlug } from '../../lib/slugs';
 import type { PublishedContent } from '../../lib/published/model';
 import { pageKind } from '../../lib/published/routes';
+import LiveContentNotice from './LiveContentNotice.vue';
 const Board = defineAsyncComponent(() => import('../board/Board.vue'));
 const ItemPage = defineAsyncComponent(() => import('./ItemPage.vue'));
 const DocumentPage = defineAsyncComponent(() => import('./DocumentPage.vue'));
@@ -19,6 +20,7 @@ const document = computed(() => props.model.documents.find(entry => entry.href =
 </script>
 
 <template>
+  <LiveContentNotice />
   <ItemPage v-if="kind === 'item'" :model="model" :id="path.slice(5)" :base="base" :audience="model.audience" />
   <DocumentPage v-else-if="document" :entry="document" :rendered="model.documentHtml[document.href]" :base="base" />
   <DocumentsIndex v-else-if="kind === 'documents'" :model="model" :base="base" />

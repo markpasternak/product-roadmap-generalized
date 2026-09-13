@@ -3,13 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderShareHtml } from './render';
 import type { ProjectedItem } from './project';
 
-const item: ProjectedItem = { id: 'A', title: 'First item', oneliner: 'First summary', outcome: 'Outcome', product: 'Music App', horizon: 'Now', stage: 'Building', tags: [], themes: [], sections: [] };
+const item: ProjectedItem = { id: 'A', title: 'First item', oneliner: 'First summary', outcome: 'Outcome', product: 'Music App', horizon: 'Now', stage: 'Building', tags: ['private'], themes: ['one-view'], sections: [] };
 
 describe('standalone share interaction', () => {
   it('contains focus, resets reading position, and returns to the opening card', async () => {
     // These checks exercise the exported script without loading fonts or other resources.
     const html = renderShareHtml({ title: 'Review', product: 'Music App', generatedAt: '2026-09-06' }, [item, {
-      ...item, id: 'B', title: 'Second item', horizon: 'Completed',
+      ...item, id: 'B', title: 'Second item', horizon: 'Completed', themes: ['scale'],
       sections: [{ heading: 'What shipped', text: 'Done', blocks: [{ text: 'Before' }, { image: { href: 'assets/ast_test/rev_one/image.png', label: 'Production screen' } }, { text: 'After' }] }, { heading: 'Bottom line', text: 'Complete.' }],
       resources: [{ label: 'Production screen', href: 'assets/ast_test/rev_one/image.png', image: true, inline: true }],
     }]);
@@ -25,6 +25,7 @@ describe('standalone share interaction', () => {
       expect(document.querySelector<HTMLElement>('[data-detail-shell]')!.hidden).toBe(false);
       document.querySelector<HTMLButtonElement>('button[data-detail-close]')!.click();
       expect(location.search).toBe('');
+      expect(document.querySelector('.lane-cards [data-card-filter]')).toBeNull();
       const card = document.querySelector<HTMLButtonElement>('[data-card-index="0"]')!;
       card.focus();
       card.click();
@@ -33,7 +34,7 @@ describe('standalone share interaction', () => {
       expect(document.activeElement?.id).toBe('detail-title');
       const key = (value: string, shiftKey = false) => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true }));
       key('Tab', true);
-      expect(document.activeElement?.getAttribute('aria-label')).toBe('Close');
+      expect(document.activeElement?.getAttribute('aria-label')).toBe('Filter by theme: one-view');
       key('Tab');
       expect(document.activeElement?.getAttribute('aria-label')).toBe('Next item');
       const scroller = document.querySelector<HTMLElement>('.drawer-scroll')!;
@@ -79,6 +80,15 @@ describe('standalone share interaction', () => {
       window.dispatchEvent(new PopStateEvent('popstate'));
       expect(document.querySelector<HTMLElement>('[data-detail-shell]')!.hidden).toBe(true);
       expect(document.querySelector<HTMLElement>('[data-item-link-notice]')!.hidden).toBe(false);
+      card.click();
+      document.querySelector<HTMLButtonElement>('[data-card-filter="theme:one-view"]')!.click();
+      expect(document.querySelector<HTMLElement>('[data-detail-shell]')!.hidden).toBe(true);
+      expect(document.querySelector<HTMLElement>('[data-share-item="0"]')!.hidden).toBe(false);
+      expect(document.querySelector<HTMLElement>('[data-share-item="1"]')!.hidden).toBe(true);
+      const clearTheme = document.querySelector<HTMLButtonElement>('[data-clear-theme]')!;
+      expect(clearTheme.hidden).toBe(false);
+      clearTheme.click();
+      expect(document.querySelector<HTMLElement>('[data-share-item="1"]')!.hidden).toBe(false);
     } finally { document.body.replaceChildren(); history.replaceState(null, '', '/'); localStorage.clear(); }
   });
 });

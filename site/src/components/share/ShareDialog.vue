@@ -136,7 +136,7 @@ const includedResources = computed(() => resourceChoices.value.filter(r=>r.inlin
 const previewResources = ref<ProjectedItem[]|null>(null);
 const resourceError = ref('');
 let resourcePreviewEpoch=0;
-async function loadResourcePreview(){ const epoch=++resourcePreviewEpoch;previewResources.value=null;resourceError.value='';try{const prepared=await prepareShareResources(effectiveItems.value,includedResources.value,import.meta.env.BASE_URL,true);if(epoch===resourcePreviewEpoch)previewResources.value=prepared.items;}catch(e){if(epoch===resourcePreviewEpoch)resourceError.value=(e as Error).message;} }
+async function loadResourcePreview(){ const epoch=++resourcePreviewEpoch;previewResources.value=null;resourceError.value='';try{const prepared=await prepareShareResources(effectiveItems.value,includedResources.value,import.meta.env.BASE_URL,true,props.context.resourceCatalog);if(epoch===resourcePreviewEpoch)previewResources.value=prepared.items;}catch(e){if(epoch===resourcePreviewEpoch)resourceError.value=(e as Error).message;} }
 const previewOpen = ref(false);
 const previewSize = ref('desktop');
 const previewViewport = ref<HTMLElement>();

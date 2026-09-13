@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import PlannedDates from './PlannedDates.vue';
+import ItemLabels from './ItemLabels.vue';
+import { namedOwner } from '../../lib/cardMetadata';
 import RichMarkdown from '../markdown/RichMarkdown.vue';
 import ImageThumbnail from '../markdown/ImageThumbnail.vue';
 import { installItemImageViewer } from '../../lib/itemImageViewer';
+import { guardPublishedContent } from '../../lib/published/usePublishedContent';
 import { createItemViewPreference } from '../../lib/itemViewPreference';
 import { installItemToc } from '../../lib/itemToc';
 import '../../styles/item-toc.css';
@@ -33,10 +36,8 @@ import {
 import {
   horizonDot,
   productColor,
-  toneSurface,
   toneSurfaceStrong,
   toneText,
-  tagTone,
 } from '../../lib/display';
 import { linkSource, linkDisplay } from '../../lib/sources';
 import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
@@ -207,6 +208,8 @@ const velocityTracker = new VelocityTracker();
 const swipeTransitionDisabled = ref(false);
 const drawerItemTransitionName = computed(() => (swipeTransitionDisabled.value ? '' : 'drawer-item'));
 let gesture: GestureState | null = null;
+const gestureActive = ref(false);
+guardPublishedContent(gestureActive);
 let gestureEpoch = 0;
 let currentX = 0;
 let pendingX = 0;
@@ -332,6 +335,7 @@ function removeSwipeListeners() {
 function abandonGesture(releaseCapture = true) {
   if (gesture && releaseCapture) safeReleasePointerCapture(gesture.pointerId);
   gesture = null;
+  gestureActive.value = false;
   velocityTracker.reset();
   removeSwipeListeners();
 }
@@ -368,6 +372,7 @@ function onPointerDown(event: PointerEvent) {
     locked: null,
     swiped: false,
   };
+  gestureActive.value = true;
   addSwipeListeners();
 }
 
@@ -501,6 +506,9 @@ watch(
           itemToc = installItemToc(panel.value);
           itemHeader = installItemHeader(panel.value);
         }
+      } else {
+        await nextTick();
+        imageViewer?.refresh();
       }
     } else {
       imageViewer?.destroy();
@@ -665,7 +673,7 @@ watch(() => props.item?.id, () => {
 
               <div class="detail-utility-row">
                 <p class="detail-provenance roadmap-muted">
-                  <span v-if="item.owner && !client" class="inline-flex items-center gap-2">
+                  <span v-if="namedOwner(item.owner) && !client" class="inline-flex items-center gap-2">
                     <PhUser :size="17" /> {{ item.owner }}
                   </span>
                   <span v-if="historyValue(item.updatedAt, item.updated) && !client" class="inline-flex items-center gap-2">
@@ -703,6 +711,8 @@ watch(() => props.item?.id, () => {
                 </div>
               </div>
             </div>
+
+            <ItemLabels :item="item" :client="client" :href="tagFilterHref" class="detail-labels" />
 
             <p v-if="copyError" role="alert" class="mt-3 text-sm text-text-subtle-default">{{ copyError }}</p>
             <p v-else-if="copied" role="status" class="sr-only">Item link copied.</p>
@@ -839,42 +849,6 @@ watch(() => props.item?.id, () => {
                   {{ sectionExpanded(s.heading) ? 'Show less' : 'Continue reading' }}
                 </button>
               </section>
-            </div>
-
-            <div v-if="(!client && item.tags.length) || item.themes.length" class="mt-5 flex flex-wrap items-center gap-2">
-              <a
-                v-for="t in client ? [] : item.themes"
-                :key="'th-link' + t"
-                :href="tagFilterHref(`theme:${t}`)"
-                class="text-single-sm-medium relative inline-flex min-h-8 items-center rounded-lg border border-border-subtle-default/60 px-2.5 py-1 after:absolute after:-inset-x-1 after:-inset-y-1 hover:underline"
-                :style="{ background: toneSurface.orange, color: toneText.orange }"
-              >
-                {{ t }}
-              </a>
-              <span
-                v-for="t in client ? item.themes : []"
-                :key="'th' + t"
-                class="text-single-sm-medium rounded-lg border border-border-subtle-default/60 px-2.5 py-1.5"
-                :style="{ background: toneSurface.orange, color: toneText.orange }"
-              >
-                {{ t }}
-              </span>
-              <a
-                v-if="!client && item.themes.length"
-                :href="`${boardBase}themes`"
-                class="text-single-sm-medium text-text-link-default inline-flex min-h-10 items-center rounded-lg px-1.5 hover:underline"
-              >
-                All themes →
-              </a>
-              <a
-                v-for="t in client ? [] : item.tags"
-                :key="t"
-                :href="tagFilterHref(t)"
-                class="text-single-sm-medium relative inline-flex min-h-8 items-center rounded-lg border border-border-subtle-default/60 px-2.5 py-1 after:absolute after:-inset-x-1 after:-inset-y-1 hover:underline"
-                :style="{ background: toneSurface[tagTone(t)], color: toneText[tagTone(t)] }"
-              >
-                {{ t }}
-              </a>
             </div>
 
             <p v-if="historyValue(item.createdAt, item.created) && !client" class="detail-created roadmap-muted">

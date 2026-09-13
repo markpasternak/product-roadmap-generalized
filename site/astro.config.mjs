@@ -63,6 +63,7 @@ export default defineConfig({
     ...(process.env.CONTENT_APPLICATION_BUILD === '1' ? [{ name: 'publication-template', hooks: {
       'astro:config:setup'({ injectRoute }) {
         injectRoute({ pattern: '/_publication-template', entrypoint: './src/layouts/PublishedTemplate.astro' });
+        injectRoute({ pattern: '/_publication-template-docs', entrypoint: './src/layouts/PublishedTemplate.astro' });
       },
     } }] : []),
   ],

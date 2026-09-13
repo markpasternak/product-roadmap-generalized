@@ -4,13 +4,19 @@
 // Dynamically imported only when a diagram is actually present on the page.
 // Colors are passed as CSS variables so diagrams follow the site's light/dark theme
 // live, with no re-render needed.
-import { onMounted } from 'vue';
+import { onMounted, onUnmounted, ref } from 'vue';
+
+const marker = ref<HTMLElement>();
+let stopped = false;
+onUnmounted(() => { stopped = true; });
 
 onMounted(async () => {
-  const nodes = document.querySelectorAll<HTMLElement>('pre.mermaid:not([data-processed])');
+  const scope = marker.value?.closest('main') ?? document;
+  const nodes = scope.querySelectorAll<HTMLElement>('pre.mermaid:not([data-processed])');
   if (!nodes.length) return;
   const { renderMermaidSVG } = await import('beautiful-mermaid');
   for (const node of nodes) {
+    if (stopped || !node.isConnected || !scope.contains(node)) continue;
     const code = (node.textContent ?? '').trim();
     if (!code) continue;
     try {
@@ -33,5 +39,5 @@ onMounted(async () => {
 </script>
 
 <template>
-  <span aria-hidden="true" hidden></span>
+  <span ref="marker" aria-hidden="true" hidden></span>
 </template>

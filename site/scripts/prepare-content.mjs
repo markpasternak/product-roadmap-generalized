@@ -34,6 +34,7 @@ const prepared = performance.now();
 const clientManifest = JSON.parse(await readFile(join(app, 'public/.vite/manifest.json'), 'utf8'));
 const client = clientManifest['src/published-client.ts'];
 const template = await readFile(join(app, 'private/template.html'), 'utf8');
+const docsTemplate = await readFile(join(app, 'private/template-docs.html'), 'utf8');
 // Fresh directory only; failures never damage a previous candidate or live release.
 await mkdir(output, { recursive: false, mode: 0o700 });
 const publicOutput = join(output, 'public');
@@ -45,6 +46,12 @@ for (const file of manifest.files.filter(file => file.path.startsWith('public/')
 for (const path of refs) {
   await writer.add(path, await readFile(await renderer.confinedFile(checkout, `content/${path}`)));
 }
+const resources = { documents: model.documents.map(doc => ({ title: doc.data.title ?? doc.id, path: doc.filePath })),
+  assets: assets.map(asset => ({ id: asset.id, name: asset.name, visibility: asset.visibility,
+    revisions: asset.revisions.filter(revision => refs.has(`assets/${asset.id}/${revision.original.path}`)).map(revision => ({ id: revision.id, original: revision.original })) })).filter(asset => asset.revisions.length) };
+// Shares opened from this model must validate against this revision's originals,
+// not a moving resources.json fetched after another publication becomes live.
+model.resourceCatalog = resources;
 const snapshot = Buffer.from(JSON.stringify(model));
 const contentHash = sha256(snapshot);
 const release = { commit, applicationCommit: manifest.source, applicationPackage: packageDigest,
@@ -57,13 +64,10 @@ for (const route of routes) {
   const styles = clientStyles(clientManifest, ['src/published-client.ts', `src/components/${component}`]);
   const seed = renderer.pageSeed(model, manifest.base, route.path);
   const html = await renderer.renderPage(seed, manifest.base, route.path);
-  const page = renderer.fillTemplate(template, { title: route.title, description: route.description, html, publishedAt: committedAt, ogType: route.kind === 'item' ? 'article' : 'website', seed: { model: seed, release, base: manifest.base, route: route.path }, path: `${manifest.base.slice(1)}${route.path}`,
+  const page = renderer.fillTemplate(route.active === 'docs' ? docsTemplate : template, { title: route.title, description: route.description, html, publishedAt: committedAt, ogType: route.kind === 'item' ? 'article' : 'website', seed: { model: seed, release, base: manifest.base, route: route.path }, path: `${manifest.base.slice(1)}${route.path}`,
     client: `${manifest.base}${client.file}`, styles: styles.map(path => `${manifest.base}${path}`) });
   await writer.add(route.path ? `${route.path}/index.html` : 'index.html', page);
 }
-const resources = { documents: model.documents.map(doc => ({ title: doc.data.title ?? doc.id, path: doc.filePath })),
-  assets: assets.map(asset => ({ id: asset.id, name: asset.name, visibility: asset.visibility,
-    revisions: asset.revisions.filter(revision => refs.has(`assets/${asset.id}/${revision.original.path}`)).map(revision => ({ id: revision.id, original: revision.original })) })).filter(asset => asset.revisions.length) };
 await writer.add('resources.json', JSON.stringify(resources));
 await writer.add('version.json', JSON.stringify(release));
 const escapeXml = text => text.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]);

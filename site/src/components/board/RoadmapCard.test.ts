@@ -32,6 +32,31 @@ it('shows ownership internally and omits it in presentation cards', () => {
   expect(publicCard.text()).toContain('Building');
 });
 
+it('keeps actual owners and stage without empty ownership filler', () => {
+  for (const owner of ['', '  ', 'Unassigned']) {
+    const card = mountCard({ item: item({ owner }) });
+    expect(card.find('[data-test="card-owner"]').exists()).toBe(false);
+    expect(card.text()).toContain('Building');
+  }
+});
+
+it('keeps labels opt-in and inside the one card surface, outside its opening button', async () => {
+  expect(mountCard().find('[data-card-filter]').exists()).toBe(false);
+  const card = mountCard({ showLabels: true });
+  const theme = card.get('[data-card-filter="theme:one-view"]');
+  const tag = card.get('[data-card-filter="workflow"]');
+  expect(theme.element.closest('button.roadmap-card')).toBeNull();
+  expect(theme.element.closest('.roadmap-card')).not.toBeNull();
+  expect(card.find('.card-labels').exists()).toBe(false);
+  expect(theme.attributes('aria-label')).toBe('Filter by theme: one-view');
+  await theme.trigger('click');
+  await tag.trigger('click');
+  expect(card.emitted('filter')).toEqual([['theme:one-view'], ['workflow']]);
+  expect(card.emitted('select')).toBeUndefined();
+  expect(mountCard({ client: true, showLabels: true }).find('[data-card-filter]').exists()).toBe(false);
+  expect(mountCard({ preview: true, showLabels: true }).find('button[data-card-filter]').exists()).toBe(false);
+});
+
 it('renders an explicitly selected cover at its focal point and respects the view toggle', () => {
   const covered = item({ cover: '../../assets/ast_one/rev_one/cover.png', coverPosition: '35% 70%', coverFraming: -0.8 });
   const shown = mountCard({ item: covered });
@@ -39,7 +64,7 @@ it('renders an explicitly selected cover at its focal point and respects the vie
   expect(shown.get('.roadmap-card-cover img').attributes('src')).toContain('/assets/ast_one/rev_one/cover.png');
   expect(shown.get('.roadmap-card-cover').attributes('style')).toContain('--cover-position: 35% 70%');
   expect(shown.get('.roadmap-card-cover').attributes('style')).toContain('--cover-reveal-opacity: 1');
-  expect(shown.get('button').classes()).toContain('roadmap-card-with-cover');
+  expect(shown.get('.roadmap-card').classes()).toContain('roadmap-card-with-cover');
   expect(shown.get('.roadmap-card-content-over-cover').text()).toContain('Existing item');
   expect(mountCard({ item: covered, showCover: false }).find('.roadmap-card-cover').exists()).toBe(false);
 });
@@ -249,7 +274,7 @@ describe('RoadmapCard — `draggable` shows/hides the SortableJS drag handle', (
 
   it('renders the handle as a sibling of the card button, not nested inside it', () => {
     const w = mountCard({ draggable: true });
-    const btn = w.get('button.roadmap-card');
+    const btn = w.get('button.roadmap-card-open');
     expect(btn.find('[data-test="drag-handle"]').exists()).toBe(false);
     expect(w.find('[data-test="drag-handle"]').exists()).toBe(true);
   });
@@ -292,6 +317,15 @@ describe('RoadmapCard — search highlighting', () => {
   });
 });
 
+describe('RoadmapCard — contextual product identity', () => {
+  it('shows the shorthand only when the board needs product context', () => {
+    const card = mountCard({ showProduct: true });
+    expect(card.get('.card-meta > :first-child').text()).toBe('PA');
+    expect(card.get('.card-product-badge').attributes('aria-label')).toBe('Podcasts & Audiobooks');
+    expect(card.find('.product-mark').exists()).toBe(false);
+    expect(mountCard({ showProduct: false }).text()).not.toContain('PA');
+  });
+});
 it('provides arrow-key equivalents for moving cards without opening the item', async () => {
   const w = mountCard({ draggable: true, editing: true });
   const handle = w.get('[data-test="drag-handle"]');

@@ -30,11 +30,13 @@ const astroPackage = JSON.parse(await readFile(join(root, 'node_modules/astro/pa
 execFileSync(process.execPath, [join(root, 'scripts/sync-presentations.mjs')], { cwd: root, stdio: 'inherit' });
 execFileSync(process.execPath, [join(root, 'node_modules/astro', astroPackage.bin.astro), 'build'], { cwd: root, stdio: 'inherit',
   env: { ...process.env, CONTENT_APPLICATION_BUILD: '1', GITHUB_SHA: source } });
-const template = await readFile(join(root, 'dist/_publication-template/index.html'), 'utf8');
-for (const marker of ['<!--ROADMAP_CONTENT-->', '<!--ROADMAP_STYLES-->', '__ROADMAP_SEED__', '__ROADMAP_CLIENT__']) {
-  if (template.split(marker).length !== 2) throw new Error(`Astro removed or duplicated the template insertion point: ${marker}`);
+for (const suffix of ['', '-docs']) {
+  const template = await readFile(join(root, `dist/_publication-template${suffix}/index.html`), 'utf8');
+  for (const marker of ['<!--ROADMAP_CONTENT-->', '<!--ROADMAP_STYLES-->', '__ROADMAP_SEED__', '__ROADMAP_CLIENT__']) {
+    if (template.split(marker).length !== 2) throw new Error(`Astro removed or duplicated the template insertion point: ${marker}`);
+  }
+  await writeFile(join(output, `private/template${suffix}.html`), template);
 }
-await writeFile(join(output, 'private/template.html'), template);
 async function copyTree(from, to) {
   await mkdir(to, { recursive: true });
   for (const entry of await readdir(from, { withFileTypes: true })) {

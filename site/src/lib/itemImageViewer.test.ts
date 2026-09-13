@@ -19,6 +19,22 @@ function setup() {
 }
 
 describe('initiative image viewer', () => {
+  it('updates an open managed preview by asset ID and explains removal without closing it', () => {
+    const root = setup();
+    const image = root.querySelector<HTMLImageElement>('.resource-markdown img')!;
+    image.src = '/assets/ast_first/rev_one/photo.png';
+    root.querySelector<HTMLElement>('[data-image-open]')!.click();
+    const dialog = root.querySelector('dialog')!;
+    const focused = document.activeElement;
+    image.src = '/assets/ast_first/rev_two/photo.png';
+    viewer!.refresh();
+    expect(dialog.open).toBe(true);
+    expect(dialog.querySelector('img')?.src).toContain('/rev_two/');
+    expect(document.activeElement).toBe(focused);
+    image.remove(); viewer!.refresh();
+    expect(dialog.open).toBe(true);
+    expect(dialog.querySelector('[data-image-error]')?.textContent).toContain('no longer part');
+  });
   it('stays within the initiative, deduplicates images, resets zoom, and returns focus', () => {
     const root = setup();
     const opener = root.querySelector<HTMLElement>('[data-image-open]')!;

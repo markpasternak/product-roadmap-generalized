@@ -3,8 +3,10 @@ import { computed, onMounted, onUnmounted, watch, ref } from 'vue';
 import Breadcrumb from '../ui/Breadcrumb.vue';
 import ProductMark from '../ui/ProductMark.vue';
 import PlannedDates from '../board/PlannedDates.vue';
+import ItemLabels from '../board/ItemLabels.vue';
+import { namedOwner } from '../../lib/cardMetadata';
 import { PhCaretLeft, PhCaretRight, PhLink, PhPencilSimple, PhFileText, PhArrowSquareOut } from '@phosphor-icons/vue';
-import { horizonDot, productColor, toneSurface, toneSurfaceStrong, toneText, tagTone } from '../../lib/display';
+import { horizonDot, productColor, toneSurfaceStrong, toneText } from '../../lib/display';
 import { parseSections } from '../../lib/items';
 import { sectionLabel } from '../../lib/sectionHeadings';
 import { renderRichMarkdown } from '../../lib/richMarkdown';
@@ -37,7 +39,7 @@ const dateOptions = computed(() => mounted.value ? {} : { timeZone: 'UTC', suffi
 const historyTitle = (at?: string, by?: string, subject?: string) => [at ? formatDateTime(at, dateOptions.value) : '', by, subject].filter(Boolean).join(' · ');
 const details = computed(() => item.value ? [
   { label: 'Product', value: item.value.product, href: `${props.base}${productSlug(item.value.product)}/` },
-  ...(props.audience === 'internal' && item.value.owner ? [{ label: 'Owner', value: item.value.owner }] : []),
+  ...(props.audience === 'internal' && namedOwner(item.value.owner) ? [{ label: 'Owner', value: item.value.owner }] : []),
   { label: 'Created', value: formatDateTimeOrDate(item.value.createdAt, item.value.created, dateOptions.value), datetime: item.value.createdAt || item.value.created, title: historyTitle(item.value.createdAt, item.value.createdBy, item.value.createdSubject) },
   { label: 'Updated', value: formatDateTimeOrDate(item.value.updatedAt, item.value.updated, dateOptions.value), datetime: item.value.updatedAt || item.value.updated, title: historyTitle(item.value.updatedAt, item.value.updatedBy, item.value.updatedSubject) },
   ...(links.value.length ? [{ label: 'Resources', value: String(links.value.length) }] : []),
@@ -47,9 +49,10 @@ const tagHref = (tag: string) => `${props.base}?${new URLSearchParams({ tag })}`
 let viewer: ReturnType<typeof installItemImageViewer> | undefined;
 function updateViewer() {
   if (!mounted.value) return;
-  viewer?.destroy();
   const root = document.querySelector<HTMLElement>('[data-item-page]');
-  viewer = root ? installItemImageViewer(root) : undefined;
+  if (!root) { viewer?.destroy(); viewer = undefined; }
+  else if (viewer) viewer.refresh();
+  else viewer = installItemImageViewer(root);
 }
 onMounted(() => { mounted.value = true; updateViewer(); });
 watch(() => props.model, updateViewer, { flush: 'post' });
@@ -79,12 +82,12 @@ onUnmounted(() => { mounted.value = false; viewer?.destroy(); });
         <div><dt>Stage</dt><dd>{{ item.stage }}</dd></div><div><dt>Impact</dt><dd>{{ item.impact || 'Not scored' }}</dd></div><div><dt>Effort</dt><dd>{{ item.effort || 'Not scoped' }}</dd></div>
         <div v-if="audience === 'internal'"><dt>Visibility</dt><dd>{{ item.visibility }}</dd></div>
       </dl>
+      <ItemLabels :item="item" :client="audience === 'public'" :href="tagHref" class="detail-labels" />
     </section>
     <div class="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
       <article class="min-w-0">
         <PlannedDates :start-date="item.startDate" :end-date="item.endDate" />
         <section class="mt-3"><div class="space-y-5"><section v-for="(section, index) in sections" :key="`${section.heading}-${index}`" class="item-reading-section item-section-surface"><div class="min-w-0"><h2 class="roadmap-section-heading">{{ section.heading }}</h2><div class="resource-markdown item-prose mt-1.5 text-base leading-relaxed text-text-primary-default" v-html="section.html" /></div></section></div>
-          <div v-if="item.tags.length || item.themes.length" class="mt-6 flex flex-wrap gap-2"><a v-for="theme in item.themes" :key="theme" :href="tagHref(`theme:${theme}`)" class="text-single-sm-medium inline-flex min-h-8 items-center rounded-lg border border-border-subtle-default/60 px-2.5 py-1 hover:underline" :style="{ background: toneSurface.orange, color: toneText.orange }">{{ theme }}</a><a v-for="tag in item.tags" :key="tag" :href="tagHref(tag)" class="text-single-sm-medium inline-flex min-h-8 items-center rounded-lg border border-border-subtle-default/60 px-2.5 py-1 hover:underline" :style="{ background: toneSurface[tagTone(tag)], color: toneText[tagTone(tag)] }">{{ tag }}</a></div>
         </section>
       </article>
       <aside class="flex flex-col gap-5 lg:sticky lg:top-20 lg:self-start">

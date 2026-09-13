@@ -264,7 +264,7 @@ const ogImageUrl = new URL(ogImage ?? `${base}brand/og-card.png`, Astro.site).hr
           <span>·</span>
           <a href={`${base}changelog`} class="hover:text-text-primary-default transition-colors">Recent item updates</a>
           <span>·</span>
-          <span>Published <time datetime={builtIso} data-local-date-time>{built}</time></span>
+          <span>Published <time datetime={builtIso} data-local-date-time data-publication-time={publicationTemplate || undefined}>{built}</time></span>
         </span>
       </div>
     </footer>

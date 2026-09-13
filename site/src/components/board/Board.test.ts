@@ -96,6 +96,23 @@ afterEach(() => {
 });
 
 describe('Board — product navigation and view options', () => {
+  it('remembers opt-in card labels locally but suppresses them in presentation links', async () => {
+    const w = await mountBoard();
+    expect(w.find('.roadmap-card [data-card-filter]').exists()).toBe(false);
+    await w.get('[aria-label="View options and saved views"]').trigger('click');
+    await w.get('input[aria-label="Show labels"]').setValue(true);
+    expect(w.find('.roadmap-card [data-card-filter="workflow"]').exists()).toBe(true);
+    expect(localStorage.getItem('rm-card-labels')).toBe('1');
+    expect(location.search).not.toContain('labels');
+    w.unmount();
+    const restored = await mountBoard();
+    expect(restored.find('.roadmap-card [data-card-filter="workflow"]').exists()).toBe(true);
+    restored.unmount();
+    history.replaceState(null, '', '/?present=1');
+    const presentation = await mountBoard();
+    expect(presentation.find('.roadmap-card [data-card-filter]').exists()).toBe(false);
+    expect(localStorage.getItem('rm-card-labels')).toBe('1');
+  });
   it('restores the committed content before reconciling newer edits on reopening', async () => {
     const { fetchItems } = await import('../../lib/edit/client');
     const store = useEditStore();

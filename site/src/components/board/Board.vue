@@ -55,6 +55,7 @@ import { useEditStore } from '../../lib/edit/store';
 import { validateChangeset, type FieldError } from '../../lib/edit/validate';
 import { projectBoard } from '../../lib/edit/project';
 import { fetchDeployedCommit, watchForNewVersion } from '../../lib/edit/version';
+import { guardPublishedContent, usePublishedContent } from '../../lib/published/usePublishedContent';
 import { listResources, resourceTransferCount } from '../../lib/edit/resourceClient';
 import PublicationConflicts from '../edit/PublicationConflicts.vue';
 import type { ApiItem } from '../../lib/edit/client';
@@ -125,6 +126,9 @@ const props = defineProps<{ items: ItemVM[]; initialProduct?: string | null; bas
 // conflict on the very item just published, a false "unpublished change" on exit, a landed
 // delete or create getting re-sent (the latter producing a duplicate item).
 const liveItems = ref<ItemVM[]>(props.items.slice());
+const publishedContent = usePublishedContent();
+const publicationBooting = ref(true);
+const removedSelection = ref('');
 
 const filters = reactive<FilterState>(emptyFilters());
 let activityTimer: ReturnType<typeof setInterval> | undefined;
@@ -159,6 +163,10 @@ function clearAdditionalFilters() {
 const sort = ref<SortKey>('manual');
 const reverseLaneOrder = ref(false);
 const showCoverImages = ref(true);
+const showCardLabels = ref(false);
+watch(showCardLabels, (value) => {
+  try { localStorage.setItem('rm-card-labels', value ? '1' : '0'); } catch { /* Private browsing may disable storage. */ }
+});
 function currentBoardViewState(): BoardViewState {
   return { horizons: [...horizons.value], group: filters.group, sort: sort.value, reverseLanes: reverseLaneOrder.value, showCovers: showCoverImages.value };
 }
@@ -815,6 +823,7 @@ const publishBlockedReason = computed(() => draftSync.conflict.value ? 'Resolve 
       : !baseVersionLoaded.value ? workspaceError.value ? 'Could not load your workspace. Your draft is kept.' : 'Loading the latest item versions…'
         : '');
 let rawBodiesRequested = false;
+let refreshingPublishedBase = false;
 // Shared by both the edit-mode-entry watcher below and the U10 (R11) view-mode mount check —
 // the one authed call that fetches raw bodies + base shas, and re-reconciles the draft with
 // body knowledge in hand. `rawBodiesRequested` guards against firing it twice (e.g. the
@@ -824,7 +833,8 @@ async function loadRawBodies() {
   rawBodiesRequested = true;
   workspaceError.value = false;
   try {
-    const items = restoringCommit.value ? await fetchItems(restoringCommit.value) : await fetchItems();
+    const source = restoringCommit.value ?? publishedContent?.current.value.release.commit;
+    const items = source ? await fetchItems(source) : await fetchItems();
     if (boardStopped) return;
     if (restoringCommit.value) {
       liveItems.value = itemsFromApi(items, props.base ?? '/');
@@ -840,9 +850,10 @@ async function loadRawBodies() {
     // now that the real source is in hand, reconcile again to drop it.
     if (canEdit.value) {
       for (const item of items as any[])
-        if (item.sha && item.content) editStore.captureBase(item.id, item.sha, item.content);
-      if (!editStore.snapshot().requestPayload) editStore.reconcile(liveItems.value, rawBodies.value);
+        if (item.sha && item.content) editStore.captureBase(item.id, item.sha, item.content, refreshingPublishedBase);
+      if (!editStore.snapshot().requestPayload && (!publishedContent || !unsynced.value)) editStore.reconcile(liveItems.value, rawBodies.value);
     }
+    refreshingPublishedBase = false;
   } catch {
     workspaceError.value = true;
     // Degrade gracefully for the body-editor fallback (DetailDrawer falls back to its
@@ -1574,8 +1585,8 @@ function navBy(delta: number) {
 }
 
 // Keep the open item's card in view while browsing with arrows/swipe.
-watch(selected, async (v) => {
-  if (!v || typeof document === 'undefined') return;
+watch(selected, async (v, previous) => {
+  if (!v || previous?.id === v.id || typeof document === 'undefined') return;
   await nextTick();
   document
     .querySelector(`[data-item-id="${v.id}"]`)
@@ -1737,6 +1748,8 @@ onUnmounted(() => {
 const shareResources = computed(() => shareResourceChoices(focused.value));
 const shareItems = computed(() => focused.value.map(projectForShare));
 const shareContext = computed<ShareContext>(() => ({
+  sourceContentCommit: publishedContent?.current.value.release.commit,
+  resourceCatalog: publishedContent?.current.value.model.resourceCatalog,
   title: filters.product ? `${filters.product} roadmap` : 'product roadmap',
   product: filters.product,
   horizons: [...horizons.value],
@@ -1824,7 +1837,7 @@ async function onShareSubmit(p: {
   sharePending.value = true;
   shareError.value = null;
   try {
-    const prepared = await prepareShareResources(p.items, p.resources ?? [], props.base ?? '/');
+    const prepared = await prepareShareResources(p.items, p.resources ?? [], props.base ?? '/', false, shareContext.value.resourceCatalog);
     const includedHorizons = selectedShareHorizons(shareContext.value.horizons, shareItems.value, p.items);
     const html = renderShareHtml(
       {
@@ -1844,6 +1857,7 @@ async function onShareSubmit(p: {
       ...p.preservedMetadata,
       sourceApp: SHARE_SOURCE_APP,
       sourceKind: SHARE_SOURCE_KIND,
+      sourceContentCommit: shareContext.value.sourceContentCommit,
       theme: p.theme,
       canvasDescription: p.canvasDescription,
       roadmapTitle: p.roadmapTitle,
@@ -1970,6 +1984,7 @@ onMounted(async () => {
   // saved-state restore and syncState() below rewrite the URL via replaceState,
   // which would strip the #roadmap_edit_token fragment before we ever read it.
   readTokenFromHash();
+  try { showCardLabels.value = localStorage.getItem('rm-card-labels') === '1'; } catch { /* Keep the compact default. */ }
   const p = new URLSearchParams(location.search);
   // View settings are personal defaults unless a link names any view parameter.
   // Explicit links start from product defaults so the recipient's local choices
@@ -2018,6 +2033,7 @@ onMounted(async () => {
   syncState();
   // Let the resolved view paint, then reveal it (cascade defined in the scoped styles).
   await nextTick();
+  if (boardStopped) return;
   ready.value = true;
   canPersistViewPreferences = !explicitViewUrl;
   setupLaneObserver();
@@ -2033,8 +2049,10 @@ onMounted(async () => {
   }
   // Gated editing: consume the OAuth callback hash (if we just landed here from
   // GitHub sign-in), then resolve editor status against the edit-service.
+  if (boardStopped) return;
   readTokenFromHash();
   const meRes = await me();
+  if (boardStopped) return;
   canEdit.value = meRes.editor;
   if (canEdit.value) {
     void loadItemEditor();
@@ -2042,6 +2060,7 @@ onMounted(async () => {
     editStore.activate(meRes.login);
     try { dismissedPublication.value = sessionStorage.getItem(`${editStore.recoveryKey()}:publication-notice`) ?? ''; } catch {}
     await draftSync.start(meRes.login);
+    if (boardStopped) return;
   }
   // Reconcile the draft against the freshly-loaded (published) base BEFORE the auto-resume
   // check below reads dirtyCount — drops any ops that already landed (a published create,
@@ -2051,6 +2070,7 @@ onMounted(async () => {
   if (canEdit.value && editStore.committedSha.value) {
     restoringCommit.value = editStore.committedSha.value;
     await loadRawBodies();
+    if (boardStopped) return;
   }
   // A stale deployed page must never reconcile away work on newly committed items.
   if (!restoringCommit.value) editStore.reconcile(liveItems.value);
@@ -2079,6 +2099,7 @@ onMounted(async () => {
   // own catch): a fetch failure just leaves the edit pending, exactly like today.
   if (canEdit.value && editStore.hasBodyEdits.value) {
     await loadRawBodies();
+    if (boardStopped) return;
   }
   let resumeEditing = editStore.dirtyCount.value > 0;
   try { resumeEditing ||= localStorage.getItem('rm-edit-mode') === '1'; } catch {}
@@ -2099,6 +2120,7 @@ onMounted(async () => {
     const pending = editStore.snapshot().requestPayload;
     try {
       const result = await publicationStatus(pending.requestId);
+      if (boardStopped) return;
       if (result.ok) await acceptPublication(result, pending);
     } catch {
       /* retry remains available */
@@ -2107,10 +2129,11 @@ onMounted(async () => {
   }
   // U9: only real editors (who might have a draft worth preserving) need to know a
   // fresher build has landed.
-  if (canEdit.value)
+  if (canEdit.value && !publishedContent)
     stopVersionWatch = watchForNewVersion(() => {
       newVersion.value = true;
     });
+  publicationBooting.value = false;
 });
 onUnmounted(() => {
   boardStopped = true;
@@ -2167,6 +2190,35 @@ watch([() => filters.group, horizons, sort, reverseLaneOrder, showCoverImages], 
   }
 }, { deep: true });
 
+// The published revision and the edit store's working base are separate. Do not
+// reconcile a remote snapshot into a draft, a receipt or an active form. The root
+// retains one complete candidate until these guards clear, then patches in place.
+const contentRefreshBlocked = computed(() => publicationBooting.value || !!draggingId.value || !!editingId.value
+  || shareOpen.value || !!resourceTransferCount.value || syncPending.value || !!restoringCommit.value
+  || (canEdit.value && (!baseVersionLoaded.value && rawBodiesRequested))
+  || unsynced.value || !!draftSync.conflict.value || !!conflictIds.value.length
+  || !!editStore.snapshot().requestPayload || !!editStore.committedSha.value);
+guardPublishedContent(contentRefreshBlocked);
+let acceptedPublishedItems = props.items;
+watch([() => props.items, () => publishedContent?.blocked.value], ([items]) => {
+  if (!publishedContent || publishedContent.blocked.value || items === acceptedPublishedItems) return;
+  acceptedPublishedItems = items;
+  liveItems.value = items.slice();
+  if (selected.value) {
+    const replacement = items.find(item => item.id === selected.value!.id);
+    if (!replacement) removedSelection.value = `${selected.value.title} is no longer part of the published roadmap.`;
+    selected.value = replacement ?? null;
+  }
+  // A clean editor now sees this exact published revision. Invalidate its old
+  // blob bases before it can publish again; load bodies/shas from that same commit.
+  rawBodies.value = new Map(publishedContent.current.value.model.items.map(item => [item.data.id, item.body]));
+  baseShaMap.value = new Map();
+  baseVersionLoaded.value = false;
+  rawBodiesRequested = false;
+  refreshingPublishedBase = true;
+  if (canEdit.value && editMode.value) void loadRawBodies();
+});
+
 // Shared secondary action treatment.
 const editActionBtn =
   'roadmap-action border-border-subtle-default bg-card text-single-sm-medium text-text-primary-default hover:bg-surface-primary-hover inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg border px-3 font-medium transition-colors';
@@ -2184,6 +2236,7 @@ const editActionBtn =
     ]"
   >
     <p class="sr-only" role="status" aria-live="polite">{{ moveAnnouncement }}</p>
+    <p v-if="removedSelection" role="status" data-published-removal>{{ removedSelection }} <button type="button" @click="removedSelection = ''">Dismiss</button></p>
     <div
       v-if="newVersion && !editingItem && !shareOpen"
       class="flex flex-wrap items-center justify-between gap-3 mb-4 rounded-xl border border-border-subtle-default p-3 text-sm"
@@ -2374,6 +2427,13 @@ const editActionBtn =
                   <span>Show cover images</span>
                 </label>
                 <p id="lane-order-hint" class="lane-order-hint">Stored in this browser. Presentation links and share snapshots copy these settings.</p>
+                <template v-if="!IS_PUBLIC && filters.layout !== 'timeline'">
+                  <label class="lane-order-setting">
+                    <input v-model="showCardLabels" type="checkbox" aria-label="Show labels" aria-describedby="card-labels-hint" />
+                    <span>Show labels</span>
+                  </label>
+                  <p id="card-labels-hint" class="lane-order-hint">Themes and tags on cards. Internal view only; hidden in presentations and shares.</p>
+                </template>
               </div>
             </template>
           </SavedViews>
@@ -2624,6 +2684,7 @@ const editActionBtn =
                     :show-product="showCardProducts"
                     :show-horizon="filters.group === 'product'"
                     :show-cover="showCoverImages"
+                    :show-labels="showCardLabels"
                     :active="selected?.id === it.id"
                     :client="present || IS_PUBLIC"
                     :editing="canEdit && editMode"
@@ -2631,6 +2692,7 @@ const editActionBtn =
                     :pending="canEdit && editMode ? (it as any).pending : undefined"
                     :highlight-query="filters.q"
                     @select="select"
+                    @filter="token => { if (!filters.tags.includes(token)) filters.tags = [...filters.tags, token]; }"
                     @discard="editStore.revertItem($event)"
                     @rename="onCardRename"
                     @duplicate="onCardDuplicate"

@@ -12,6 +12,7 @@ import type { ProjectedItem } from './project';
 import { isStoryHeading, sectionLabel } from '../sectionHeadings';
 import { installItemImageViewer } from '../itemImageViewer';
 import imageViewerCss from '../../styles/image-viewer.css?raw';
+import itemLabelsCss from '../../styles/item-labels.css?raw';
 import { HORIZONS, PRODUCTS, type Horizon } from '../schema';
 import type { SortKey } from '../filters';
 import { createItemViewPreference } from '../itemViewPreference';
@@ -38,6 +39,9 @@ export function selectedShareHorizons(
 }
 
 export interface ShareContext {
+  /** Accepted published base, retained while the share dialog blocks live updates. */
+  sourceContentCommit?: string;
+  resourceCatalog?: import('./resources').ShareResourceCatalog;
   timeline?: TimelineSettings & { range: TimelineRange };
   title: string;
   /** Optional framing paragraph shown under the header. */
@@ -153,27 +157,27 @@ function cssString(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '');
 }
 
-function productMark(product: string): string {
+function productBadge(product: string): string {
   const info = PRODUCT_META[product] ?? { short: '?', color: 'var(--roadmap-ink-muted)' };
-  return `<span class="product-mark" style="--product:${info.color};font-size:${info.short.length > 1 ? 12 : 15}px" title="${escapeHtml(product)}" role="img" aria-label="${escapeHtml(product)}"><span aria-hidden="true">${escapeHtml(info.short)}</span></span>`;
+  return `<span class="card-product-badge" title="${escapeHtml(product)}" role="img" aria-label="${escapeHtml(product)}"><span aria-hidden="true">${escapeHtml(info.short)}</span></span>`;
 }
 
 function card(it: ProjectedItem, index: number, showProduct: boolean, showHorizon: boolean, showCover: boolean): string {
   const cover = showCover && it.cover && safeResourceUrl(it.cover)
     ? `<span class="share-card-cover roadmap-cover-media" aria-hidden="true" style="${coverPresentationCss(it.coverPosition, it.coverFraming)}"><img class="roadmap-cover-backdrop" src="${escapeHtml(it.cover)}" alt="" loading="lazy" decoding="async"><img class="roadmap-cover-fill" src="${escapeHtml(it.cover)}" alt="" loading="lazy" decoding="async"><img class="roadmap-cover-reveal" src="${escapeHtml(it.cover)}" alt="" loading="lazy" decoding="async"><span class="share-card-cover-treatment"></span></span>`
     : '';
-  return `<button type="button" class="roadmap-card roadmap-product-card roadmap-action share-card${cover ? ' share-card-with-cover' : ''}${it.horizon === 'Completed' ? ' share-card-completed' : ''}" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" data-horizon="${escapeHtml(it.horizon)}" aria-label="Open ${escapeHtml(it.title)}${showProduct ? `, ${escapeHtml(it.product)}` : ''}">
+  return `<button type="button" data-share-item="${index}" class="roadmap-card roadmap-product-card roadmap-action share-card${cover ? ' share-card-with-cover' : ''}${it.horizon === 'Completed' ? ' share-card-completed' : ''}" style="--roadmap-product-accent:${PRODUCT_META[it.product]?.color || 'var(--roadmap-ink-muted)'}" data-card-index="${index}" data-horizon="${escapeHtml(it.horizon)}" aria-label="Open ${escapeHtml(it.title)}${showProduct ? `, ${escapeHtml(it.product)}` : ''}">
     <span class="card-open" aria-hidden="true">↗</span>
     ${cover}
     <div class="share-card-content${cover ? ' share-card-content-over-cover' : ''}">
     <div class="card-main">
-      ${showProduct ? productMark(it.product) : ''}
       <div class="card-copy">
         <h3 data-title-tooltip="${escapeHtml(it.title)}">${escapeHtml(it.title)}</h3>
         ${it.oneliner ? `<p>${escapeHtml(it.oneliner)}</p>` : ''}
       </div>
     </div>
-    ${showHorizon || (it.horizon !== 'Completed' && it.stage) ? `<div class="card-meta">
+    ${showProduct || showHorizon || (it.horizon !== 'Completed' && it.stage) ? `<div class="card-meta">
+      ${showProduct ? productBadge(it.product) : ''}
       ${showHorizon ? `<span class="roadmap-quiet-chip stage-chip" data-horizon="${escapeHtml(it.horizon)}">${escapeHtml(it.horizon)}</span>` : ''}
       ${it.horizon !== 'Completed' && it.stage ? `<span class="roadmap-quiet-chip stage-chip"${showHorizon ? '' : ` data-horizon="${escapeHtml(it.horizon)}"`}>${escapeHtml(it.stage)}</span>` : ''}
     </div>` : ''}
@@ -235,11 +239,11 @@ function detailShell(): string {
             <div data-detail-stage><dt>Stage</dt><dd id="detail-stage"></dd></div>
             <div data-detail-plan hidden><dt>Plan</dt><dd id="detail-plan"></dd></div>
           </dl>
+          <div class="item-labels detail-labels" id="detail-themes" aria-label="Themes"></div>
           <div class="detail-reading-grid" data-reading-layout>
             <div data-reading-body>
               <p class="detail-lede" id="detail-lede"></p>
               <div class="detail-sections" id="detail-sections"></div>
-              <div class="detail-themes" id="detail-themes"></div>
             </div>
             <nav class="item-toc" data-item-toc aria-label="On this page" hidden></nav>
           </div>
@@ -530,20 +534,6 @@ function css(context: ShareContext): string {
     align-items: flex-start;
     gap: 12px;
   }
-  .product-mark {
-    display: grid;
-    flex: 0 0 auto;
-    width: 36px;
-    height: 36px;
-    place-items: center;
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--product) 10%, var(--color-card));
-    border: 1px solid color-mix(in srgb, var(--product) 20%, transparent);
-    box-shadow: none;
-    color: var(--product);
-    font-size: 12px;
-    font-weight: 600;
-  }
   .card-copy {
     min-width: 0;
     flex: 1;
@@ -830,7 +820,22 @@ function js(): string {
     return node;
   }
 
-  function visibleIndexes() { return [...new Set(cards.map(card => Number(card.dataset.cardIndex)))]; }
+  function visibleIndexes() { return [...new Set(cards.filter(card => !card.closest('[hidden]')).map(card => Number(card.dataset.cardIndex)))]; }
+
+  function filterTheme(theme) {
+    close();
+    cards.forEach(card => {
+      const container = card.closest('[data-share-item], .timeline-row') || card;
+      container.hidden = !!theme && !(items[Number(card.dataset.cardIndex)].themes || []).includes(theme);
+    });
+    document.querySelectorAll('.lane').forEach(lane => {
+      lane.querySelector('.lane-count').textContent = String(lane.querySelectorAll('[data-share-item]:not([hidden])').length);
+    });
+    const clear = document.querySelector('[data-clear-theme]');
+    clear.hidden = !theme;
+    clear.textContent = theme ? 'Theme: ' + theme + ' · Clear filter' : '';
+    if (!theme) cards.find(card => !card.closest('[hidden]'))?.focus();
+  }
 
   function render(i) {
     if (!items.length || !shell || !panel) return;
@@ -907,7 +912,12 @@ function js(): string {
     imageViewer.refresh();
     itemToc.refresh();
 
-    themes.replaceChildren(...(item.themes || []).map((theme) => el('span', 'chip theme-chip', theme)));
+    themes.replaceChildren(...(item.themes || []).map((theme) => {
+      const button = el('button', 'item-label', theme);
+      button.type = 'button'; button.dataset.kind = 'theme'; button.dataset.cardFilter = 'theme:' + theme;
+      button.setAttribute('aria-label', 'Filter by theme: ' + theme);
+      return button;
+    }));
     themes.hidden = !item.themes?.length;
     count.textContent = (visiblePos + 1) + '/' + visible.length;
     prev.disabled = visiblePos === 0;
@@ -961,6 +971,9 @@ function js(): string {
   window.addEventListener('popstate', readUrl);
 
   document.addEventListener('click', (event) => {
+    const filter = event.target.closest('[data-card-filter]');
+    if (filter) { filterTheme(filter.dataset.cardFilter.slice(6)); return; }
+    if (event.target.closest('[data-clear-theme]')) { filterTheme(''); return; }
     if (event.target.closest('.item-image-viewer')) return;
     const card = event.target.closest('[data-card-index]');
     if (card) open(Number(card.dataset.cardIndex));
@@ -1095,7 +1108,7 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
 <meta name="twitter:description" content="${description}">
 <meta name="twitter:image" content="${OG_IMAGE_FILENAME}">
 <link rel="icon" href="${ROADMAP_FAVICON}">
-<style>${css(context)}\n${appearanceCss}\n${reviewCss}\n${timelineCss}\n${imageViewerCss}\n${readingToolbarCss}\n${titleTooltipCss}\n${itemTocCss}</style></head>
+<style>${css(context)}\n${appearanceCss}\n${reviewCss}\n${timelineCss}\n${imageViewerCss}\n${readingToolbarCss}\n${titleTooltipCss}\n${itemTocCss}\n${itemLabelsCss}</style></head>
 <body>
 <a class="skip-link" href="#main-content">Skip to roadmap</a>
 <main id="main-content" class="board-root shared-roadmap" tabindex="-1" data-share-view="${context.timeline ? 'timeline' : 'board'}" data-share-group="${escapeHtml(context.timeline?.group ?? group)}" data-share-sort="${escapeHtml(context.sort ?? 'manual')}" data-share-reverse-lanes="${context.reverseLanes ? 'true' : 'false'}" data-share-covers="${context.showCovers === false ? 'false' : 'true'}">
@@ -1111,6 +1124,7 @@ export function renderShareHtml(context: ShareContext, items: ProjectedItem[]): 
     </div>
   </section>
   ${context.activitySummary ? `<p class="roadmap-muted" style="margin-bottom:1rem">${escapeHtml(context.activitySummary)}</p>` : ''}
+  <button type="button" class="item-label" data-clear-theme hidden></button>
   ${context.timeline ? renderSharedTimeline(context.timeline, items, context.reverseLanes) : `<div class="roadmap-glass board-shell"><div class="board-scroll">${lanes}</div></div>`}
   <footer>
     <span>Shared ${escapeHtml(context.generatedAt)}</span>
