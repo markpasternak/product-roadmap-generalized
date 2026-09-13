@@ -301,6 +301,21 @@ describe("account drafts and recoverable publication", () => {
     expect(store.bodyValue("TALK-1")).toBe("second");
     expect(store.dirtyCount.value).toBe(1);
   });
+  it('refreshes the file library after a committed resource change', async () => {
+    const { listResources, invalidateResourceLibrary } = await import('../../lib/edit/resourceClient');
+    const { authedRequest } = await import('../../lib/edit/client');
+    const w = await editing();
+    invalidateResourceLibrary();
+    vi.mocked(authedRequest).mockResolvedValueOnce(new Response(JSON.stringify([{ id: 'ast_one', name: 'Before', revisions: [] }])));
+    expect((await listResources())[0]!.name).toBe('Before');
+    useEditStore().setAssets({ attach: [], update: [{ id: 'ast_one', baseManifestSha: 'b'.repeat(40), name: 'After' }] });
+    syncMock.mockResolvedValueOnce({ ok: true, sha: 'a'.repeat(40) });
+    await send(w);
+    await flushPromises();
+    vi.mocked(authedRequest).mockResolvedValueOnce(new Response(JSON.stringify([{ id: 'ast_one', name: 'After', revisions: [] }])));
+    expect((await listResources())[0]!.name).toBe('After');
+    invalidateResourceLibrary();
+  });
   it("retries the frozen payload and identity after a lost response", async () => {
     const w = await editing();
     useEditStore().setBody("TALK-1", "first");

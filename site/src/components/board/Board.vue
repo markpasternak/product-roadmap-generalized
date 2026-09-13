@@ -56,7 +56,7 @@ import { validateChangeset, type FieldError } from '../../lib/edit/validate';
 import { projectBoard } from '../../lib/edit/project';
 import { fetchDeployedCommit, watchForNewVersion } from '../../lib/edit/version';
 import { guardPublishedContent, usePublishedContent } from '../../lib/published/usePublishedContent';
-import { listResources, resourceTransferCount } from '../../lib/edit/resourceClient';
+import { invalidateResourceLibrary, listResources, resourceTransferCount } from '../../lib/edit/resourceClient';
 import PublicationConflicts from '../edit/PublicationConflicts.vue';
 import type { ApiItem } from '../../lib/edit/client';
 import DraftConflicts from '../edit/DraftConflicts.vue';
@@ -565,6 +565,8 @@ async function acceptPublication(res: Awaited<ReturnType<typeof sync>>, sent: an
   if (sent.created?.some((item: any) => !res.createdIds?.[item.id]))
     throw new Error('Publication receipt is missing created item IDs');
   const skippedNames = (res.skippedReorders ?? []).map((id) => byId.value.get(id)?.title ?? id);
+  if (sent.assets?.attach?.length || sent.assets?.update?.length)
+    invalidateResourceLibrary();
   editStore.acknowledge(sent, res.createdIds ?? {});
   for (const item of api)
     if (item.sha && item.content)
@@ -2210,6 +2212,7 @@ guardPublishedContent(contentRefreshBlocked);
 let acceptedPublishedItems = props.items;
 watch([() => props.items, () => publishedContent?.blocked.value], ([items]) => {
   if (!publishedContent || publishedContent.blocked.value || items === acceptedPublishedItems) return;
+  invalidateResourceLibrary();
   acceptedPublishedItems = items;
   liveItems.value = items.slice();
   if (selected.value) {

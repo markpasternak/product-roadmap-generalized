@@ -6,6 +6,7 @@ export const resourcePreviewURLs = ref<Record<string, string>>({});
 const imageRequests = new Map<string, Promise<void>>();
 let resourceListCache: { at: number; assets: ResourceAsset[] } | undefined;
 let resourceListRequest: Promise<ResourceAsset[]> | undefined;
+let resourceListGeneration = 0;
 const RESOURCE_LIST_TTL = 5 * 60_000;
 const cloneResources = (assets: ResourceAsset[]): ResourceAsset[] =>
   typeof structuredClone === 'function' ? structuredClone(assets) : JSON.parse(JSON.stringify(assets));
@@ -38,15 +39,23 @@ export async function loadImagePreview(path: string): Promise<void> {
 export async function listResources(): Promise<ResourceAsset[]> {
   if (resourceListCache && Date.now() - resourceListCache.at < RESOURCE_LIST_TTL)
     return cloneResources(resourceListCache.assets);
-  resourceListRequest ??= (async () => {
+  const generation = resourceListGeneration;
+  const request = resourceListRequest ??= (async () => {
     const res = await authedRequest("/api/assets");
     if (!res.ok) throw new Error("Could not load the file library. Try again.");
     const assets = await res.json() as ResourceAsset[];
-    resourceListCache = { at: Date.now(), assets };
+    if (generation === resourceListGeneration)
+      resourceListCache = { at: Date.now(), assets };
     return assets;
   })();
-  try { return cloneResources(await resourceListRequest); }
-  finally { resourceListRequest = undefined; }
+  try { return cloneResources(await request); }
+  finally { if (resourceListRequest === request) resourceListRequest = undefined; }
+}
+/** A committed asset change must be visible when the draft is acknowledged. */
+export function invalidateResourceLibrary(): void {
+  resourceListGeneration++;
+  resourceListCache = undefined;
+  resourceListRequest = undefined;
 }
 export function uploadResource(
   file: File,
