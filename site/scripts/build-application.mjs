@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { constants } from 'node:fs';
 import { sha256 } from './application-package.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -44,15 +45,30 @@ async function copyTree(from, to) {
   await mkdir(to, { recursive: true });
   for (const entry of await readdir(from, { withFileTypes: true })) {
     if (entry.isDirectory()) await copyTree(join(from, entry.name), join(to, entry.name));
-    else if (entry.isFile()) await copyFile(join(from, entry.name), join(to, entry.name));
+    else if (entry.isFile()) await copyFile(join(from, entry.name), join(to, entry.name), constants.COPYFILE_EXCL);
     else throw new Error('Non-regular application input');
   }
 }
-await copyTree(join(shell, '_astro'), join(output, 'public/_astro'));
-await copyTree(join(shell, 'brand'), join(output, 'public/brand'));
-for (const directory of ['p', 'help', 'shares']) await copyTree(join(shell, directory), join(output, 'public', directory));
-await copyFile(join(shell, '404.html'), join(output, 'public/404.html'));
+// All non-content static files belong to the application, including future
+// public files and presentations. Never overwrite a compiler-produced asset.
+for (const entry of await readdir(shell, { withFileTypes: true })) {
+  // The retired stamp generator can leave version.json in public/. Publication
+  // metadata is content-owned and must never enter a reusable package.
+  if (['_publication-template', '_publication-template-docs', '.nojekyll', 'version.json'].includes(entry.name)) continue;
+  if (entry.isDirectory()) await copyTree(join(shell, entry.name), join(output, 'public', entry.name));
+  else if (entry.isFile()) await copyFile(join(shell, entry.name), join(output, 'public', entry.name), constants.COPYFILE_EXCL);
+  else throw new Error('Non-regular application shell output');
+}
 } finally { await rm(shell, { recursive: true, force: true }); }
+// These reviewed, dependency-free entrypoints travel with the private package.
+// Content workers never execute commands from the incoming Git checkout.
+const commands = join(output, 'private/commands');
+await mkdir(commands);
+for (const script of ['prepare-content.mjs', 'application-package.mjs', 'client-assets.mjs', 'content-output.mjs', 'build-item-history.mjs', 'check-document-links.mjs', 'check-item-history.mjs'])
+  await copyFile(join(root, 'scripts', script), join(commands, script));
+for (const script of ['coordinate.mjs', 'staged.mjs'])
+  await copyFile(join(root, '../tooling/deploy', script), join(commands, script));
+await copyFile(join(root, '../tooling/validate_items.py'), join(commands, 'validate_items.py'));
 const files = [];
 async function inventory(dir) {
   for (const entry of (await readdir(dir, { withFileTypes: true })).sort((a,b) => a.name.localeCompare(b.name))) {

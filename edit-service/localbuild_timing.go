@@ -149,7 +149,7 @@ func (b *buildTiming) nodeRecord(line []byte, parent string) {
 		return
 	}
 	switch record.Stage {
-	case "npm_build", "astro_build", "sync_presentations", "generate_version", "item_history", "document_links", "item_dates", "demo_check", "coordinator", "github_latest", "canvas_status", "canvas_manifest", "canvas_version", "canvas_upload":
+	case "npm_build", "astro_build", "sync_presentations", "generate_version", "item_history", "document_links", "item_dates", "demo_check", "coordinator", "github_latest", "canvas_status", "canvas_manifest", "canvas_version", "canvas_upload", "prepare_content", "canvas_begin", "canvas_blob", "canvas_finalize":
 	default:
 		return
 	}

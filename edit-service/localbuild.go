@@ -24,6 +24,7 @@ import (
 
 type localBuildConfig struct {
 	Mode, BaseSHA, DependenciesDir string
+	ApplicationPointer             string
 	HasToken                       bool
 	CanvasAPIURL                   string
 	Profile                        buildProfile
@@ -38,16 +39,20 @@ type buildProfile struct {
 }
 
 func (c localBuildConfig) validate() error {
-	if (c.Mode != "prepare" && c.Mode != "deploy") || !c.HasToken {
-		return errors.New("requires prepare/deploy mode and CANVAS_DROP_TOKEN")
+	content := c.Mode == "content" || c.Mode == "shadow"
+	if (!content && c.Mode != "prepare" && c.Mode != "deploy") || (c.Mode != "shadow" && !c.HasToken) {
+		return errors.New("requires an enabled build mode and publication credentials (except shadow)")
 	}
-	if c.Mode == "deploy" {
+	if c.Mode == "deploy" || c.Mode == "content" {
 		u, err := url.Parse(c.CanvasAPIURL)
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !regexp.MustCompile(`^/v1/canvases/[A-Za-z0-9_-]+$`).MatchString(u.Path) {
 			return errors.New("requires explicit HTTPS CANVAS_API_URL without credentials or query")
 		}
 	}
-	if !gitSHA.MatchString(c.BaseSHA) || !filepath.IsAbs(c.DependenciesDir) {
+	if content && !filepath.IsAbs(c.ApplicationPointer) {
+		return errors.New("requires an absolute approved application pointer")
+	}
+	if !content && (!gitSHA.MatchString(c.BaseSHA) || !filepath.IsAbs(c.DependenciesDir)) {
 		return errors.New("requires an approved full base SHA and absolute dependency checkout path")
 	}
 	if c.Profile.Audience != "internal" && c.Profile.Audience != "public" {
@@ -88,25 +93,51 @@ type localBuildWorker struct {
 }
 
 func newLocalBuildWorker(run func(context.Context)) *localBuildWorker {
+	return newReconcilingBuildWorker(func(ctx context.Context) error { run(ctx); return nil }, 0)
+}
+
+// A notification is just a wake-up hint. Startup/timer runs cover missed
+// webhooks, and bounded backoff avoids hammering a broken remote dependency.
+func newReconcilingBuildWorker(run func(context.Context) error, interval time.Duration) *localBuildWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	w := &localBuildWorker{wake: make(chan time.Time, 1), cancel: cancel, done: make(chan struct{})}
 	go func() {
 		defer close(w.done)
+		var timer *time.Timer
+		var tick <-chan time.Time
+		delay := interval
+		if interval > 0 {
+			timer = time.NewTimer(interval)
+			tick = timer.C
+			defer timer.Stop()
+		}
 		for {
 			var queued time.Time
 			select {
 			case <-ctx.Done():
 				return
 			case queued = <-w.wake:
+			case queued = <-tick:
 			}
 			if ctx.Err() != nil {
 				return
 			}
 			job, cancelJob := context.WithTimeout(ctx, 2*time.Minute)
-			run(context.WithValue(job, buildQueuedAtKey{}, queued))
+			err := run(context.WithValue(job, buildQueuedAtKey{}, queued))
 			cancelJob()
+			if timer != nil {
+				if err == nil {
+					delay = interval
+				} else {
+					delay = min(delay*2, 5*interval)
+				}
+				timer.Reset(delay)
+			}
 		}
 	}()
+	if interval > 0 {
+		w.enqueue()
+	}
 	return w
 }
 
@@ -135,14 +166,18 @@ func (w *localBuildWorker) close() {
 
 func (g *GitHub) startLocalBuild() {
 	c := g.cfg.LocalBuild
-	if c.Mode == "" || !c.HasToken {
+	if c.Mode == "" || c.Mode == "disabled" || (c.Mode != "shadow" && !c.HasToken) {
 		return
 	}
 	if err := c.validate(); err != nil {
 		log.Printf("local build disabled: %v; GitHub Actions unchanged", err)
 		return
 	}
-	g.localBuild = newLocalBuildWorker(func(ctx context.Context) {
+	interval := time.Duration(0)
+	if c.Mode == "content" || c.Mode == "shadow" {
+		interval = time.Minute
+	}
+	g.localBuild = newReconcilingBuildWorker(func(ctx context.Context) error {
 		ctx, trace, _ := ensureBuildTiming(ctx)
 		var result error
 		defer func() { trace.finish(ctx, result) }()
@@ -152,9 +187,13 @@ func (g *GitHub) startLocalBuild() {
 		cleanupDone(result)
 		if result != nil {
 			log.Printf("local preparation cleanup failed; GitHub Actions unchanged")
-			return
+			return result
 		}
-		result = g.prepareBuild(ctx, g.latestBuildHead, runLocalBuildCommands)
+		if c.Mode == "content" || c.Mode == "shadow" {
+			result = g.prepareContent(ctx, g.latestBuildHead, runBuildCommand)
+		} else {
+			result = g.prepareBuild(ctx, g.latestBuildHead, runLocalBuildCommands)
+		}
 		if result != nil {
 			// Git commands may include auth diagnostics; never log raw subprocess output.
 			stage := "preparation"
@@ -166,7 +205,8 @@ func (g *GitHub) startLocalBuild() {
 		} else {
 			log.Printf("local build completed, mode=%s, duration=%s", c.Mode, time.Since(started))
 		}
-	})
+		return result
+	}, interval)
 }
 
 // Only one editor instance owns this state directory. A crash can leave a

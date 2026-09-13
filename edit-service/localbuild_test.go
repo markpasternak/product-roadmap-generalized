@@ -334,6 +334,13 @@ func TestLocalDeployIntegration(t *testing.T) {
 			if err := writeConfined(g.repoRoot(), "tooling/deploy/protocol.mjs", protocol); err != nil {
 				t.Fatal(err)
 			}
+			staged, err := os.ReadFile("../tooling/deploy/staged.mjs")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writeConfined(g.repoRoot(), "tooling/deploy/staged.mjs", staged); err != nil {
+				t.Fatal(err)
+			}
 			wrapper := `import {runCLI, configFromEnv} from './protocol.mjs';
 const config = configFromEnv();
 config.latest = async () => process.env.GITHUB_SHA;

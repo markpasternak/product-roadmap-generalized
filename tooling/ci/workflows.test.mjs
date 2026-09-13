@@ -43,8 +43,8 @@ test('deployment preflights before building and owns checks for every new artifa
   const upload = steps.findIndex((step) => step.name === 'Deploy to canvas-drop');
   const preflight = steps.findIndex((step) => step.id === 'coordination');
   assert.ok(preflight > 0 && preflight < steps.findIndex(step => step.uses === './.github/actions/setup-site'));
-  assert.equal(steps[preflight].run, 'node tooling/deploy/coordinate.mjs preflight');
-  assert.equal(steps[upload].run, 'node tooling/deploy/coordinate.mjs publish');
+  assert.equal(steps[preflight].run, 'node tooling/deploy/actions-publication.mjs select');
+  assert.equal(steps[upload].run, 'node tooling/deploy/actions-publication.mjs publish');
   assert.equal(steps[upload].if, undefined);
   const commands = [
     'python3 tooling/validate_items.py',
@@ -56,11 +56,20 @@ test('deployment preflights before building and owns checks for every new artifa
   for (const command of commands) {
     const index = steps.findIndex((step) => step.run === command);
     assert.ok(index >= 0 && index < upload, command);
-    assert.equal(steps[index].if, "steps.coordination.outputs.already_current != 'true'", command);
+    assert.equal(steps[index].if, "steps.coordination.outputs.full_build == 'true'", command);
   }
   assert.ok(steps.findIndex((step) => step.run === 'node tooling/ci/changes.mjs wait') < upload);
   for (const key of ['SITE_URL', 'SITE_BASE', 'SITE_AUDIENCE', 'PUBLIC_EDIT_API', 'PUBLIC_CANVAS_BACKEND']) assert.ok(deploy.env[key]);
   assert.ok(!existsSync(new URL('../../.github/workflows/validate.yml', import.meta.url)));
+  assert.equal(steps.find(step => step.uses === './.github/actions/setup-site').if, "steps.coordination.outputs.full_build == 'true'");
+  const content = steps.find(step => step.run === 'node tooling/deploy/actions-publication.mjs prepare');
+  assert.equal(content.if, "steps.coordination.outputs.full_build != 'true' && steps.coordination.outputs.already_current != 'true'");
+  assert.equal(content.env?.CANVAS_DROP_TOKEN, undefined);
+  const artifact = steps.find(step => step.name === 'Store canonical private application package');
+  assert.equal(artifact.if, "steps.coordination.outputs.full_build == 'true'");
+  assert.equal(artifact.with['include-hidden-files'], true);
+  assert.ok(steps.indexOf(artifact) > steps.findIndex(step => step.run === 'node tooling/ci/changes.mjs wait'));
+  assert.ok(steps.indexOf(artifact) < upload);
 });
 
 test('aggregate verdict still requires the build and generalized security remains mandatory', () => {

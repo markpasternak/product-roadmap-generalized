@@ -2,6 +2,22 @@
 
 The service authenticates roadmap editors with GitHub and publishes to `REPO` on `main`. Published Markdown, original uploaded files and resource metadata all live in Git. A fresh checkout can rebuild the site without the editing service or upload staging.
 
+## Optional content publisher
+
+The `content` worker renders an immutable, validated Git revision using an explicitly
+approved application package; it does not compile Astro/Vite or install dependencies.
+UI publication, a signed GitHub push webhook, startup and a reconciliation timer
+can wake it. Hints coalesce to latest main. Code changes, unavailable credentials
+or incompatible packages leave publication to GitHub Actions.
+
+`POST /webhooks/github` uses a separate HMAC secret, not an editor session. Configure
+push events for this repository and verify delivery during deployment. The handler
+does not trust the payload's SHA or execute supplied commands. `shadow` mode prepares
+without Canvas activation; `disabled` pauses local publication. See
+[the release/operations checklist](../tooling/deploy/content-release-checklist.md)
+and [local build modes](LOCAL_BUILDS.md) for trusted package promotion, profile
+settings, webhook installation, fallback and coordinated pause/rollback.
+
 ## Working storage
 
 Set `ROADMAP_STATE_DIR` to a durable private directory, or use systemd's `StateDirectory=roadmap-demo-editor` (exposed as `STATE_DIRECTORY`). Back up this directory to preserve unpublished account drafts and staged uploads. The fallback under the system temporary directory is for development only. Keep the Git checkout cache separate; it can be rebuilt.

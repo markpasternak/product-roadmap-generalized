@@ -7,7 +7,7 @@ dist/
 # Presentations staged by scripts/sync-presentations.mjs (build artifact)
 public/p/
 
-# Build commit stamp written by scripts/gen-version.mjs (build artifact)
+# Legacy generated stamp; keep old checkouts from polluting Git.
 public/version.json
 
 .env

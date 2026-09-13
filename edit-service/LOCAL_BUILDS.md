@@ -1,5 +1,21 @@
 # Optional local builds and coordinated publication
 
+## Content-publication release
+
+The new `content` and `shadow` modes use a verified, explicitly installed private
+application package. They do not install dependencies or compile Astro/Vite.
+See [the current release and operations checklist](../tooling/deploy/content-release-checklist.md)
+for package promotion, webhook installation, timers, pause/rollback and live tests.
+`ROADMAP_LOCAL_BUILD_MODE=disabled` or a missing Canvas token leaves Actions in
+charge. Shadow mode needs no Canvas token and never begins/finalizes an upload.
+
+## Legacy compatibility modes
+
+The remaining ZIP/full-Astro instructions below describe the retained `prepare`
+and `deploy` compatibility modes. They are not the new content-worker setup.
+Retain them only for the initial migration rollback; current work uses the feature
+branch and normal PR release, not the historical direct-main iteration loop.
+
 The editor can prepare a site ZIP or publish it directly through Canvas Drop's
 deployment API. Both modes are opt-in. No mode or no token leaves publishing to
 GitHub Actions. A failed fast-path attempt never changes the successful save

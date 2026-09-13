@@ -44,6 +44,7 @@ func NewServer(cfg Config) *Server {
 }
 
 func (s *Server) routes() {
+	s.mux.HandleFunc("POST /webhooks/github", s.handleGitHubWebhook)
 	s.mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	s.mux.HandleFunc("GET /auth/login", s.handleLogin)
 	s.mux.HandleFunc("GET /auth/callback", s.handleCallback)

@@ -371,6 +371,7 @@ Keep the approved 1000 MiB service memory limit and existing CPU/swap limits for
   6. Generalized and neighboring services remain untouched/healthy through SeenThis rollout.
   7. Covers AE8. A user-assisted live asset upload and replacement reaches a second tab without refresh; capture file hash/MIME/size proof. Report asset-heavy transfer timings separately from metadata-only publishes.
 - **Verification:** Required checks, authenticated publication evidence, browser proof, rollback materials and clean landing state all exist before completion.
+- **Documentation release gate (explicitly approved 2026-09-13):** Update root `README.md`, editor `README.md` / `LOCAL_BUILDS.md` / `.env.example`, build-performance notes, current release checklist and relevant Help/developer documentation in this same PR/release. Explain content versus full application builds, trusted package promotion, both publisher identities, signed webhook configuration and delivery verification, timer/Actions fallback, pause/rollback, managed assets, no-refresh browser updates and private-preview cache limitations. Audit existing build/deploy guidance for contradictions; label retained compatibility instructions as legacy. Report only measured timings and distinguish local proof from live verification. Documentation must match the final tested implementation before release completion.
 
 ### Same-release additions approved 2026-09-13
 

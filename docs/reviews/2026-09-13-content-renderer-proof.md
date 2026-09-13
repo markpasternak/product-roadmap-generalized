@@ -100,3 +100,42 @@ U4 and U10 now have locally verified implementations; live release acceptance re
 - Cleanup review applied inline: reuse **1** (one resource policy), quality **1** (obsolete adapter references), efficiency **1** (one candidate stat read); safety checks retained. The full frontend suite and typecheck passed in the adjacent UI checkpoint. Tooling contracts passed **32 tests**, plus the explicitly enabled internal/public integration cases. No lint command is configured.
 
 U11 implementation is complete locally; final application/publication integration review remains part of U5–U8. No migration push or deployment has occurred.
+
+## U5–U7 local publisher integration checkpoint (2026-09-13)
+
+- Shared v2 release identity binds source/application/package/profile. Staged upload
+  sends each missing hash once, caps concurrency at four, retains the original
+  publication token and verifies the complete manifest plus served version/snapshot
+  bytes. Lost finalize responses permit readback only. Source/pointer conflicts,
+  wrong manifests, corrupt snapshots and invalid/missing blobs fail closed.
+- The Go worker independently verifies the approved private package before running
+  its commands. Shadow/content modes use no npm/Astro/Vite; existing compatibility
+  modes remain. Signed push hints, startup and bounded timer/backoff cover non-editor
+  changes. Secret-free timing now distinguishes prepare/begin/blob/finalize stages.
+- Actions selects the authenticated live application but obtains execution authority
+  independently from a successful exact-main deploy workflow artifact. Archive and
+  package hashes/profile/inventory are checked; safe extraction rejects links,
+  traversal and collisions. Missing/expired/untrusted packages use the full build.
+  Full builds preserve the token captured before compilation. Explicit promotion
+  is separate from the worker; a newer live application stops older local reuse.
+- Test-first evidence includes missing staged/provenance modules, missing Go package
+  fields, old workflow expectations and missing staged timing labels. A real full
+  build exposed an obsolete generated `public/version.json`; the output collision
+  correctly preserved prior dist, then excluding that legacy stamp fixed the build.
+- Validation: Go race tests and vet pass; 1,077 frontend tests and typecheck pass
+  (0 errors/warnings, 9 existing hints). The real Go shadow path executes the
+  verified package's Node/Python commands against a detached worktree and passes.
+  Compiled internal fixtures verify resource replacement/deletion, route ownership
+  and every output hash. Application artifact tests verify successful-main provenance,
+  archive integrity and absence of forwarded GitHub credentials at object storage.
+- Latest local full output: 104 content routes, 88 items, 5 documents, 8 originals,
+  66 checked document links. Package `070eb31f83811ace3a2554b489f395b28599a5daa5ca0ccd8e27970fb8929843`
+  has 657 files; one workstation preparation took 0.818 seconds. This is not a
+  canonical CI artifact or end-to-end/server performance claim.
+- Cleanup rubrics applied inline under repository instructions: reuse 0, quality 1
+  (unused imports removed), efficiency 0. Kept repeated trust validation and legacy
+  rollback modes deliberately; they are not safe simplification targets before rollout.
+- README, Help, editor configuration/operations and performance documentation now
+  describe the migration, with webhook delivery proof and documentation review as
+  explicit release gates. Final code review, same-host measurements, live webhook
+  installation, push/landing/deployment and user-assisted acceptance remain pending.

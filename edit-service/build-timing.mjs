@@ -12,6 +12,7 @@ const stages = {
   'build-item-history.mjs': 'item_history', 'check-document-links.mjs': 'document_links',
   'check-item-history.mjs': 'item_dates', 'check-demo.mjs': 'demo_check',
   'coordinate.mjs': 'coordinator',
+  'prepare-content.mjs': 'prepare_content',
 };
 const stage = stages[basename(process.argv[1] || '')];
 let records = 0;
@@ -38,6 +39,9 @@ if (stage === 'coordinator') {
       let label;
       if (/^\/repos\/[^/]+\/[^/]+\/git\/ref\/heads\/main$/.test(url.pathname)) label = 'github_latest';
       else if (/^\/v1\/canvases\/[^/]+\/deploy$/.test(url.pathname) && request.method === 'PUT') label = 'canvas_upload';
+      else if (/^\/v1\/canvases\/[^/]+\/uploads$/.test(url.pathname) && request.method === 'POST') label = 'canvas_begin';
+      else if (/^\/v1\/canvases\/[^/]+\/uploads\/[^/]+\/blobs\/[^/]+$/.test(url.pathname) && request.method === 'PUT') label = 'canvas_blob';
+      else if (/^\/v1\/canvases\/[^/]+\/uploads\/[^/]+\/finalize$/.test(url.pathname) && request.method === 'POST') label = 'canvas_finalize';
       else if (/^\/v1\/canvases\/[^/]+\/files$/.test(url.pathname)) label = url.searchParams.has('path') ? 'canvas_version' : 'canvas_manifest';
       else if (/^\/v1\/canvases\/[^/]+$/.test(url.pathname)) label = 'canvas_status';
       if (label) requests.set(request, { stage: label, started: performance.now() });

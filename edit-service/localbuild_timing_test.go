@@ -76,7 +76,7 @@ func TestLocalBuildTimingHTTPObservations(t *testing.T) {
 			logs := captureBuildTimings(t)
 			ctx, trace, _ := ensureBuildTiming(context.Background())
 			trace.installProbe(root)
-			code := `const response = await fetch(process.env.TEST_URL + '/v1/canvases/test/deploy?expectedPublicationToken=PRIVATE_QUERY', {method:'PUT',headers:{Authorization:'Bearer PRIVATE_TOKEN'},body:'PRIVATE_UPLOAD'}); console.error(await response.json());`
+			code := `for (const path of ['deploy','uploads','uploads/up_test/blobs/abc','uploads/up_test/finalize']) { const response = await fetch(process.env.TEST_URL + '/v1/canvases/test/' + path + '?expectedPublicationToken=PRIVATE_QUERY', {method:path === 'deploy' || path.includes('/blobs/') ? 'PUT' : 'POST',headers:{Authorization:'Bearer PRIVATE_TOKEN'},body:'PRIVATE_UPLOAD'}); console.error(await response.json()); }`
 			if err := writeConfined(root, "coordinate.mjs", []byte(code)); err != nil {
 				t.Fatal(err)
 			}
@@ -84,11 +84,13 @@ func TestLocalBuildTimingHTTPObservations(t *testing.T) {
 			if err := runBuildCommand(ctx, root, env, []string{"node", "coordinate.mjs"}); err != nil {
 				t.Fatal(err)
 			}
-			if requests != 1 {
+			if requests != 4 {
 				t.Fatal("probe changed request count")
 			}
 			found := false
+			staged := map[string]bool{}
 			for _, record := range timingRecords(t, logs) {
+				staged[record["stage"].(string)] = true
 				if record["stage"] == "canvas_upload" {
 					found = true
 					want := "success"
@@ -102,6 +104,11 @@ func TestLocalBuildTimingHTTPObservations(t *testing.T) {
 			}
 			if !found {
 				t.Fatal("missing complete-response timing")
+			}
+			for _, stage := range []string{"canvas_begin", "canvas_blob", "canvas_finalize"} {
+				if !staged[stage] {
+					t.Errorf("missing %s timing", stage)
+				}
 			}
 			if strings.Contains(logs.String(), "PRIVATE_") {
 				t.Fatal("credential or payload leaked")
