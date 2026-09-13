@@ -1,0 +1,26 @@
+[Unit]
+Description=Approve the deployed SeenThis roadmap application from verified Actions artifacts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node /opt/roadmap-operator/tooling/deploy/reconcile-application.mjs
+EnvironmentFile=/etc/roadmap-editor.env
+LoadCredential=app.pem:/etc/roadmap-editor-app.pem
+Environment=GITHUB_APP_PRIVATE_KEY_FILE=%d/app.pem
+User=root
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/roadmap-applications
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+TimeoutStartSec=5min
+MemoryMax=512M

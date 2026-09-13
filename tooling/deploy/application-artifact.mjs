@@ -89,7 +89,8 @@ export async function downloadApplicationArtifact(provenance, token, directory, 
   } finally { await rm(temporary, { recursive: true, force: true }); }
 }
 
-// Explicit operator promotion only. This command is never invoked by the worker.
+// Recovery/manual operator entrypoint. The independent root-owned reconciler
+// reuses these provenance checks; the content worker never promotes code.
 async function main() {
   const [action, source, digest, directory, pointer] = process.argv.slice(2);
   if (action !== 'promote' || !directory || !pointer) throw new Error('EXPECTED_PROMOTE_SOURCE_DIGEST_DIRECTORY_POINTER');

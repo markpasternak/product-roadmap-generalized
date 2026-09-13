@@ -1,0 +1,11 @@
+[Unit]
+Description=Keep the local content publisher aligned with successful Actions application releases
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=20s
+AccuracySec=1s
+Unit=roadmap-application-sync.service
+
+[Install]
+WantedBy=timers.target

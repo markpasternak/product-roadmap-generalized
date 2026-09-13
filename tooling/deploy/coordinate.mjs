@@ -166,8 +166,8 @@ export async function publishStaged(config, intent, candidate, directory) {
   const releaseId = releaseIdentity(config);
   if (!config.application || intent.releaseId !== releaseId || intent.api !== config.api ||
       typeof intent.expectedPublicationToken !== 'string' || !intent.expectedPublicationToken || typeof intent.alreadyCurrent !== 'boolean') fail('INTENT_MISMATCH');
-  await assertLatest(config);
   if (intent.alreadyCurrent && !candidate) {
+    await assertLatest(config);
     const proof = await verify(config);
     await assertLatest(config);
     return { ...proof, outcome: 'already_current' };

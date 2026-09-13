@@ -23,6 +23,7 @@ export async function verifyApplicationPackage(directory, { digest, profile } = 
   if (!Array.isArray(manifest.files) || manifest.files.length > 20000) throw new Error('Invalid application inventory');
   const seen = new Set(), normalized = new Set();
   let total = 0;
+  const checks = [];
   for (const file of manifest.files) {
     if (typeof file.path !== 'string' || !/^(?:private|public)\//.test(file.path) ||
         file.path.includes('\\') || /[\u0000-\u001f]/.test(file.path) || file.path.split('/').some(p => !p || p === '.' || p === '..') ||
@@ -31,15 +32,23 @@ export async function verifyApplicationPackage(directory, { digest, profile } = 
     total += file.size;
     if (total > 512 * 1024 * 1024) throw new Error('Application package exceeds size budget');
     seen.add(file.path); normalized.add(file.path.toLowerCase());
-    let path = root;
-    const parts = file.path.split('/');
-    for (let index = 0; index < parts.length; index++) {
-      path = join(path, parts[index]);
-      const stat = await lstat(path);
-      if (index < parts.length - 1 ? !stat.isDirectory() : !stat.isFile()) throw new Error('Non-regular or symbolic application path');
-    }
-    const content = await readFile(path);
-    if (content.length !== file.size || sha256(content) !== file.hash) throw new Error('Application checksum mismatch');
+    checks.push(async () => {
+      let path = root;
+      const parts = file.path.split('/');
+      for (let index = 0; index < parts.length; index++) {
+        path = join(path, parts[index]);
+        const stat = await lstat(path);
+        if (index < parts.length - 1 ? !stat.isDirectory() : !stat.isFile()) throw new Error('Non-regular or symbolic application path');
+      }
+      const content = await readFile(path);
+      if (content.length !== file.size || sha256(content) !== file.hash) throw new Error('Application checksum mismatch');
+    });
+  }
+  // Bound concurrent reads while retaining every path, byte and inventory check.
+  for (let offset = 0; offset < checks.length; offset += 4) {
+    const results = await Promise.allSettled(checks.slice(offset, offset + 4).map(check => check()));
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
   }
   for (const required of ['private/renderer.mjs', 'private/template.html', 'private/template-docs.html', 'public/.vite/manifest.json'])
     if (!seen.has(required)) throw new Error('Incomplete application inventory');

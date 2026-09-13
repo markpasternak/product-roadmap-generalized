@@ -19,9 +19,12 @@ Drop, neighboring services, or branch protection. Preserve later Git publication
   PR artifacts, failed runs, expired packages and symlinks cannot authorize code.
 - A missing or invalid artifact triggers Actions' full build. That replacement
   becomes the new canonical application. The server refuses to overwrite it with
-  its older approved package; explicit promotion is required to resume local reuse.
+  its older approved package. The separate application-sync operator verifies and
+  promotes the successful Actions artifact automatically before local reuse resumes.
+  Unexpected reuse fallback emits a credential-safe Actions warning and records
+  `fallbackReason` in the verification receipt (`fallback_reason` step output).
 
-## Release order
+## Initial installation order
 
 1. Finish local tests, compiled-browser parity, ten paired isolated same-host
    preparation samples under the existing 1,000 MiB limit, and code review.
@@ -41,7 +44,11 @@ Drop, neighboring services, or branch protection. Preserve later Git publication
    after the shadow/identity checks. Verify startup reconciliation and duplicate
    suppression, then perform user-assisted acceptance tests.
 
-## Explicit application promotion
+For subsequent application releases, leave content mode enabled: eligibility
+rejects code changes until Actions finishes and the automatic handover below
+approves its package. A manual mode change or editor restart is unnecessary.
+
+## Manual recovery promotion
 
 Run the reviewed command with `GITHUB_REPOSITORY`, `GH_TOKEN` (Actions read) and
 the exact `SITE_URL`, `SITE_BASE`, `SITE_AUDIENCE`, `PUBLIC_EDIT_API`,
@@ -75,10 +82,15 @@ mode or missing Canvas credentials disables publication. `shadow` prepares and
 checks but never invokes the Canvas coordinator. A failure cannot change save
 success or mark a publication live. Startup and a 60-second timer reconcile latest
 main; failures back off up to five minutes, while new push hints can wake it sooner.
+Content jobs have a 17-minute outer deadline, allowing preparation plus the staged
+session's 15-minute budget; individual HTTP calls remain bounded. Shadow and legacy
+jobs retain a two-minute deadline. Superseded preparation requests its next run
+through the worker itself, including on startup.
 
 ## Webhook setup and proof (part of this release)
 
-- Repository: `seenthis-ab/product-roadmap`, push events only, active.
+- Repository: `seenthis-ab/product-roadmap`, push events only. Prepare inactive;
+  save/activate only once the matching server secret and handler are installed.
 - URL: `https://seenthisapi.roadmapvisualizer.com/webhooks/github`.
 - JSON body; TLS verification enabled; a dedicated random secret matching
   `GITHUB_WEBHOOK_SECRET`. Do not reuse the Canvas key or editor-session secret.
@@ -138,3 +150,36 @@ Git and Canvas are not one transaction: a push after the last freshness read can
 briefly race activation; post-activation verification and reconciliation converge.
 HTTP preview revalidation controls future browser-cache reuse; it cannot erase
 downloaded files or images already held in page memory.
+
+## Automatic handover after Actions application releases
+
+SeenThis now runs `roadmap-application-sync.timer` every 20 seconds. Its separate
+root-owned operator code reads the authenticated active application identity,
+then independently authenticates the exact successful main Actions workflow,
+private artifact/archive digest, package digest, profile and complete file
+inventory. It never executes downloaded package code during approval. Packages
+and the atomic pointer remain root-owned and read-only to the editor account.
+A final active-application read prevents promotion if that application changed
+or the site was unpublished during download. The previous pointer/package stays
+available for recovery. Errors leave the pointer unchanged and the next timer
+run retries. The timer does nothing while local mode is disabled or in shadow.
+
+The operator uses the existing GitHub App credential to mint a repository-scoped
+installation token with Actions/contents read permissions; no additional SSH,
+GitHub personal-access token or webhook secret is needed. The existing push-only
+webhook remains active with its dedicated HMAC secret and TLS verification.
+Code or mixed commits are refused by the local content eligibility check and
+are fully built and deployed by normal Actions. After that run succeeds, the
+operator automatically prepares the new baseline for subsequent content edits.
+It does not restart the editor or interrupt drafts/publications.
+
+Install the reviewed operator files preserving their repository-relative paths
+under `/opt/roadmap-operator`: `tooling/deploy/{reconcile-application,application-artifact,coordinate,staged}.mjs`,
+`tooling/deploy/extract-application.py` and `site/scripts/application-package.mjs`.
+Keep that directory root-owned and not writable by the editor. Install the two
+units from `tooling/deploy/systemd/`, then enable the timer. Systemd permits
+writes only to `/opt/roadmap-applications` and private temporary storage; the
+GitHub App key is supplied through a systemd credential. Explicit `promote`
+remains available for recovery. When pausing for rollback/unpublish, stop the
+sync timer too, in addition to both publication paths, and restart it only after
+restoring the intended active application.

@@ -98,7 +98,7 @@ export async function stagePublication(config) {
   const results = await Promise.allSettled(workers); // Drain active requests before the owner removes candidate files.
   const failure = results.find(result => result.status === 'rejected');
   if (failure) throw failure.reason;
-  await config.assertLatest();
+  // send() rechecks authoritative main immediately before every finalize attempt.
   let response;
   try { response = await send(`/uploads/${begin.uploadId}/finalize`, { method: 'POST' }); }
   catch (error) {

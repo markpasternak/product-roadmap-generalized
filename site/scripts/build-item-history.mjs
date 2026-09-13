@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, renameSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 const git = (root, ...args) =>
   execFileSync('git', args, {
@@ -89,7 +89,7 @@ export function buildHistorySnapshot(root) {
 }
 if (
   process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
+  fileURLToPath(import.meta.url) === realpathSync(process.argv[1])
 ) {
   const root = git(process.cwd(), 'rev-parse', '--show-toplevel').trim();
   const start = performance.now();
