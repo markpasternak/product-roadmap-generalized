@@ -31,7 +31,9 @@ export async function reconcileApplication({ config, profile, pointer, groupId, 
   const { release } = await readLive();
   if (!release) return { outcome: 'unpublished' };
   const expected = selectedApplication(release, config.repo, profile);
-  const previous = JSON.parse(await readFile(pointer, 'utf8'));
+  let previous = {};
+  try { previous = JSON.parse(await readFile(pointer, 'utf8')); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
   if (previous.repo === expected.repo && previous.source === expected.source && previous.digest === expected.digest) return { outcome: 'already_approved' };
   const githubToken = await token();
   const provenance = await find(expected, githubToken);

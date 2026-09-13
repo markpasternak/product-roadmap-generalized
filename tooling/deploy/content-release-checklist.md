@@ -76,7 +76,7 @@ ROADMAP_APPLICATION_POINTER=/absolute/private/path/approved-pointer.json
 GITHUB_WEBHOOK_SECRET=<separate random webhook secret>
 CANVAS_DROP_TOKEN=<existing per-canvas deployment token>
 CANVAS_API_URL=https://roadmapdemo.canvas-drop.com/v1/canvases/01a0152e-2c0d-726b-9235-298bf5d46ff8
-ROADMAP_APPLICATION_GROUP=roadmap-demo-editor
+ROADMAP_APPLICATION_GROUP=roadmap-demo-application
 ```
 
 Keep the five existing profile variables exactly matching Actions. Empty/disabled
@@ -179,7 +179,12 @@ Install the reviewed operator files preserving their repository-relative paths
 under `/opt/roadmap-demo-operator`: `tooling/deploy/{reconcile-application,application-artifact,coordinate,staged}.mjs`,
 `tooling/deploy/extract-application.py` and `site/scripts/application-package.mjs`.
 Keep that directory root-owned and not writable by the editor. Install the two
-units from `tooling/deploy/systemd/`, then enable the timer. Systemd permits
+units from `tooling/deploy/systemd/`, create the stable system group
+`roadmap-demo-application`, and install
+`roadmap-demo-editor-application-group.conf` as an editor service drop-in. The
+editor's transient user receives read-only package access through that group;
+the approval timer therefore does not need to start a deliberately stopped
+editor merely to resolve its transient group. Then enable the timer. Systemd permits
 writes only to `/opt/roadmap-demo-applications` and private temporary storage; the
 GitHub App key is supplied through a systemd credential. Explicit `promote`
 remains available for recovery. When pausing for rollback/unpublish, stop the
