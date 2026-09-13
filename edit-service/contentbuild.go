@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+var errContentSuperseded = errors.New("content superseded by newer main")
+
 // Content is data. All subprocess entrypoints below come from the explicitly
 // approved package, never from the candidate checkout. No npm, Astro or Vite.
 func (g *GitHub) prepareContent(ctx context.Context, latest func(context.Context) (string, error), run func(context.Context, string, []string, []string) error) (result error) {
@@ -136,8 +138,7 @@ func (g *GitHub) prepareContent(ctx context.Context, latest func(context.Context
 	}
 	if current != head {
 		trace.outcome = "superseded"
-		g.localBuild.enqueue()
-		return errors.New("content superseded by newer main")
+		return errContentSuperseded
 	}
 	if err := ctx.Err(); err != nil {
 		return err

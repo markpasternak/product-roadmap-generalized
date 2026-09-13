@@ -16,24 +16,34 @@ const output = async values => {
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, Object.entries(values).map(([key, value]) => `${key}=${value}\n`).join(''));
 };
 
+export function artifactFallbackReason(error) {
+  const code = error?.message;
+  return ['UNTRUSTED_APPLICATION_ARTIFACT', 'PROFILE_MISMATCH', 'ARTIFACT_DOWNLOAD_FAILED', 'ARTIFACT_HTTP_401', 'ARTIFACT_HTTP_403', 'ARTIFACT_HTTP_404', 'ARTIFACT_HTTP_410', 'ARTIFACT_HTTP_429', 'ARTIFACT_HTTP_500', 'ARTIFACT_HTTP_502', 'ARTIFACT_HTTP_503'].includes(code)
+    ? code : 'ARTIFACT_UNAVAILABLE_OR_INVALID';
+}
+
 export async function selectPublication(config = configFromEnv()) {
   if (await config.latest() !== config.commit) throw new Error('SOURCE_SUPERSEDED');
   const { canvas, release } = await readCurrentRelease(config);
-  const state = { commit: config.commit, api: config.api, canvas, profile: config.profile, fullBuild: true, alreadyCurrent: false };
+  const state = { commit: config.commit, api: config.api, canvas, profile: config.profile, fullBuild: true, alreadyCurrent: false, fallbackReason: '' };
+  const fallback = error => {
+    state.fallbackReason = artifactFallbackReason(error);
+    console.log(`::warning::Application reuse unavailable (${state.fallbackReason}); selecting the full build.`);
+  };
   if (release?.applicationPackage && reusableApplication(release.applicationCommit, config.commit)) {
     let provenance;
     try {
       provenance = await findApplicationArtifact({ repo: config.repo, source: release.applicationCommit, digest: release.applicationPackage }, process.env.GH_TOKEN);
       // Profile is proven both by authenticated live descriptor and package.
       if (release.profile !== sha256(JSON.stringify(config.profile))) throw new Error('PROFILE_MISMATCH');
-    } catch { provenance = null; console.log('No compatible trusted application artifact; selecting the full build.'); }
+    } catch (error) { provenance = null; fallback(error); }
     if (provenance) {
       const application = { source: provenance.source, digest: provenance.digest };
       const intent = await preflight({ ...config, application, reuseApplication: true }, { observed: canvas });
       const directory = resolve('.publication-application');
       if (!intent.alreadyCurrent) {
         try { await downloadApplicationArtifact(provenance, process.env.GH_TOKEN, directory, config.profile); }
-        catch { provenance = null; console.log('Application artifact unavailable or invalid; selecting the full build.'); }
+        catch (error) { provenance = null; fallback(error); }
       }
       if (provenance) {
         Object.assign(state, { fullBuild: false, alreadyCurrent: intent.alreadyCurrent, application, directory,
@@ -43,7 +53,7 @@ export async function selectPublication(config = configFromEnv()) {
     }
   }
   await writePrivateJSON(statePath, state);
-  await output({ full_build: state.fullBuild, already_current: state.alreadyCurrent });
+  await output({ full_build: state.fullBuild, already_current: state.alreadyCurrent, fallback_reason: state.fallbackReason });
 }
 
 async function prepare() {
@@ -83,7 +93,7 @@ async function publish() {
   const intent = state.fullBuild ? await preflight(config, { observed: state.canvas }) : await read(intentPath);
   const candidate = state.alreadyCurrent ? undefined : await read(state.candidate);
   const proof = await publishStaged(config, intent, candidate, state.publicOutput);
-  await writePrivateJSON('deployment-verification.json', { ...proof, applicationCommit: state.application.source, applicationPackage: state.application.digest, publisher: 'actions', build: state.fullBuild ? 'full' : 'content' });
+  await writePrivateJSON('deployment-verification.json', { ...proof, applicationCommit: state.application.source, applicationPackage: state.application.digest, publisher: 'actions', build: state.fullBuild ? 'full' : 'content', fallbackReason: state.fallbackReason });
   console.log(`Deployment verified: ${proof.outcome} (${proof.verification})`);
 }
 

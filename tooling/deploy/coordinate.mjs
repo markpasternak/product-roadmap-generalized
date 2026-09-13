@@ -231,7 +231,7 @@ export function configFromEnv(env = process.env) {
   if (env.ROADMAP_PUBLICATION_PAUSED === 'true') fail('PUBLICATION_PAUSED');
   const config = { repo: env.GITHUB_REPOSITORY, commit: env.GITHUB_SHA, token: env.CANVAS_DROP_TOKEN,
     api: env.CANVAS_API_URL || `https://${env.CANVAS_HOST}/v1/canvases/${env.CANVAS_ID}`,
-    profile: { siteUrl: env.SITE_URL, base: env.SITE_BASE, audience: env.SITE_AUDIENCE, editApi: env.PUBLIC_EDIT_API, canvasBackend: env.PUBLIC_CANVAS_BACKEND },
+    profile: { siteUrl: env.SITE_URL, base: typeof env.SITE_BASE === 'string' && env.SITE_BASE ? `${env.SITE_BASE.replace(/\/$/, '')}/` : env.SITE_BASE, audience: env.SITE_AUDIENCE, editApi: env.PUBLIC_EDIT_API, canvasBackend: env.PUBLIC_CANVAS_BACKEND },
   };
   config.reuseApplication = env.ROADMAP_REUSE_APPLICATION === 'true';
   if (env.ROADMAP_APPLICATION_COMMIT || env.ROADMAP_APPLICATION_DIGEST)

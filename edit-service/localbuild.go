@@ -93,12 +93,19 @@ type localBuildWorker struct {
 }
 
 func newLocalBuildWorker(run func(context.Context)) *localBuildWorker {
-	return newReconcilingBuildWorker(func(ctx context.Context) error { run(ctx); return nil }, 0)
+	return newReconcilingBuildWorker(func(ctx context.Context) error { run(ctx); return nil }, 0, 2*time.Minute)
+}
+
+func (c localBuildConfig) jobTimeout() time.Duration {
+	if c.Mode == "content" {
+		return 17 * time.Minute // Preparation plus Canvas's bounded 15-minute session.
+	}
+	return 2 * time.Minute
 }
 
 // A notification is just a wake-up hint. Startup/timer runs cover missed
 // webhooks, and bounded backoff avoids hammering a broken remote dependency.
-func newReconcilingBuildWorker(run func(context.Context) error, interval time.Duration) *localBuildWorker {
+func newReconcilingBuildWorker(run func(context.Context) error, interval, timeout time.Duration) *localBuildWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	w := &localBuildWorker{wake: make(chan time.Time, 1), cancel: cancel, done: make(chan struct{})}
 	go func() {
@@ -122,9 +129,12 @@ func newReconcilingBuildWorker(run func(context.Context) error, interval time.Du
 			if ctx.Err() != nil {
 				return
 			}
-			job, cancelJob := context.WithTimeout(ctx, 2*time.Minute)
+			job, cancelJob := context.WithTimeout(ctx, timeout)
 			err := run(context.WithValue(job, buildQueuedAtKey{}, queued))
 			cancelJob()
+			if errors.Is(err, errContentSuperseded) {
+				w.enqueue()
+			}
 			if timer != nil {
 				if err == nil {
 					delay = interval
@@ -206,7 +216,7 @@ func (g *GitHub) startLocalBuild() {
 			log.Printf("local build completed, mode=%s, duration=%s", c.Mode, time.Since(started))
 		}
 		return result
-	}, interval)
+	}, interval, c.jobTimeout())
 }
 
 // Only one editor instance owns this state directory. A crash can leave a

@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { releaseIdentity, preflight, publishStaged, verify } from '../deploy/coordinate.mjs';
+import { releaseIdentity, preflight, publishStaged, verify, configFromEnv } from '../deploy/coordinate.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const commit = 'a'.repeat(40), application = { source: 'b'.repeat(40), digest: 'c'.repeat(64) };
@@ -108,4 +108,21 @@ test('full-build identity binding retains the token observed before compilation'
   const intent = await preflight(f.config, { observed });
   assert.equal(intent.expectedPublicationToken, 'before');
   assert.equal(intent.alreadyCurrent, false);
+});
+
+test('same-release winner during preparation is verified without a second activation', async t => {
+  const f = await fixture(t);
+  const intent = await preflight(f.config);
+  f.setCurrent();
+  const proof = await publishStaged(f.config, intent, { release, manifest: f.manifest }, f.root);
+  assert.equal(proof.outcome, 'already_current');
+  assert.equal(proof.verification, 'complete-manifest-and-snapshot');
+  assert.equal(f.finalized(), 0);
+});
+
+test('publisher normalizes the same non-root profile as the application compiler', () => {
+  const env = { GITHUB_REPOSITORY: identity.repo, GITHUB_SHA: commit, CANVAS_DROP_TOKEN: 'fixture', CANVAS_API_URL: 'https://example.test/v1/canvases/test', SITE_URL: profile.siteUrl, SITE_BASE: '/roadmap', SITE_AUDIENCE: 'internal', PUBLIC_EDIT_API: profile.editApi, PUBLIC_CANVAS_BACKEND: 'true' };
+  assert.equal(configFromEnv(env).profile.base, '/roadmap/');
+  assert.equal(releaseIdentity(configFromEnv(env)), releaseIdentity(configFromEnv({ ...env, SITE_BASE: '/roadmap/' })));
+  assert.throws(() => configFromEnv({ ...env, SITE_BASE: undefined }), /INVALID_RELEASE_INPUT/);
 });

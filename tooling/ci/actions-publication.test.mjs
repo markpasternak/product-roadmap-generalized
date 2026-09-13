@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { selectPublication } from '../deploy/actions-publication.mjs';
+import { selectPublication, artifactFallbackReason } from '../deploy/actions-publication.mjs';
 import { releaseIdentity } from '../deploy/coordinate.mjs';
 
 test('Actions selects reuse only for an exact trusted live application and preserves the pre-build token on fallback', async t => {
@@ -53,6 +53,14 @@ test('Actions selects reuse only for an exact trusted live application and prese
     assert.equal(state.fullBuild,scenario!=='already-current');
     assert.equal(state.alreadyCurrent,scenario==='already-current');
     assert.equal(state.canvas.publicationToken,'captured-before-work');
+    const expectedReason = { 'missing-artifact': 'UNTRUSTED_APPLICATION_ARTIFACT', 'profile-mismatch': 'PROFILE_MISMATCH', 'download-failed': 'ARTIFACT_HTTP_410' }[scenario] ?? '';
+    assert.equal(state.fallbackReason, expectedReason);
     assert.equal(downloads,scenario==='download-failed'?1:0);
   }
+});
+
+test('fallback diagnostics never expose arbitrary exception text', () => {
+  assert.equal(artifactFallbackReason(new Error('ARTIFACT_HTTP_404')), 'ARTIFACT_HTTP_404');
+  assert.equal(artifactFallbackReason(new Error('SECRET_TOKEN_WITH_UPPERCASE')), 'ARTIFACT_UNAVAILABLE_OR_INVALID');
+  assert.equal(artifactFallbackReason(new TypeError('secret https://signed.example/?token=private')), 'ARTIFACT_UNAVAILABLE_OR_INVALID');
 });

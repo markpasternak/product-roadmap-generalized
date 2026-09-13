@@ -32,7 +32,6 @@ func TestContentWorkerPreparation(t *testing.T) {
 			cfg.Mode = "shadow"
 			g.cfg.LocalBuild = cfg
 			g.cfg.CanvasDropToken = "never-pass-to-renderer"
-			g.localBuild = &localBuildWorker{wake: make(chan time.Time, 1), done: make(chan struct{})}
 			if scenario == "untrusted" {
 				os.WriteFile(filepath.Join(appRoot, "private/renderer.mjs"), []byte("tampered"), 0600)
 			}
@@ -88,8 +87,8 @@ func TestContentWorkerPreparation(t *testing.T) {
 			if (scenario == "untrusted" || scenario == "code-change") && runs != 0 {
 				t.Fatal("executed before trust/eligibility checks")
 			}
-			if scenario == "superseded" && len(g.localBuild.wake) != 1 {
-				t.Fatal("new main not queued")
+			if scenario == "superseded" && !errors.Is(err, errContentSuperseded) {
+				t.Fatal("supersession not returned to the worker")
 			}
 			entries, _ := os.ReadDir(filepath.Join(g.cfg.StateDir, "local-build"))
 			for _, entry := range entries {
@@ -103,7 +102,7 @@ func TestContentWorkerPreparation(t *testing.T) {
 
 func TestReconciliationStartupTimerAndCancellation(t *testing.T) {
 	runs := make(chan struct{}, 10)
-	w := newReconcilingBuildWorker(func(context.Context) error { runs <- struct{}{}; return nil }, 20*time.Millisecond)
+	w := newReconcilingBuildWorker(func(context.Context) error { runs <- struct{}{}; return nil }, 20*time.Millisecond, time.Second)
 	for i := 0; i < 2; i++ {
 		select {
 		case <-runs:
@@ -116,6 +115,45 @@ func TestReconciliationStartupTimerAndCancellation(t *testing.T) {
 	case <-w.done:
 	default:
 		t.Fatal("worker not closed")
+	}
+}
+
+func TestContentWorkerOwnsRetryAndDeadline(t *testing.T) {
+	for _, mode := range []string{"content", "shadow", "deploy", "prepare"} {
+		want := 2 * time.Minute
+		if mode == "content" {
+			want = 17 * time.Minute
+		}
+		if got := (localBuildConfig{Mode: mode}).jobTimeout(); got != want {
+			t.Fatalf("%s timeout %s, want %s", mode, got, want)
+		}
+	}
+	runs := make(chan time.Duration, 2)
+	calls := 0
+	w := newReconcilingBuildWorker(func(ctx context.Context) error {
+		calls++
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			runs <- 0
+		} else {
+			runs <- time.Until(deadline)
+		}
+		if calls == 1 {
+			return &localBuildFailure{cause: errContentSuperseded}
+		}
+		return nil
+	}, time.Hour, 17*time.Minute)
+	defer w.close()
+	// Startup can requeue before the constructor's caller stores its pointer.
+	for i := 0; i < 2; i++ {
+		select {
+		case remaining := <-runs:
+			if remaining < 16*time.Minute || remaining > 17*time.Minute {
+				t.Fatalf("deadline %s", remaining)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("superseded startup not retried immediately")
+		}
 	}
 }
 
