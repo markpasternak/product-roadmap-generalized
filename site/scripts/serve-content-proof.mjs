@@ -15,6 +15,8 @@ if (!candidates.length) throw new Error('Pass one or more prepared candidate dir
 let selected = 0;
 const token = randomUUID();
 const editorMock = process.env.CONTENT_PROOF_EDITOR === '1';
+const base = process.env.CONTENT_PROOF_BASE ?? '/';
+if (!/^\/(?:[a-zA-Z0-9_-]+\/)*$/.test(base)) throw new Error('Invalid proof base');
 let draft = { revision: 0, data: null };
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.xml': 'application/xml', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.pdf': 'application/pdf', '.mp4': 'video/mp4' };
 const server = createServer(async (req, res) => {
@@ -53,7 +55,8 @@ const server = createServer(async (req, res) => {
     }
     if (!['GET', 'HEAD'].includes(req.method)) { res.writeHead(405).end(); return; }
     const root = candidates[selected].root;
-    const path = resolve(root, '.' + decodeURIComponent(url.pathname));
+    if (!url.pathname.startsWith(base)) { res.writeHead(404).end(); return; }
+    const path = resolve(root, '.' + decodeURIComponent(url.pathname.slice(base.length - 1)));
     if (relative(root, path).startsWith('..')) { res.writeHead(404).end(); return; }
     let file = await realpath(path);
     if ((await stat(file)).isDirectory()) file = await realpath(join(file, 'index.html'));

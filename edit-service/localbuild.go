@@ -25,6 +25,7 @@ import (
 type localBuildConfig struct {
 	Mode, BaseSHA, DependenciesDir string
 	ApplicationPointer             string
+	RaceBarrier                    bool
 	HasToken                       bool
 	CanvasAPIURL                   string
 	Profile                        buildProfile

@@ -32,6 +32,7 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		Mode: getenv("ROADMAP_LOCAL_BUILD_MODE"), HasToken: getenv("CANVAS_DROP_TOKEN") != "",
 		CanvasAPIURL:       getenv("CANVAS_API_URL"),
 		ApplicationPointer: getenv("ROADMAP_APPLICATION_POINTER"),
+		RaceBarrier:        getenv("ROADMAP_CONTENT_RACE_BARRIER") == "true",
 		BaseSHA:            getenv("ROADMAP_LOCAL_BUILD_BASE_SHA"), DependenciesDir: getenv("ROADMAP_LOCAL_BUILD_DEPENDENCIES"),
 		Profile: buildProfile{SiteURL: getenv("SITE_URL"), Base: getenv("SITE_BASE"), Audience: getenv("SITE_AUDIENCE"), EditAPI: getenv("PUBLIC_EDIT_API"), CanvasBackend: getenv("PUBLIC_CANVAS_BACKEND")},
 	}

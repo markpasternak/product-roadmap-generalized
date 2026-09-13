@@ -93,6 +93,11 @@ main; failures back off up to five minutes, while new push hints can wake it soo
 
 ## Live acceptance with Mark
 
+Browser verification uses the browser automation MCP, including its supported
+network/navigation inspection. The repeatable procedure is in
+[the browser release checks](../../docs/reviews/content-publication-browser-checks.md).
+Do not substitute a development server or a separate browser-driver script.
+
 - UI horizon/wording edit: identify local content publication, identical application
   hashes, exact live source, and a second tab updating without document reload.
 - Outside-UI edit: webhook-driven local content publication. Then disable the local
@@ -108,6 +113,18 @@ main; failures back off up to five minutes, while new push hints can wake it soo
   Required median improvement is at least 50%; below ten seconds is a stretch goal.
 
 ## Pause, rollback and limits
+
+For the controlled local race only, set `ROADMAP_CONTENT_RACE_BARRIER=true` in
+protected SeenThis service configuration and restart that service. In its private
+`local-build` state directory, create an empty mode-0600 file named
+`race-arm-<exact-target-commit>` owned by the service account. After preparation,
+the worker consumes it and creates `race-waiting-<exact-target-commit>`. Make the
+independent newer Git edit, then remove that waiting file to release the attempt.
+The next step rechecks authoritative main before entering staged publication.
+Timeout after 90 seconds or service shutdown aborts that attempt; the arm is
+one-shot and ordinary reconciliation can retry later. A stale waiting file fails
+closed when rearmed. Disable the flag and remove only the test's exact files
+afterward. There is no HTTP control endpoint and no content-supplied path.
 
 Before manual rollback/unpublish, disable the server worker and set the repository
 variable `ROADMAP_PUBLICATION_PAUSED=true`; cancel active deployment runs and wait

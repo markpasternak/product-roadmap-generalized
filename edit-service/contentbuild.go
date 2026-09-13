@@ -131,6 +131,12 @@ func (g *GitHub) prepareContent(ctx context.Context, latest func(context.Context
 	if version.Commit != head || version.ApplicationCommit != app.Source || version.ApplicationPackage != app.Digest {
 		return errors.New("candidate identity mismatch")
 	}
+	if c.Mode == "content" && c.RaceBarrier {
+		setStage("operator race barrier")
+		if err := waitContentRaceBarrier(ctx, root, head, 90*time.Second); err != nil {
+			return err
+		}
+	}
 	setStage("final freshness check")
 	current, err := latest(ctx)
 	if err != nil {
