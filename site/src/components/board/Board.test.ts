@@ -64,7 +64,8 @@ let wrappers: VueWrapper[] = [];
 async function mountBoard(items: ItemVM[] = [item()]) {
   const w = mount(Board, {
     props: { items },
-    global: { stubs: { transition: false, ResourceEditor: { template: '<div><slot /></div>' } } },
+    attachTo: document.body,
+    global: { stubs: { transition: false, teleport: true, ResourceEditor: { template: '<div><slot /></div>' } } },
   });
   wrappers.push(w);
   await flushPromises();
@@ -1026,10 +1027,11 @@ describe('Board — multi-select horizon filter', () => {
     expect(nowChip.attributes('aria-pressed')).toBe('true');
 
     await nowChip.setValue(false);
+    await flushPromises();
 
     const vm = w.vm as unknown as HorizonVM;
     expect(vm.horizons).not.toContain('Now');
-    expect(nowChip.attributes('aria-pressed')).toBe('false');
+    expect(w.get('[data-test="horizon-chip"][data-horizon="Now"]').attributes('aria-pressed')).toBe('false');
     expect(w.get('[aria-label="Filters"]').find('.board-filter-count').exists()).toBe(false);
     await w.get('[aria-label="Close views"]').trigger('click');
     await w.get('[aria-label="Filters"]').trigger('click');
@@ -2108,6 +2110,23 @@ it('resets hidden horizons independently from active filters', async () => {
   expect(vm.horizons).toEqual(['Now', 'Next', 'Later']);
   expect(vm.filters.owner).toBe('Alice');
   expect(w.text()).toContain('Existing item');
+});
+
+it.each(['board', 'timeline'])('orders horizon choices with the %s lane setup and groups view settings', async layout => {
+  window.history.replaceState(null, '', `/?layout=${layout}`);
+  const w = await mountBoard();
+  await w.get('[aria-label="View options and saved views"]').trigger('click');
+  const order = () => w.findAll('.view-horizons input').map(input => input.attributes('data-horizon'));
+  const canonical = ['Candidates', 'Now', 'Next', 'Later', 'Completed'];
+  expect(order()).toEqual(canonical);
+  expect(w.get('.view-layout legend').text()).toBe('Layout');
+  expect(w.find('.view-card-details').exists()).toBe(layout === 'board');
+  await w.get('.lane-order-setting input').setValue(true);
+  expect(order()).toEqual(layout === 'board' ? [...canonical].reverse() : canonical);
+  if (layout === 'board') {
+    await w.get('select[name="group"]').setValue('product');
+    expect(order()).toEqual(canonical);
+  }
 });
 
 it('offers visible horizons under View in timeline mode too', async () => {

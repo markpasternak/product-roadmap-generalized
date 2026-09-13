@@ -32,6 +32,7 @@
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
     scroll-behavior: smooth;
+    scrollbar-gutter: stable;
   }
   * { border-color: var(--color-border-subtle-default); }
 }

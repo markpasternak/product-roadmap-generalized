@@ -85,7 +85,7 @@ const ItemEditor = defineAsyncComponent(loadItemEditor);
 // Lazy for the same reason as ShareDialog/ItemEditor: this pulls in the AI client and is
 // only ever needed once an editor with AI available opens it.
 const NewWithAiDialog = defineAsyncComponent(() => import('../edit/NewWithAiDialog.vue'));
-import { PhX, PhCheck, PhPlus, PhSparkle } from '@phosphor-icons/vue';
+import { PhX, PhCheck, PhPlus, PhSparkle, PhFunnel } from '@phosphor-icons/vue';
 import { HORIZONS, PRODUCTS } from '../../lib/schema';
 import {
   horizonDot,
@@ -1396,6 +1396,13 @@ const stats = computed(() => {
   }));
 });
 
+// Only horizon columns reverse the horizon sequence; other lane groupings do not.
+const viewHorizonOptions = computed(() =>
+  filters.layout !== 'timeline' && filters.group === 'horizon' && reverseLaneOrder.value
+    ? [...stats.value].reverse()
+    : stats.value,
+);
+
 const searchContext = computed(() => createSearchContext(itemsForBoard.value, filters.q));
 const shown = computed(() => sortItems(filterItems(itemsForBoard.value, filters, searchContext.value), sort.value));
 
@@ -2142,6 +2149,7 @@ onUnmounted(() => {
   document.removeEventListener('fullscreenchange', onFsChange);
   document.removeEventListener('keydown', onSheetKey);
   document.removeEventListener('keydown', onGlobalKey);
+  releaseSheetFocus?.();
   window.removeEventListener('beforeunload', onBeforeUnload);
   stopVersionWatch?.();
   laneObserver?.disconnect();
@@ -2378,12 +2386,12 @@ const editActionBtn =
             </div>
             <button
               type="button"
-              :class="editActionBtn"
+              class="roadmap-action roadmap-settings-trigger"
               aria-label="Filters"
               :aria-expanded="sheetOpen"
               @click="toggleFilters"
             >
-              Filter
+              <PhFunnel :size="16" aria-hidden="true" />Filter
               <span v-if="toolbarFilterCount" class="board-filter-count">{{ toolbarFilterCount }}</span>
             </button>
           <SavedViews
@@ -2407,33 +2415,37 @@ const editActionBtn =
           >
             <template #settings>
               <div class="compact-view-settings">
-                <template v-if="filters.layout !== 'timeline'">
-                  <label>Group by<Select v-model="filters.group" :options="groupOptions" name="group" aria-label="Group by" /></label>
-                  <label>Sort by<Select v-model="sort" :options="sortOptions" name="sort" aria-label="Sort" /></label>
-                </template>
+                <fieldset class="view-layout">
+                  <legend>Layout</legend>
+                  <div v-if="filters.layout !== 'timeline'" class="view-layout-selects">
+                    <label>Group by<Select v-model="filters.group" :options="groupOptions" name="group" aria-label="Group by" /></label>
+                    <label>Sort by<Select v-model="sort" :options="sortOptions" name="sort" aria-label="Sort" /></label>
+                  </div>
+                  <label class="lane-order-setting">
+                    <input v-model="reverseLaneOrder" type="checkbox" />
+                    <span>Reverse lane order</span>
+                  </label>
+                </fieldset>
                 <fieldset class="view-horizons">
                   <legend>Show horizons</legend>
-                  <label v-for="s in stats" :key="s.key">
+                  <label v-for="s in viewHorizonOptions" :key="s.key">
                     <input type="checkbox" :checked="s.active" data-test="horizon-chip" :data-horizon="s.key" :aria-pressed="s.active" @change="toggleHorizon(s.key)" />
                     <span>{{ s.label }}</span><small>{{ s.value }}</small>
                   </label>
                 </fieldset>
-                <label class="lane-order-setting">
-                  <input v-model="reverseLaneOrder" type="checkbox" aria-describedby="lane-order-hint" />
-                  <span>Reverse lane order</span>
-                </label>
-                <label class="lane-order-setting">
-                  <input v-model="showCoverImages" type="checkbox" />
-                  <span>Show cover images</span>
-                </label>
-                <p id="lane-order-hint" class="lane-order-hint">Stored in this browser. Presentation links and share snapshots copy these settings.</p>
-                <template v-if="!IS_PUBLIC && filters.layout !== 'timeline'">
+                <fieldset v-if="filters.layout !== 'timeline'" class="view-card-details">
+                  <legend>Card details</legend>
                   <label class="lane-order-setting">
+                    <input v-model="showCoverImages" type="checkbox" />
+                    <span>Show cover images</span>
+                  </label>
+                  <label v-if="!IS_PUBLIC" class="lane-order-setting">
                     <input v-model="showCardLabels" type="checkbox" aria-label="Show labels" aria-describedby="card-labels-hint" />
                     <span>Show labels</span>
                   </label>
-                  <p id="card-labels-hint" class="lane-order-hint">Themes and tags on cards. Internal view only; hidden in presentations and shares.</p>
-                </template>
+                  <p v-if="!IS_PUBLIC" id="card-labels-hint" class="lane-order-hint">Themes and tags. Internal only; hidden in presentations and shares.</p>
+                </fieldset>
+                <p class="lane-order-hint">Saved in this browser. Layout and covers carry into shared views.</p>
               </div>
             </template>
           </SavedViews>
@@ -2722,21 +2734,19 @@ const editActionBtn =
     </div>
 
     <!-- Filters stay out of the board until requested, at every viewport size. -->
-    <Transition name="sheet">
-      <div v-if="sheetOpen" class="fixed inset-0 z-50">
-        <div class="sheet-scrim bg-surface-transparent-black-50 absolute inset-0" @click="sheetOpen = false" />
+    <Transition name="settings-sheet">
+      <div v-if="sheetOpen" class="roadmap-settings-overlay">
+        <div class="roadmap-settings-scrim" @click="sheetOpen = false" />
         <div
           ref="sheetPanel"
           role="dialog"
           aria-modal="true"
           aria-label="Filters"
           tabindex="-1"
-          class="sheet-panel bg-background absolute top-0 right-0 flex h-full w-[360px] max-w-full flex-col shadow-xl outline-none"
+          class="roadmap-settings-panel"
         >
-          <div class="border-border-subtle-default flex items-center justify-between border-b px-5 py-3">
-            <span class="text-single-sm-medium text-text-subtle-default font-semibold tracking-wide uppercase"
-              >Filters</span
-            >
+          <div class="roadmap-settings-header">
+            <h2>Filters</h2>
             <div class="flex items-center gap-2">
               <button
                 v-if="toolbarFilterCount"
@@ -2748,7 +2758,7 @@ const editActionBtn =
               </button>
               <button
                 type="button"
-                class="text-icons-subtle-default hover:text-text-primary-default grid size-10 place-items-center"
+                class="roadmap-settings-close"
                 aria-label="Close filters"
                 @click="sheetOpen = false"
               >
@@ -2756,7 +2766,7 @@ const editActionBtn =
               </button>
             </div>
           </div>
-          <div class="flex-1 overflow-y-auto p-5">
+          <div class="roadmap-settings-body">
             <FiltersSidebar
               :filters="filters"
               :owners="availableOwners"
@@ -2768,10 +2778,9 @@ const editActionBtn =
               @clear="clearAdditionalFilters"
             />
           </div>
-          <div class="border-border-subtle-default border-t p-4">
+          <div class="roadmap-settings-footer">
             <button
               type="button"
-              class="bg-foreground text-text-primary-inverted-default text-single-base-medium w-full rounded-lg py-2.5"
               @click="sheetOpen = false"
             >
               Show {{ focused.length }} item{{ focused.length === 1 ? '' : 's' }}
@@ -3322,32 +3331,6 @@ const editActionBtn =
 .board-presentation :deep(.roadmap-card:not(.roadmap-card-with-cover)) { min-height: 132px; }
 @media (prefers-reduced-transparency: reduce) {
   .board-presentation [data-test='exit-presentation'] { background: var(--color-card); -webkit-backdrop-filter:none; backdrop-filter:none; }
-}
-
-.sheet-panel { background: var(--color-card); border-left: 1px solid var(--roadmap-glass-border); }
-.sheet-enter-active,
-.sheet-leave-active {
-  transition: opacity 0.2s ease;
-}
-.sheet-enter-active .sheet-panel,
-.sheet-leave-active .sheet-panel {
-  transition: transform 0.25s ease;
-}
-.sheet-enter-from,
-.sheet-leave-to {
-  opacity: 0;
-}
-.sheet-enter-from .sheet-panel,
-.sheet-leave-to .sheet-panel {
-  transform: translateX(100%);
-}
-@media (prefers-reduced-motion: reduce) {
-  .sheet-enter-active,
-  .sheet-leave-active,
-  .sheet-enter-active .sheet-panel,
-  .sheet-leave-active .sheet-panel {
-    transition: none;
-  }
 }
 
 /* Fix #10: a quiet, quick entrance for the corner sync toast — a plain `v-if` (not a
