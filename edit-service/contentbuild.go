@@ -75,7 +75,7 @@ func (g *GitHub) prepareContent(ctx context.Context, latest func(context.Context
 		if err != nil {
 			return err
 		}
-		env := append(c.Profile.environment(head), "GITHUB_REPOSITORY="+g.cfg.Repo, "GH_TOKEN="+token,
+		env := append(c.coordinatorEnvironment(head), "GITHUB_REPOSITORY="+g.cfg.Repo, "GH_TOKEN="+token,
 			"CANVAS_API_URL="+c.CanvasAPIURL, "CANVAS_DROP_TOKEN="+g.cfg.CanvasDropToken,
 			"ROADMAP_APPLICATION_COMMIT="+app.Source, "ROADMAP_APPLICATION_DIGEST="+app.Digest,
 			"ROADMAP_REUSE_APPLICATION=true", "ROADMAP_UPLOAD_CONCURRENCY="+c.UploadConcurrency, "ROADMAP_CONTENT_OUTPUT="+filepath.Join(candidate, "public"))

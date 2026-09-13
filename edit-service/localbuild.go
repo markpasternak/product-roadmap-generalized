@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +27,7 @@ type localBuildConfig struct {
 	Mode, BaseSHA, DependenciesDir string
 	ApplicationPointer             string
 	UploadConcurrency              string
+	PublicationPaused              bool
 	RaceBarrier                    bool
 	HasToken                       bool
 	CanvasAPIURL                   string
@@ -84,6 +86,10 @@ func (p buildProfile) environment(sha string) []string {
 		"GITHUB_SHA=" + sha, "SITE_URL=" + p.SiteURL, "SITE_BASE=" + p.Base,
 		"SITE_AUDIENCE=" + p.Audience, "PUBLIC_EDIT_API=" + p.EditAPI, "PUBLIC_CANVAS_BACKEND=" + p.CanvasBackend,
 	}
+}
+
+func (c localBuildConfig) coordinatorEnvironment(sha string) []string {
+	return append(c.Profile.environment(sha), "ROADMAP_PUBLICATION_PAUSED="+strconv.FormatBool(c.PublicationPaused))
 }
 
 // The slot represents "look at latest main", not a FIFO of old commits. Even a
@@ -511,7 +517,7 @@ func (g *GitHub) coordinateBuild(ctx context.Context, root, head, action, intent
 	}
 	// Only this reviewed helper gets credentials. Build/validation commands and
 	// Git children continue to use their separate credential-stripped environments.
-	env := append(g.cfg.LocalBuild.Profile.environment(head),
+	env := append(g.cfg.LocalBuild.coordinatorEnvironment(head),
 		"GITHUB_REPOSITORY="+g.cfg.Repo, "GH_TOKEN="+token,
 		"CANVAS_API_URL="+g.cfg.LocalBuild.CanvasAPIURL, "CANVAS_DROP_TOKEN="+g.cfg.CanvasDropToken)
 	return runBuildCommand(ctx, root, env, []string{"node", "tooling/deploy/coordinate.mjs", action, intent, archive, report})

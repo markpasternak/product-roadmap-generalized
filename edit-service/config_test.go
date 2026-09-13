@@ -8,12 +8,13 @@ func TestLoadConfig(t *testing.T) {
 		"GITHUB_APP_INSTALLATION_ID": "144599065", "GITHUB_APP_PRIVATE_KEY_FILE": "deploy/github-app.pem",
 		"REPO": "markpasternak/product-roadmap-generalized", "ALLOWED_ORIGIN": "https://x", "API_ORIGIN": "https://y",
 		"SESSION_SECRET": "s", "LISTEN_ADDR": "127.0.0.1:8790",
+		"ROADMAP_PUBLICATION_PAUSED": "true",
 	}
 	c, err := LoadConfig(func(k string) string { return env[k] })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.AppID != "4223213" || c.Repo != "markpasternak/product-roadmap-generalized" || c.ListenAddr != "127.0.0.1:8790" {
+	if c.AppID != "4223213" || c.Repo != "markpasternak/product-roadmap-generalized" || c.ListenAddr != "127.0.0.1:8790" || !c.LocalBuild.PublicationPaused {
 		t.Fatalf("bad config: %+v", c)
 	}
 	if _, err := LoadConfig(func(string) string { return "" }); err == nil {
