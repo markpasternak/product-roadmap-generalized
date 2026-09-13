@@ -14,21 +14,24 @@ interface Props {
   ogType?: 'website' | 'article';
   /** Path (relative to base) of a page-specific OG image; defaults to the brand card. */
   ogImage?: string;
+  canonicalPath?: string;
+  publicationTemplate?: boolean;
 }
-const { title, active, description, ogType = 'website', ogImage } = Astro.props;
+const { title, active, description, ogType = 'website', ogImage, canonicalPath, publicationTemplate = false } = Astro.props;
 const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/`;
 const buildGlobal = globalThis as typeof globalThis & { __ROADMAP_BUILD_TIME__?: string };
 const builtIso = buildGlobal.__ROADMAP_BUILD_TIME__ ??= new Date().toISOString();
 const builtAt = new Date(builtIso);
 const built = formatDateTime(builtAt, { timeZone: 'UTC', suffix: 'UTC' });
 // Absolute URLs for canonical/OG — Astro.site comes from SITE_URL in astro.config.
-const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const canonical = new URL(canonicalPath ?? Astro.url.pathname, Astro.site).href;
 const ogImageUrl = new URL(ogImage ?? `${base}brand/og-card.png`, Astro.site).href;
 ---
 
 <html lang="en" data-theme="light">
   <head>
     <meta charset="utf-8" />
+    {publicationTemplate && <Fragment set:html="<!--ROADMAP_STYLES-->" />}
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     {description && <meta name="description" content={description} />}

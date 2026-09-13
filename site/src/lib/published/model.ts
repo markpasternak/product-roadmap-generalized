@@ -92,3 +92,7 @@ export function buildPublishedModel(source: ContentSource, options: ModelOptions
 }
 
 export type PublishedModel = ReturnType<typeof buildPublishedModel>;
+export type PublishedContent = PublishedModel & {
+  audience: 'internal' | 'public';
+  documentHtml: Record<string, { html: string; headings: { depth: number; slug: string; text: string }[] }>;
+};

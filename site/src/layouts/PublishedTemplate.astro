@@ -1,0 +1,8 @@
+---
+import Base from './Base.astro';
+---
+<Base title="__ROADMAP_TITLE__" description="__ROADMAP_DESCRIPTION__" active="roadmap" canonicalPath="/__ROADMAP_PATH__" publicationTemplate>
+  <div id="published-root"><!--ROADMAP_CONTENT--></div>
+  <script id="published-seed" type="application/json" is:inline set:html="__ROADMAP_SEED__" />
+  <script type="module" src="__ROADMAP_CLIENT__" is:inline></script>
+</Base>
