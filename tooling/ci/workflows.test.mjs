@@ -74,11 +74,9 @@ test('deployment preflights before building and owns checks for every new artifa
   assert.equal(content.env?.CANVAS_DROP_TOKEN, undefined);
   const artifact = steps.find(step => step.name === 'Store canonical private application package');
   assert.equal(artifact.if, "steps.coordination.outputs.full_build == 'true'");
-  const compiledContent = checks.jobs.build.steps.find(step => step.name === 'Verify compiled content publication contract');
+  const compiledContent = checks.jobs.build.steps.find(step => step.name === 'Test compiled internal and public content output');
   assert.equal(compiledContent.if, "steps.changes.outputs.build_required != 'false'");
-  assert.match(compiledContent.run, /CONTENT_TEST_APPLICATION/);
-  assert.match(compiledContent.run, /CONTENT_TEST_PACKAGE_DIGEST/);
-  assert.match(compiledContent.run, /content-output\.integration\.test\.mjs/);
+  assert.equal(compiledContent.run, 'node site/scripts/test-content-output.mjs');
   assert.equal(artifact.with['include-hidden-files'], true);
   assert.ok(steps.indexOf(artifact) > steps.findIndex(step => step.run === 'node tooling/ci/changes.mjs wait'));
   assert.ok(steps.indexOf(artifact) < upload);

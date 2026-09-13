@@ -10,9 +10,9 @@ import { EMPTY_ITEM_HISTORY } from "./itemHistory";
 const body =
   "# Example\n\nLead-in prose.\n\n## One-liner\nA **formatted** summary.\n\n## Open questions\nFirst question.\n\n## Who it's for\nCreative teams.\n\n## Custom section\n![Diagram](https://example.com/diagram.png)\n\n## Custom section\nSecond custom section.\n\n## Links\nMore context.\n\n- Reference: https://example.com\n\n## Resources\nAdditional resource prose.\n\n## Empty\n\n## Placeholder\nTo fill in.\n";
 const data = itemSchema.parse({
-  id: "CM-057",
+  id: "MUSIC-057",
   title: "Example",
-  product: "Creative Manager",
+  product: "Music App",
   horizon: "Later",
   stage: "Discovery",
   owner: "PM",
@@ -22,7 +22,7 @@ const source = {
   items: [
     {
       id: data.id,
-      filePath: "content/items/creative-manager/CM-057-example.md",
+      filePath: "content/items/music-app/MUSIC-057-example.md",
       data,
       body,
     },
