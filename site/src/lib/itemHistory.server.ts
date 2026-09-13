@@ -10,8 +10,10 @@ import { EMPTY_ITEM_HISTORY, normalizeItemHistory, type ItemHistory } from './it
 export function historyFromLog(output: string): ItemHistory {
   const records = output.split('\x1e').filter(Boolean).flatMap(block => {
     const [header, ...patch] = block.trim().split('\n');
-    const [sha, date, by, subject] = header.split('\x1f');
-    if (!sha || !date) return [];
+    const [sha, rawDate, by, subject] = header.split('\x1f');
+    if (!sha || !rawDate) return [];
+    // Git versions emit UTC as either +00:00 or Z, including in restored caches.
+    const date = rawDate.replace(/\+00:00$/, 'Z');
     const changes = patch.filter(line => /^[+-]/.test(line) && !/^(\+\+\+|---)/.test(line));
     const meaningful = changes.some(line => !/^[+-]updated:\s*\d{4}-\d{2}-\d{2}\s*$/.test(line));
     return [{ sha, date, by, subject, meaningful }];

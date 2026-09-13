@@ -16,7 +16,8 @@ const manifest = await verifyApplicationPackage(app, { digest: packageDigest });
 const git = args => execFileSync('git', args, { cwd: checkout, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const commit = git(['rev-parse', 'HEAD']);
 if (!/^[a-f0-9]{40}$/.test(commit) || git(['status', '--porcelain', '--untracked-files=all', '--', 'content'])) throw new Error('Content checkout is not a clean immutable revision');
-const committedAt = git(['show', '-s', '--format=%cI', commit]);
+// Keep release bytes identical across Git versions' equivalent UTC spellings.
+const committedAt = git(['show', '-s', '--format=%cI', commit]).replace(/\+00:00$/, 'Z');
 const verified = performance.now();
 const renderer = await import(pathToFileURL(join(app, 'private/renderer.mjs')).href);
 const model = await renderer.prepareModel(checkout, manifest.base, manifest.audience);

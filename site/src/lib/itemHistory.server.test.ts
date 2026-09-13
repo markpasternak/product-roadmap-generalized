@@ -34,3 +34,13 @@ it('includes content history before renames and excludes timestamp-only maintena
   expect(history.updatedAt).toBe('2026-08-04T12:00:00Z');
   expect(history.activityDates).toEqual(['2026-08-04T12:00:00Z', '2026-07-01T12:00:00Z']);
 });
+
+it('produces identical history bytes for UTC dates from different Git versions and caches', () => {
+  const log = '\x1eupdated\x1f2026-08-04T12:00:00Z\x1fAlice\x1fImprove\n-Old\n+New\n' +
+    '\x1ecreated\x1f2026-07-01T14:00:00+02:00\x1fBob\x1fCreate\n+Title';
+  const current = historyFromLog(log);
+  const cached = historyFromLog(log.replace('12:00:00Z', '12:00:00+00:00'));
+  expect(JSON.stringify(cached)).toBe(JSON.stringify(current));
+  expect(current.createdAt).toBe('2026-07-01T14:00:00+02:00');
+  expect(current.updatedAt).toBe('2026-08-04T12:00:00Z');
+});
