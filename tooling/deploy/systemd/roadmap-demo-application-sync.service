@@ -9,7 +9,7 @@ ExecStart=/usr/bin/node /opt/roadmap-demo-operator/tooling/deploy/reconcile-appl
 EnvironmentFile=/etc/roadmap-demo-editor.env
 LoadCredential=app.pem:/etc/roadmap-demo-editor-app.pem
 Environment=GITHUB_APP_PRIVATE_KEY_FILE=%d/app.pem
-Environment=ROADMAP_APPLICATION_GROUP=roadmap-demo-editor
+Environment=ROADMAP_APPLICATION_GROUP=roadmap-demo-application
 User=root
 UMask=0077
 NoNewPrivileges=yes

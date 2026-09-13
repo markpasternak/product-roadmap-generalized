@@ -39,6 +39,16 @@ test('promotes only after independent CI authorization and preserves the old poi
   assert.equal((await reconcileApplication(f.args)).outcome, 'already_approved');
   assert.equal(f.downloads(), 1);
 });
+test('first approval bootstraps a missing pointer', async t => {
+  const f = await fixture(t);
+  await rm(f.pointer);
+  f.args.activate = async (path, before, after) => {
+    assert.deepEqual(before, {});
+    await writeFile(path, JSON.stringify(after));
+  };
+  assert.equal((await reconcileApplication(f.args)).outcome, 'promoted');
+  assert.equal((await f.read()).digest, release.applicationPackage);
+});
 test('failed authorization or download never replaces the pointer', async t => {
   for (const step of ['find', 'download']) {
     const f = await fixture(t); f.args[step] = async () => { throw Error('UNTRUSTED_APPLICATION_ARTIFACT'); };
