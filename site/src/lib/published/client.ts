@@ -123,7 +123,7 @@ export function watchPublishedContent(options: {
   const status = (value: RefreshStatus) => { if (!stopped) options.status(win.navigator.onLine === false ? 'offline' : value); };
   const schedule = () => {
     clearTimeout(timer);
-    if (!stopped && available()) timer = setTimeout(check, Math.min(3000 * 2 ** failures, 30000));
+    if (!stopped && available()) timer = setTimeout(check, failures ? Math.min(3000 * 2 ** failures, 30000) : 1000);
   };
   function flush() {
     if (stopped || !pending || inFlight || !available()) return;

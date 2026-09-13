@@ -39,7 +39,7 @@ describe('published content watcher', () => {
   it('does not refetch the snapshot on unchanged revision polls', async () => {
     const request = vi.fn<typeof fetch>().mockImplementation(async () => response(initial));
     const watcher = start(request);
-    await settle(); await vi.advanceTimersByTimeAsync(3000);
+    await settle(); await vi.advanceTimersByTimeAsync(1000);
     expect(request).toHaveBeenCalledTimes(2); expect(watcher.apply).not.toHaveBeenCalled();
   });
   it('keeps a checked candidate while blocked, then applies without a reload', async () => {

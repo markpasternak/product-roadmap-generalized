@@ -353,6 +353,7 @@ const toastShortSha = computed(() => toastSha.value.slice(0, 7));
 // states real and legible, it doesn't try to own every lifecycle state.
 const DEPLOY_POLL_INTERVALS_MS = [10000, 15000, 30000];
 const LIVE_VERSION_POLL_MS = 4000;
+const LIVE_VERSION_FAST_POLL_MS = 500;
 const DEPLOY_MAX_DURATION_MS = 30 * 60 * 1000;
 // Stop waiting if Actions never starts a run carrying this commit.
 const DEPLOY_NO_RUN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -362,6 +363,7 @@ const DEPLOY_MAX_POLL_ATTEMPTS = 60;
 let deployPollTimer: ReturnType<typeof setTimeout> | null = null;
 let liveVersionTimer: ReturnType<typeof setTimeout> | null = null;
 let liveVersionFailures = 0;
+let liveVersionRequestEpoch: number | null = null;
 let deployPollSha = '';
 let deployPollAttempt = 0;
 let deployPollStartedAt = 0;
@@ -394,14 +396,17 @@ function stopDeployPoll() {
 // The static version marker is cheap. Check it independently of the slower Actions
 // status endpoint, so a live release need not wait for the next 30-second status tick.
 async function pollLiveVersion(epoch: number) {
-  if (epoch !== deployPollEpoch || !publishing.value) return;
+  if (epoch !== deployPollEpoch || !publishing.value || liveVersionRequestEpoch === epoch) return;
   if (Date.now() - deployPollStartedAt >= DEPLOY_MAX_DURATION_MS) {
     publishing.value = { ...publishing.value, stage: 'no_build' };
     stopDeployPoll();
     return;
   }
-  if (!document.hidden) {
-    const deployed = await fetchDeployedCommit();
+  if (!document.hidden && navigator.onLine !== false) {
+    liveVersionRequestEpoch = epoch;
+    let deployed: string | null;
+    try { deployed = await fetchDeployedCommit(); }
+    finally { if (liveVersionRequestEpoch === epoch) liveVersionRequestEpoch = null; }
     if (epoch !== deployPollEpoch) return;
     if (deployed === deployPollSha) {
       applyDeployRun({ status: 'completed', conclusion: 'success', live: true } as DeployStatus);
@@ -410,8 +415,18 @@ async function pollLiveVersion(epoch: number) {
     }
     liveVersionFailures = deployed === null ? Math.min(liveVersionFailures + 1, 3) : 0;
   }
-  const delay = Math.min(LIVE_VERSION_POLL_MS * 2 ** liveVersionFailures, 30000);
+  const elapsed = Date.now() - deployPollStartedAt;
+  const healthyDelay = elapsed < 30000 ? LIVE_VERSION_FAST_POLL_MS : elapsed < 120000 ? 2000 : LIVE_VERSION_POLL_MS;
+  const delay = document.hidden || navigator.onLine === false ? 30000
+    : liveVersionFailures ? Math.min(LIVE_VERSION_POLL_MS * 2 ** liveVersionFailures, 30000) : healthyDelay;
   liveVersionTimer = setTimeout(() => void pollLiveVersion(epoch), delay);
+}
+
+function wakePublicationPoll() {
+  if (!publishing.value || ['live', 'failed'].includes(publishing.value.stage ?? '')) return;
+  if (liveVersionTimer) clearTimeout(liveVersionTimer);
+  liveVersionTimer = null;
+  void pollLiveVersion(deployPollEpoch);
 }
 
 // Maps one `/api/status` run onto `publishing.value.stage` (KTD4's building/live/failed/
@@ -443,7 +458,7 @@ async function pollDeployOnce(epoch: number) {
   // since this attempt was scheduled; bail rather than run alongside/instead of the current one.
   if (epoch !== deployPollEpoch) return;
   if (!publishing.value || publishing.value.sha !== deployPollSha) return;
-  if (document.hidden) {
+  if (document.hidden || navigator.onLine === false) {
     deployPollTimer = setTimeout(() => void pollDeployOnce(epoch), 30000);
     return;
   }
@@ -513,7 +528,7 @@ function startDeployPoll(sha: string) {
   deployPollSawOwnRun = false;
   liveVersionFailures = 0;
   const epoch = deployPollEpoch;
-  liveVersionTimer = setTimeout(() => void pollLiveVersion(epoch), LIVE_VERSION_POLL_MS);
+  liveVersionTimer = setTimeout(() => void pollLiveVersion(epoch), LIVE_VERSION_FAST_POLL_MS);
   void pollDeployOnce(epoch);
 }
 
@@ -2037,6 +2052,8 @@ onMounted(async () => {
   // point in onMounted) — the handler itself is a no-op for anyone without unsynced work or an
   // in-flight sync, which a non-editor can never have.
   window.addEventListener('beforeunload', onBeforeUnload);
+  document.addEventListener('visibilitychange', wakePublicationPoll);
+  window.addEventListener('online', wakePublicationPoll);
   // Normalize only after restoring every field; hydration can trigger watchers earlier.
   urlStateRestored = true;
   syncState();
@@ -2153,6 +2170,8 @@ onUnmounted(() => {
   document.removeEventListener('keydown', onGlobalKey);
   releaseSheetFocus?.();
   window.removeEventListener('beforeunload', onBeforeUnload);
+  document.removeEventListener('visibilitychange', wakePublicationPoll);
+  window.removeEventListener('online', wakePublicationPoll);
   stopVersionWatch?.();
   laneObserver?.disconnect();
   clearTimeout(toastTimer);

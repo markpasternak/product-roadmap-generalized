@@ -436,7 +436,7 @@ describe("account drafts and recoverable publication", () => {
     expect(status(w).text()).toContain("Your changes are live");
     expect(useEditStore().committedSha.value).toBeNull();
   });
-  it('confirms live within four seconds without waiting for a stalled status request', async () => {
+  it('confirms live within half a second without waiting for a stalled status request', async () => {
     const w = await editing();
     vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout', 'Date']});
     deployStatusMock.mockImplementationOnce(() => new Promise(() => {}));
@@ -445,7 +445,9 @@ describe("account drafts and recoverable publication", () => {
     await send(w);
     await flushPromises();
     vi.mocked(fetchDeployedCommit).mockResolvedValue('a'.repeat(40));
-    await vi.advanceTimersByTimeAsync(4000);
+    await vi.advanceTimersByTimeAsync(499);
+    expect(status(w).text()).not.toContain('Your changes are live');
+    await vi.advanceTimersByTimeAsync(1);
     expect(status(w).text()).toContain('Your changes are live');
     expect(deployStatusMock).toHaveBeenCalledTimes(1);
     const count = vi.mocked(fetchDeployedCommit).mock.calls.length;
@@ -466,13 +468,30 @@ describe("account drafts and recoverable publication", () => {
     expect(fetchDeployedCommit).not.toHaveBeenCalled();
     expect(deployStatusMock).not.toHaveBeenCalled();
     Object.defineProperty(document, 'hidden', {value: false, configurable: true});
-    await vi.advanceTimersByTimeAsync(4000);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushPromises();
     expect(fetchDeployedCommit).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(4000);
     expect(fetchDeployedCommit).toHaveBeenCalledTimes(1);
     vi.mocked(fetchDeployedCommit).mockResolvedValue('a'.repeat(40));
     await vi.advanceTimersByTimeAsync(4000);
     expect(status(w).text()).toContain('Your changes are live');
+  });
+  it('backs off the initiating client after the thirty-second fast window', async () => {
+    const w = await editing();
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout', 'Date']});
+    vi.mocked(fetchDeployedCommit).mockResolvedValue('c'.repeat(40));
+    deployStatusMock.mockImplementationOnce(() => new Promise(() => {}));
+    useEditStore().setField('CM-1', 'title', 'Mine');
+    syncMock.mockResolvedValueOnce({ok: true, sha: 'a'.repeat(40)});
+    await send(w);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(30000);
+    const count = vi.mocked(fetchDeployedCommit).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fetchDeployedCommit).toHaveBeenCalledTimes(count);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchDeployedCommit).toHaveBeenCalledTimes(count + 1);
   });
   it('ignores a late live response after a newer publication starts', async () => {
     const w = await editing();
