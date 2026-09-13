@@ -47,6 +47,7 @@ type GitHub struct {
 	instTok           string
 	instExp           time.Time
 	localBuild        *localBuildWorker
+	contentRenderer   contentRenderer
 }
 
 func NewGitHub(cfg Config) (*GitHub, error) {

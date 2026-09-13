@@ -10,18 +10,24 @@ export interface PublishedRelease {
   content: { path: string; hash: string; size: number };
 }
 export type RefreshStatus = 'current' | 'deferred' | 'offline' | 'error' | 'application';
+export type PublishedApplication = Pick<PublishedRelease, 'applicationCommit' | 'applicationPackage' | 'profile' | 'contentSchema'>;
+export interface PublishedView { release: PublishedRelease | null; model: PublishedContent }
 export interface PublishedCandidate { release: PublishedRelease; model: PublishedContent }
 
 const hash = /^[a-f\d]{64}$/;
 const commit = /^[a-f\d]{40}$/;
 const maxSnapshot = 25 * 1024 * 1024;
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
-function parseIdentity(value: unknown): Pick<PublishedRelease, 'commit' | 'applicationCommit' | 'applicationPackage' | 'profile' | 'contentSchema'> {
-  if (!record(value) || !['commit', 'applicationCommit', 'applicationPackage', 'profile'].every(key => typeof value[key] === 'string')
-    || !commit.test(value.commit as string) || !commit.test(value.applicationCommit as string)
-    || !hash.test(value.applicationPackage as string) || !hash.test(value.profile as string)
-    || !Number.isSafeInteger(value.contentSchema) || Number(value.contentSchema) < 1) throw new Error('Invalid release identity');
-  return value as unknown as PublishedRelease;
+export function parseApplication(value: unknown): PublishedApplication {
+  if (!record(value) || !commit.test(String(value.applicationCommit)) || !hash.test(String(value.applicationPackage))
+    || !hash.test(String(value.profile)) || !Number.isSafeInteger(value.contentSchema) || Number(value.contentSchema) < 1)
+    throw new Error('Invalid application identity');
+  return value as unknown as PublishedApplication;
+}
+function parseIdentity(value: unknown) {
+  const application = parseApplication(value);
+  if (!record(value) || !commit.test(String(value.commit))) throw new Error('Invalid release identity');
+  return { ...application, commit: value.commit as string };
 }
 export function parseRelease(value: unknown): PublishedRelease {
   parseIdentity(value);
@@ -94,7 +100,7 @@ async function boundedBytes(response: Response, limit: number): Promise<Uint8Arr
 }
 
 export function watchPublishedContent(options: {
-  initial: PublishedRelease;
+  initial: PublishedRelease | PublishedApplication;
   audience: PublishedContent['audience'];
   base: string;
   blocked: () => boolean;
@@ -111,14 +117,15 @@ export function watchPublishedContent(options: {
   const digest = options.digest ?? (async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), n => n.toString(16).padStart(2, '0')).join(''));
   const base = new URL(options.base, win.location.href);
   if (base.origin !== win.location.origin || !/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(base.pathname)) throw new Error('Invalid content origin');
-  let current = parseRelease(options.initial);
+  const application = parseApplication(options.initial);
+  let current: PublishedRelease | undefined = 'commit' in options.initial ? parseRelease(options.initial) : undefined;
   let pending: PublishedCandidate | undefined;
   let stopped = false;
   let inFlight = false;
   let failures = 0;
   let checkedAt = 0;
   let burstUntil = 0;
-  let observedRevision = `${current.commit}:${current.content.hash}`;
+  let observedRevision = current ? `${current.commit}:${current.content.hash}` : '';
   let refreshRequested = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
@@ -159,14 +166,14 @@ export function watchPublishedContent(options: {
         checkedAt = Date.now();
         // A future application's snapshot format need not be understood by this
         // application. Check its envelope before decoding the current schema.
-        if (identity.applicationPackage !== current.applicationPackage || identity.applicationCommit !== current.applicationCommit
-          || identity.profile !== current.profile || identity.contentSchema !== current.contentSchema || identity.contentSchema !== 1) {
+        if (identity.applicationPackage !== application.applicationPackage || identity.applicationCommit !== application.applicationCommit
+          || identity.profile !== application.profile || identity.contentSchema !== application.contentSchema || identity.contentSchema !== 1) {
           pending = undefined; status('application'); break;
         }
         const release = parseRelease(value);
         const revision = `${release.commit}:${release.content.hash}`;
         if (revision !== observedRevision) { observedRevision = revision; burstUntil = Date.now() + 60000; }
-        if (release.commit === current.commit && release.content.hash === current.content.hash) { pending = undefined; status('current'); break; }
+        if (current && release.commit === current.commit && release.content.hash === current.content.hash) { pending = undefined; status('current'); break; }
         if (pending?.release.content.hash === release.content.hash) { pending.release = release; break; }
         pending = undefined;
         const response = await request(new URL(release.content.path, base), { credentials: 'same-origin', redirect: 'error', signal: controller.signal });

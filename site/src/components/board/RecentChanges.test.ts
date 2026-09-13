@@ -47,9 +47,9 @@ describe('RecentChanges', () => {
     fetchActivityMock.mockImplementationOnce(() => new Promise(done => { resolve = done; })).mockResolvedValue(rows(2));
     const context = createPublishedContext(shallowRef({ release: { commit: 'a' } } as PublishedCandidate));
     const w = mount(RecentChanges, { props: { items }, global: { provide: { [publishedContextKey as symbol]: context } } });
-    context.current.value = { ...context.current.value, release: { ...context.current.value.release, commit: 'b' } };
+    context.current.value = { ...context.current.value, release: { ...context.current.value.release!, commit: 'b' } };
     await flushPromises();
-    context.current.value = { ...context.current.value, release: { ...context.current.value.release, commit: 'c' } };
+    context.current.value = { ...context.current.value, release: { ...context.current.value.release!, commit: 'c' } };
     await flushPromises();
     expect(fetchActivityMock).toHaveBeenCalledOnce();
     resolve(rows(1)); await flushPromises();

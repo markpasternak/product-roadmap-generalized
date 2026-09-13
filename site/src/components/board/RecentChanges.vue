@@ -28,7 +28,7 @@ const props = withDefaults(
 const loading = ref(true);
 const entries = ref<ParsedActivity[]>([]);
 const publication = usePublishedContent();
-if (publication) watch(() => publication.current.value.release.commit, () => { void loadActivity(); });
+if (publication) watch(() => publication.current.value.release?.commit, () => { void loadActivity(); });
 
 const byId = computed(() => new Map(props.items.map((i) => [i.id, { title: i.title }])));
 const visible = computed(() => (props.limit != null ? entries.value.slice(0, props.limit) : entries.value));

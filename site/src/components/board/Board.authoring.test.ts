@@ -212,7 +212,7 @@ describe('published revisions preserve the editor working base', () => {
     const w = await mountBoard([item()], context);
     (w.vm as any).editMode = true; await flushPromises();
     vi.mocked(fetchItems).mockClear();
-    context.current.value = { ...context.current.value, release: { ...context.current.value.release, commit: 'c'.repeat(40) } };
+    context.current.value = { ...context.current.value, release: { ...context.current.value.release!, commit: 'c'.repeat(40) } };
     await w.setProps({ items: [item({ title: 'Published C' })] });
     await flushPromises();
     expect(fetchItems).toHaveBeenCalledWith('c'.repeat(40));

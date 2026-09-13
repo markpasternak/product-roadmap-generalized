@@ -18,7 +18,7 @@ test('check build starts independently and retains audits and CI regression test
   assert.equal(classifier.env.GH_TOKEN, '${{ github.token }}');
   for (const command of [
     'npm --prefix site audit --audit-level=moderate',
-    'node --test tooling/ci/*.test.mjs site/scripts/build-item-history.test.mjs',
+    'node --test tooling/ci/*.test.mjs site/scripts/build-item-history.test.mjs site/scripts/content-cache.test.mjs',
   ]) {
     assert.ok(build.steps.some((step) => step.run === command && !step.if));
   }

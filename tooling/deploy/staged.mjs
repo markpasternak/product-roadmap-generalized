@@ -53,6 +53,8 @@ export function validateDeployResult(result, releaseId) {
 
 export async function stagePublication(config) {
   const blobs = validateManifest(config.manifest);
+  const concurrency = config.concurrency ?? 8;
+  if (![4, 8].includes(concurrency)) fail('INVALID_UPLOAD_CONCURRENCY');
   const expires = Date.now() + 15 * 60 * 1000;
   async function send(path, init, checkSource = true) {
     for (let attempt = 0; ; attempt++) {
@@ -84,7 +86,7 @@ export async function stagePublication(config) {
       begin.missingHashes.length > blobs.size || new Set(begin.missingHashes).size !== begin.missingHashes.length ||
       begin.missingHashes.some(hash => !blobs.has(hash))) fail('INVALID_UPLOAD_RESPONSE');
   let next = 0, stopped = false;
-  const workers = Array.from({ length: Math.min(4, begin.missingHashes.length) }, async () => {
+  const workers = Array.from({ length: Math.min(concurrency, begin.missingHashes.length) }, async () => {
     try {
       while (!stopped && next < begin.missingHashes.length) {
         const hash = begin.missingHashes[next++], file = blobs.get(hash);

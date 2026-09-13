@@ -851,7 +851,7 @@ async function loadRawBodies() {
   rawBodiesRequested = true;
   workspaceError.value = false;
   try {
-    const source = restoringCommit.value ?? publishedContent?.current.value.release.commit;
+    const source = restoringCommit.value ?? publishedContent?.current.value.release?.commit;
     const items = source ? await fetchItems(source) : await fetchItems();
     if (boardStopped) return;
     if (restoringCommit.value) {
@@ -1773,7 +1773,7 @@ onUnmounted(() => {
 const shareResources = computed(() => shareResourceChoices(focused.value));
 const shareItems = computed(() => focused.value.map(projectForShare));
 const shareContext = computed<ShareContext>(() => ({
-  sourceContentCommit: publishedContent?.current.value.release.commit,
+  sourceContentCommit: publishedContent?.current.value.release?.commit,
   resourceCatalog: publishedContent?.current.value.model.resourceCatalog,
   title: filters.product ? `${filters.product} roadmap` : 'product roadmap',
   product: filters.product,

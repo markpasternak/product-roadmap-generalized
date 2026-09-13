@@ -61,7 +61,7 @@ jobs:
           key: history-${{ runner.os }}-${{ hashFiles('site/scripts/build-item-history.mjs', 'site/src/lib/itemHistory.server.ts') }}-${{ github.sha }}
           restore-keys: history-${{ runner.os }}-${{ hashFiles('site/scripts/build-item-history.mjs', 'site/src/lib/itemHistory.server.ts') }}-
       - run: npm --prefix site audit --audit-level=moderate
-      - run: node --test tooling/ci/*.test.mjs site/scripts/build-item-history.test.mjs
+      - run: node --test tooling/ci/*.test.mjs site/scripts/build-item-history.test.mjs site/scripts/content-cache.test.mjs
       - run: python3 tooling/validate_items.py
         if: steps.changes.outputs.build_required != 'false'
       - run: npm --prefix site run build

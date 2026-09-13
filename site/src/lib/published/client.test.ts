@@ -168,3 +168,16 @@ it('validates the snapshot-pinned share catalog before accepting a revision', ()
   }
   expect(() => parseSnapshot({ ...model, resourceCatalog: { assets: null } }, 'internal')).toThrow();
 });
+
+it('boots a stable page using only application identity and verifies the current snapshot', async () => {
+  const { applicationCommit, applicationPackage, profile, contentSchema } = initial;
+  const request = vi.fn<typeof fetch>().mockResolvedValueOnce(response(latest)).mockResolvedValueOnce(new Response(bytes));
+  const apply = vi.fn();
+  const watcher = watchPublishedContent({ initial: { applicationCommit, applicationPackage, profile, contentSchema }, audience: 'internal', base: '/', blocked: () => false, apply, status: vi.fn(), fetch: request, digest });
+  stops.push(watcher.stop);
+  await vi.waitFor(() => expect(apply).toHaveBeenCalledWith({ release: latest, model }));
+  expect(request).toHaveBeenCalledTimes(2);
+  request.mockResolvedValue(response(latest));
+  await watcher.check();
+  expect(request).toHaveBeenCalledTimes(3);
+});

@@ -25,6 +25,7 @@ import (
 type localBuildConfig struct {
 	Mode, BaseSHA, DependenciesDir string
 	ApplicationPointer             string
+	UploadConcurrency              string
 	RaceBarrier                    bool
 	HasToken                       bool
 	CanvasAPIURL                   string
@@ -131,6 +132,7 @@ func newReconcilingBuildWorker(run func(context.Context) error, interval, timeou
 				return
 			}
 			job, cancelJob := context.WithTimeout(ctx, timeout)
+			job = context.WithValue(job, buildWakeKey{}, (<-chan time.Time)(w.wake))
 			err := run(context.WithValue(job, buildQueuedAtKey{}, queued))
 			cancelJob()
 			if errors.Is(err, errContentSuperseded) {
@@ -201,7 +203,7 @@ func (g *GitHub) startLocalBuild() {
 			return result
 		}
 		if c.Mode == "content" || c.Mode == "shadow" {
-			result = g.prepareContent(ctx, g.latestBuildHead, runBuildCommand)
+			result = g.prepareContent(ctx, g.latestBuildHead, g.contentRenderer.run)
 		} else {
 			result = g.prepareBuild(ctx, g.latestBuildHead, runLocalBuildCommands)
 		}

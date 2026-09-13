@@ -176,7 +176,7 @@ export async function publishStaged(config, intent, candidate, directory) {
   validateManifest(candidate.manifest);
   const root = resolve(directory);
   const result = await stagePublication({
-    manifest: candidate.manifest, releaseId, expectedPublicationToken: intent.expectedPublicationToken,
+    manifest: candidate.manifest, concurrency: config.uploadConcurrency, releaseId, expectedPublicationToken: intent.expectedPublicationToken,
     request: (path, init) => request(config, path, init), assertLatest: () => assertLatest(config),
     readBlob: async file => {
       if (!(await lstat(root)).isDirectory()) fail('NON_REGULAR_OUTPUT');
@@ -233,6 +233,7 @@ export function configFromEnv(env = process.env) {
     api: env.CANVAS_API_URL || `https://${env.CANVAS_HOST}/v1/canvases/${env.CANVAS_ID}`,
     profile: { siteUrl: env.SITE_URL, base: typeof env.SITE_BASE === 'string' && env.SITE_BASE ? `${env.SITE_BASE.replace(/\/$/, '')}/` : env.SITE_BASE, audience: env.SITE_AUDIENCE, editApi: env.PUBLIC_EDIT_API, canvasBackend: env.PUBLIC_CANVAS_BACKEND },
   };
+  config.uploadConcurrency = Number(env.ROADMAP_UPLOAD_CONCURRENCY || 8);
   config.reuseApplication = env.ROADMAP_REUSE_APPLICATION === 'true';
   if (env.ROADMAP_APPLICATION_COMMIT || env.ROADMAP_APPLICATION_DIGEST)
     config.application = { source: env.ROADMAP_APPLICATION_COMMIT, digest: env.ROADMAP_APPLICATION_DIGEST };

@@ -78,7 +78,7 @@ func (g *GitHub) prepareContent(ctx context.Context, latest func(context.Context
 		env := append(c.Profile.environment(head), "GITHUB_REPOSITORY="+g.cfg.Repo, "GH_TOKEN="+token,
 			"CANVAS_API_URL="+c.CanvasAPIURL, "CANVAS_DROP_TOKEN="+g.cfg.CanvasDropToken,
 			"ROADMAP_APPLICATION_COMMIT="+app.Source, "ROADMAP_APPLICATION_DIGEST="+app.Digest,
-			"ROADMAP_REUSE_APPLICATION=true", "ROADMAP_CONTENT_OUTPUT="+filepath.Join(candidate, "public"))
+			"ROADMAP_REUSE_APPLICATION=true", "ROADMAP_UPLOAD_CONCURRENCY="+c.UploadConcurrency, "ROADMAP_CONTENT_OUTPUT="+filepath.Join(candidate, "public"))
 		return run(ctx, wt, env, []string{"node", filepath.Join(commands, "coordinate.mjs"), action, intent, filepath.Join(candidate, "candidate.json"), proof})
 	}
 	if c.Mode == "content" {
@@ -109,15 +109,25 @@ func (g *GitHub) prepareContent(ctx context.Context, latest func(context.Context
 	}{
 		{"validate content", []string{"python3", filepath.Join(commands, "validate_items.py"), wt}},
 		{"item history", []string{"node", filepath.Join(commands, "build-item-history.mjs")}},
-		{"prepare content", []string{"node", filepath.Join(commands, "prepare-content.mjs"), app.Directory, wt, candidate, app.Digest}},
+		{"prepare content", []string{"node", filepath.Join(commands, "prepare-content.mjs"), app.Directory, wt, candidate, app.Digest, filepath.Join(root, "content-cache")}},
 		{"document link check", []string{"node", filepath.Join(commands, "check-document-links.mjs"), filepath.Join(candidate, "public")}},
 		{"item date check", []string{"node", filepath.Join(commands, "check-item-history.mjs"), filepath.Join(candidate, "public")}},
 	}
+	preparation, stopMonitor := monitorContentHead(ctx, head, latest)
+	var preparationError error
 	for _, step := range steps {
 		setStage(step.name)
-		if err := run(ctx, wt, c.Profile.environment(head), step.args); err != nil {
-			return err
+		if err := run(preparation, wt, c.Profile.environment(head), step.args); err != nil {
+			preparationError = err
+			break
 		}
+	}
+	if stopMonitor() {
+		trace.outcome = "superseded"
+		return errContentSuperseded
+	}
+	if preparationError != nil {
+		return preparationError
 	}
 	setStage("candidate identity")
 	var version struct {
@@ -137,14 +147,18 @@ func (g *GitHub) prepareContent(ctx context.Context, latest func(context.Context
 			return err
 		}
 	}
-	setStage("final freshness check")
-	current, err := latest(ctx)
-	if err != nil {
-		return err
-	}
-	if current != head {
-		trace.outcome = "superseded"
-		return errContentSuperseded
+	// Content publication rechecks main before staging, immediately before activation,
+	// and after verification. Only shadow needs this separate Git fetch.
+	if c.Mode == "shadow" {
+		setStage("final freshness check")
+		current, err := latest(ctx)
+		if err != nil {
+			return err
+		}
+		if current != head {
+			trace.outcome = "superseded"
+			return errContentSuperseded
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return err

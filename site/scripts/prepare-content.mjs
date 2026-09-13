@@ -1,14 +1,16 @@
 // No compiler imports: execute only an installed, verified application package.
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, realpath } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { verifyApplicationPackage, sha256 } from './application-package.mjs';
 import { clientStyles } from './client-assets.mjs';
 import { createOutputWriter } from './content-output.mjs';
+import { contentCache } from './content-cache.mjs';
+import { createInterface } from 'node:readline';
 
-const [packagePath, checkoutPath, outputPath, packageDigest] = process.argv.slice(2);
+export async function prepareContent(packagePath, checkoutPath, outputPath, packageDigest, options = {}) {
 if (!packagePath || !checkoutPath || !outputPath || !packageDigest) throw new Error('Usage: prepare-content.mjs <approved-package> <immutable-checkout> <new-output> <trusted-package-digest>');
 const start = performance.now();
 const app = resolve(packagePath), checkout = resolve(checkoutPath), output = resolve(outputPath);
@@ -20,7 +22,8 @@ if (!/^[a-f0-9]{40}$/.test(commit) || git(['status', '--porcelain', '--untracked
 const committedAt = git(['show', '-s', '--format=%cI', commit]).replace(/\+00:00$/, 'Z');
 const verified = performance.now();
 const renderer = await import(pathToFileURL(join(app, 'private/renderer.mjs')).href);
-const model = await renderer.prepareModel(checkout, manifest.base, manifest.audience);
+const cache = await contentCache(options.cacheDirectory ?? join(checkout, 'site/.cache/content-output'), packageDigest, { disabled: options.noCache });
+const model = await renderer.prepareModel(checkout, manifest.base, manifest.audience, options.noDocuments ? undefined : cache);
 if (model.boardItems.some(item => !item.createdAt || !item.updatedAt || !item.activityDates?.length)) throw new Error('Missing published item history; prepare from a full Git checkout');
 const { catalog: resources, originals } = await renderer.prepareResources(checkout, model, manifest.audience);
 const prepared = performance.now();
@@ -49,13 +52,22 @@ const release = { commit, applicationCommit: manifest.source, applicationPackage
   content: { path: `content/${contentHash}.json`, hash: contentHash, size: snapshot.length } };
 await writer.add(release.content.path, snapshot);
 const routes = renderer.contentRoutes(model, manifest.base);
+const application = { applicationCommit: manifest.source, applicationPackage: packageDigest, profile: release.profile, contentSchema: 1 };
+let renderedPages = 0;
 for (const route of routes) {
   const component = renderer.pageComponents[route.kind];
   const styles = clientStyles(clientManifest, ['src/published-client.ts', `src/components/${component}`]);
   const seed = renderer.pageSeed(model, manifest.base, route.path);
-  const html = await renderer.renderPage(seed, manifest.base, route.path);
-  const page = renderer.fillTemplate(route.active === 'docs' ? docsTemplate : template, { title: route.title, description: route.description, html, publishedAt: committedAt, ogType: route.kind === 'item' ? 'article' : 'website', seed: { model: seed, release, base: manifest.base, route: route.path }, path: `${manifest.base.slice(1)}${route.path}`,
+  const render = async () => {
+    renderedPages++;
+    const html = await renderer.renderPage(seed, manifest.base, route.path);
+    return renderer.fillTemplate(route.active === 'docs' ? docsTemplate : template, { title: route.title, description: route.description, html, publishedAt: '', ogType: route.kind === 'item' ? 'article' : 'website', seed: { model: seed, application, base: manifest.base, route: route.path }, path: `${manifest.base.slice(1)}${route.path}`,
     client: `${manifest.base}${client.file}`, styles: styles.map(path => `${manifest.base}${path}`) });
+  };
+  // Aggregate routes include the whole board and change on every item edit.
+  // Caching those large, short-lived pages costs more I/O than rendering them.
+  const cacheable = route.kind === 'item' || route.kind === 'document';
+  const page = options.noPages || !cacheable ? await render() : await cache.get('page', [route, seed, application], render);
   await writer.add(route.path ? `${route.path}/index.html` : 'index.html', page);
 }
 await writer.add('resources.json', JSON.stringify(resources));
@@ -66,5 +78,27 @@ await writer.add('sitemap-0.xml', `<?xml version="1.0" encoding="UTF-8"?><urlset
 await writer.add('sitemap-index.xml', `<?xml version="1.0" encoding="UTF-8"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>${escapeXml(new URL(`${manifest.base}sitemap-0.xml`, manifest.profile.siteUrl).href)}</loc></sitemap></sitemapindex>`);
 if (git(['rev-parse', 'HEAD']) !== commit || git(['status', '--porcelain', '--untracked-files=all', '--', 'content'])) throw new Error('Content checkout changed during preparation');
 await writeFile(join(output, 'candidate.json'), JSON.stringify({ release, manifest: writer.manifest() }), { flag: 'wx', mode: 0o600 });
-console.log(JSON.stringify({ output, items: model.items.length, documents: model.documents.length, resources: originals.length, pages: routes.length,
-  timings: { verifyPackageMs: verified - start, prepareMs: prepared - verified, renderAndWriteMs: performance.now() - prepared, totalMs: performance.now() - start } }));
+await cache.prune();
+return { output, renderedPages, cache: cache.stats, items: model.items.length, documents: model.documents.length, resources: originals.length, pages: routes.length,
+  timings: { verifyPackageMs: verified - start, prepareMs: prepared - verified, renderAndWriteMs: performance.now() - prepared, totalMs: performance.now() - start } };
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === await realpath(process.argv[1]).catch(() => null)) {
+  const args = process.argv.slice(2);
+  if (args[0] === '--worker') {
+    const [, app, digest, cacheDirectory] = args;
+    let idle;
+    const arm = () => { clearTimeout(idle); idle = setTimeout(() => process.exit(0), 120000); };
+    arm();
+    for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
+      clearTimeout(idle);
+      try {
+        const request = JSON.parse(line);
+        const result = await prepareContent(app, request.checkout, request.output, digest, { cacheDirectory });
+        process.stdout.write(JSON.stringify({ ok: true, result }) + '\n');
+      } catch { process.stdout.write(JSON.stringify({ ok: false }) + '\n'); }
+      arm();
+    }
+    clearTimeout(idle);
+  } else console.log(JSON.stringify(await prepareContent(...args.slice(0, 4), { cacheDirectory: args[4] })));
+}

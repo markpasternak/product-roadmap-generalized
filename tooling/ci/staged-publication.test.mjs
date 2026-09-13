@@ -91,3 +91,28 @@ test('rejects ambiguous, private or unsafe manifest paths before contacting Canv
     assert.equal(f.calls.length, 0);
   }
 });
+test('upload concurrency is bounded at four or eight and finalization waits for every blob', async () => {
+  for (const concurrency of [4, 8]) {
+    const data = Array.from({ length: 17 }, (_, i) => Buffer.from(`blob-${i}`));
+    const files = data.map((bytes, i) => ({ path: `file-${i}.html`, size: bytes.length, hash: createHash('sha256').update(bytes).digest('hex') }));
+    let active = 0, peak = 0, finished = 0;
+    await stagePublication({ manifest: files, concurrency, releaseId: 'release', expectedPublicationToken: 'before',
+      assertLatest: async () => {}, readBlob: async file => data[files.indexOf(file)],
+      request: async path => {
+        if (path === '/uploads') return Response.json({ uploadId: 'up_test', missingHashes: files.map(file => file.hash) });
+        if (path.includes('/blobs/')) {
+          peak = Math.max(peak, ++active);
+          await new Promise(resolve => setImmediate(resolve));
+          active--; finished++;
+          return new Response(null, { status: 204 });
+        }
+        assert.equal(active, 0); assert.equal(finished, files.length);
+        return Response.json(published);
+      },
+    });
+    assert.equal(peak, concurrency);
+  }
+  const f = fixture();
+  await assert.rejects(stagePublication({ ...f.config, concurrency: 100 }), /INVALID_UPLOAD_CONCURRENCY/);
+  assert.equal(f.calls.length, 0);
+});

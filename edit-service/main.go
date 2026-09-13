@@ -25,6 +25,7 @@ func main() {
 
 func runServer(cfg Config) error {
 	srv := NewServer(cfg)
+	defer srv.gh.contentRenderer.close()
 	defer srv.gh.localBuild.close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
