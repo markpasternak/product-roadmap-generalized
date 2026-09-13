@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,9 +21,10 @@ const assetSnapshotTTL = 5 * time.Second
 const assetRefPrefix = "refs/roadmap-asset-cache/"
 
 type assetBlob struct {
-	oid  string
-	size int64
-	file AssetFile
+	oid       string
+	size      int64
+	file      AssetFile
+	validated *atomic.Bool
 }
 type assetSnapshot struct {
 	sha     string
@@ -253,7 +255,7 @@ func (g *GitHub) readAssetSnapshot(ctx context.Context, sha string) (*assetSnaps
 			if s.cost > assetMetadataBudget {
 				return nil, errors.New("asset metadata budget exceeded")
 			}
-			s.files[name] = assetBlob{original.oid, original.size, rev.Original}
+			s.files[name] = assetBlob{original.oid, original.size, rev.Original, &atomic.Bool{}}
 		}
 	}
 	return s, nil
@@ -318,5 +320,6 @@ func (g *GitHub) assetOriginal(ctx context.Context, s *assetSnapshot, p string) 
 	if err = validateAssetOriginal(b.file, data); err != nil {
 		return AssetFile{}, nil, err
 	}
+	b.validated.Store(true)
 	return b.file, data, nil
 }

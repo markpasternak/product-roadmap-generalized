@@ -255,7 +255,9 @@ func (s *Server) handleUploadStatus(w http.ResponseWriter, r *http.Request) {
 func serveAsset(w http.ResponseWriter, r *http.Request, file AssetFile, data []byte) {
 	w.Header().Set("Content-Type", file.MediaType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("Cache-Control", "private, no-cache")
+	w.Header().Set("ETag", assetETag(file))
+	addVary(w.Header(), "Authorization")
 	disposition := "attachment"
 	if strings.HasPrefix(file.MediaType, "image/") || strings.HasPrefix(file.MediaType, "video/") {
 		disposition = "inline"
@@ -264,9 +266,16 @@ func serveAsset(w http.ResponseWriter, r *http.Request, file AssetFile, data []b
 	http.ServeContent(w, r, path.Base(file.Path), time.Time{}, bytes.NewReader(data))
 }
 func (s *Server) handleUploadContent(w http.ResponseWriter, r *http.Request) {
+	w = privateAssetResponse(w)
 	if u, ok := s.authorizedUpload(w, r); ok {
 		data, err := os.ReadFile(filepath.Join(uploadDir(s.cfg, u.ID), "bytes"))
 		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		// Staged files are mutable local state, unlike pinned Git objects. Never
+		// accept a validator from upload.json without checking the actual bytes.
+		if validateAssetOriginal(u.Revision.Original, data) != nil {
 			http.NotFound(w, r)
 			return
 		}
@@ -496,6 +505,7 @@ func (s *Server) handleAssets(w http.ResponseWriter, r *http.Request) {
 	jsonResponse(w, 200, assets)
 }
 func (s *Server) handleAssetContent(w http.ResponseWriter, r *http.Request) {
+	w = privateAssetResponse(w)
 	if s.session(r) == "" {
 		http.Error(w, "unauthorized", 401)
 		return
@@ -520,7 +530,17 @@ func (s *Server) handleAssetContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer release()
-	file, data, err := s.gh.assetOriginal(r.Context(), snapshot, requested)
+	// Only short-circuit the common single-validator case. ServeContent still
+	// owns HTTP precondition precedence, weak/list matching, HEAD and Range.
+	// A refreshed snapshot must validate its own object/manifest combination.
+	blob, present := snapshot.files[requested]
+	conditional := strings.TrimSpace(r.Header.Get("If-None-Match"))
+	metadataOnly := present && blob.validated.Load() && (conditional == assetETag(blob.file) || conditional == "W/"+assetETag(blob.file) || conditional == "*")
+	file := blob.file
+	var data []byte
+	if !metadataOnly {
+		file, data, err = s.gh.assetOriginal(r.Context(), snapshot, requested)
+	}
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			log.Printf("asset original unavailable: %v", err)

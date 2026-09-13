@@ -85,5 +85,28 @@ through the HTTP response, including slow clients. A 60-second write deadline
 prevents stalled downloads from holding that capacity indefinitely. Git refs under
 `refs/roadmap-asset-cache/` keep cached commits reachable and are cleaned on eviction
 or service restart. Cached metadata never includes permission decisions or staged
-uploads. Originals still pass size, SHA-256 and MIME checks and use
-`Cache-Control: private, no-store`.
+uploads. Originals pass size, SHA-256 and MIME checks before serving.
+
+Both original-preview endpoints (`/api/assets/content?path=…` and
+`/api/uploads/:id/content`) use `Cache-Control: private, no-cache`, a strong quoted
+SHA-256 ETag and additive `Vary: Authorization, Origin`. Browsers may store bytes,
+but must revalidate before reuse. Every request rechecks the session and resource
+membership; staged files also recheck account ownership, expiry and actual bytes.
+Denied, missing, invalid and HTTP-precondition/range error responses are non-storable
+and have no success validator. HEAD, Range and other HTTP preconditions continue
+through Go's `http.ServeContent`.
+
+Within a pinned snapshot, a previously checksum/MIME-validated immutable Git object
+can answer a matching single-validator request without reading the body again.
+New snapshots must validate their own object/manifest combination. This does not
+extend the five-second snapshot freshness window or cache authorization decisions.
+Staged files are mutable local state and therefore retain per-request byte validation.
+Published images still load from Canvas first, and in-page preview reuse is unchanged.
+Revalidation controls future HTTP cache reuse: it cannot erase downloaded files or
+images already retained in page memory.
+
+For isolated browser proof, run `ROADMAP_PREVIEW_BROWSER=1 go test -run
+TestPreviewBrowserHarness -v` here. The printed loopback page uses real Go endpoints
+and fixture-only signed sessions on a separate API origin. Every preview open issues
+a fetch; `/events` records server-observed 200/304/error status and body-byte counts.
+POST `/stop` on the page origin stops the harness. No production data is involved.

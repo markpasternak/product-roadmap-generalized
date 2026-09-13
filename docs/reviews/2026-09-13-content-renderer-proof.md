@@ -34,3 +34,33 @@ Applied the three ce-simplify-code rubrics inline per repository instructions. R
 The application package build uses empty content loaders and does not package roadmap Markdown into the reusable shell. Document HTML now has an explicit element/attribute allowlist; raw managed attachment/media links receive the same deployment base as images. Initial item dates are deterministic UTC through hydration, then localize on mount.
 
 Legacy/new route duplication is intentional until final parity and release checks pass. Browser refresh/draft protection, staged coordinator, Go/CI integration, provenance and rollout gates remain unfinished at this checkpoint. No migration code has been pushed or deployed.
+# Same-release preview revalidation checkpoint (2026-09-13)
+
+U9 implemented on the existing feature worktree, with U4 edits preserved. New tests
+first failed on the old no-store/no-ETag behavior and missing staged-byte integrity
+checks. After implementation, `go test -race ./...` passed (20.132 s) and `go vet
+./...` passed. Existing object integrity, snapshot invalidation, HEAD/Range, slow
+writer capacity and deadline tests remain in the suite. Added coverage exercises
+weak/list/star validators, nonmatches, precondition precedence, invalid/expired
+sessions, wrong-account uploads, missing/expired/corrupt files, removed/changed
+committed assets, refresh failures, and metadata-only immutable-object validation.
+
+Actual Chromium proof used `TestPreviewBrowserHarness`, real Go routes and local
+Git/staged PNG files; page/API origins were distinct loopback ports. No browser
+network interception, manual conditional headers or in-memory preview cache:
+
+| Scenario | Committed original | Account-owned upload |
+| --- | --- | --- |
+| Alice initial open | 200, 4,260 body bytes | 200, 4,260 body bytes |
+| Alice reopen | 304, 0 body bytes | 304, 0 body bytes |
+| Page reload then reopen | 304, 0 body bytes | 304, 0 body bytes |
+| Switch to Bob | Not needed (committed resources remain session-readable) | 404, error JSON only, no success ETag |
+| Log out then reopen | 401, error text only, no success ETag | 401, error JSON only, no success ETag |
+
+The browser automatically sent the original SHA-256 validator after reload, and
+even on Bob's denied draft request. CORS preflights passed, success/304 carried
+`private, no-cache` and both Vary fields; errors carried `private, no-store`.
+The fixture image decoded in Chromium. Browser snapshots are under ignored
+`.playwright-cli/page-2026-09-13T09-42-*` / `09-43-*`; the reproducible opt-in harness
+is tracked. This is HTTP-cache proof, not production-deployment or live OAuth proof.
+Already downloaded files/page-memory images cannot be revoked by revalidation.

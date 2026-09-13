@@ -36,7 +36,7 @@ func TestAssetContentUsesObjectsAndPreservesHTTP(t *testing.T) {
 		if method == "GET" {
 			want = 206
 		}
-		if w.Code != want || w.Header().Get("Cache-Control") != "private, no-store" || w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		if w.Code != want || w.Header().Get("Cache-Control") != "private, no-cache" || w.Header().Get("X-Content-Type-Options") != "nosniff" {
 			t.Fatal(w.Code, w.Header())
 		}
 		if method == "GET" && w.Body.String() != "canonical" {
