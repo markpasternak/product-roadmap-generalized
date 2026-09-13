@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
+import { shallowRef } from 'vue';
+import { createPublishedContext, publishedContextKey } from '../../lib/published/usePublishedContent';
+import type { PublishedCandidate } from '../../lib/published/client';
 import type { ParsedActivity } from '../../lib/activity';
 
 const fetchActivityMock = vi.fn<() => Promise<ParsedActivity[]>>();
@@ -39,6 +42,21 @@ const rows = (n: number): ParsedActivity[] =>
   }));
 
 describe('RecentChanges', () => {
+  it('refreshes on an accepted content revision and coalesces overlapping requests', async () => {
+    let resolve!: (value: ParsedActivity[]) => void;
+    fetchActivityMock.mockImplementationOnce(() => new Promise(done => { resolve = done; })).mockResolvedValue(rows(2));
+    const context = createPublishedContext(shallowRef({ release: { commit: 'a' } } as PublishedCandidate));
+    const w = mount(RecentChanges, { props: { items }, global: { provide: { [publishedContextKey as symbol]: context } } });
+    context.current.value = { ...context.current.value, release: { ...context.current.value.release!, commit: 'b' } };
+    await flushPromises();
+    context.current.value = { ...context.current.value, release: { ...context.current.value.release!, commit: 'c' } };
+    await flushPromises();
+    expect(fetchActivityMock).toHaveBeenCalledOnce();
+    resolve(rows(1)); await flushPromises();
+    expect(fetchActivityMock).toHaveBeenCalledTimes(2);
+    expect(w.text()).toContain('Commit 1');
+    w.unmount();
+  });
   it('offers a useful empty state and retry on the full activity page', async () => {
     fetchActivityMock.mockResolvedValueOnce([]).mockResolvedValueOnce(rows(1));
     const w = mount(RecentChanges, { props: { items, showEmpty: true, showSeeAll: false } });

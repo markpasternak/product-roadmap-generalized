@@ -2,7 +2,7 @@
 // are no longer reliable. Run after either the internal or public build.
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve, relative } from 'node:path';
-const dist = resolve(import.meta.dirname, '../dist');
+const dist = process.argv[2] ? resolve(process.argv[2]) : resolve(import.meta.dirname, '../dist');
 let checked = 0;
 const failures = [];
 async function walk(directory) {

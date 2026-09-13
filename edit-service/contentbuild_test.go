@@ -1,0 +1,202 @@
+package main
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestContentWorkerPreparation(t *testing.T) {
+	for _, scenario := range []string{"shadow", "untrusted", "code-change", "command-failure", "wrong-version", "superseded"} {
+		t.Run(scenario, func(t *testing.T) {
+			g, head := buildFixture(t)
+			cfg, appRoot := approvedPackageFixture(t)
+			// Approve exactly the fixture baseline; content may advance beyond it.
+			b, _ := os.ReadFile(filepath.Join(appRoot, "package.json"))
+			b = []byte(strings.ReplaceAll(string(b), strings.Repeat("a", 40), head))
+			if err := os.WriteFile(filepath.Join(appRoot, "package.json"), b, 0600); err != nil {
+				t.Fatal(err)
+			}
+			hash := sha256.Sum256(b)
+			digest := hex.EncodeToString(hash[:])
+			if err := writeJSONAtomic(cfg.ApplicationPointer, approvedApplication{Directory: appRoot, Digest: digest, Source: head, Repo: g.cfg.Repo, WorkflowRunID: 123}); err != nil {
+				t.Fatal(err)
+			}
+			cfg.Mode = "shadow"
+			g.cfg.LocalBuild = cfg
+			g.cfg.CanvasDropToken = "never-pass-to-renderer"
+			if scenario == "untrusted" {
+				os.WriteFile(filepath.Join(appRoot, "private/renderer.mjs"), []byte("tampered"), 0600)
+			}
+			if scenario == "code-change" {
+				os.WriteFile(filepath.Join(g.repoRoot(), "site/package.json"), []byte("changed"), 0600)
+				gitTest(t, g.repoRoot(), "add", ".")
+				gitTest(t, g.repoRoot(), "commit", "-m", "code change")
+				head = gitTest(t, g.repoRoot(), "rev-parse", "HEAD")
+			}
+			reads, runs := 0, 0
+			var commands []string
+			latest := func(context.Context) (string, error) {
+				reads++
+				if scenario == "superseded" && reads > 1 {
+					return strings.Repeat("b", 40), nil
+				}
+				return head, nil
+			}
+			run := func(ctx context.Context, root string, env, args []string) error {
+				runs++
+				commands = append(commands, filepath.Base(args[1]))
+				if !strings.HasPrefix(args[1], filepath.Join(appRoot, "private/commands")+"/") {
+					t.Fatalf("untrusted command %v", args)
+				}
+				if strings.Contains(strings.Join(env, "\n"), "never-pass") || strings.Contains(strings.Join(env, "\n"), "GH_TOKEN=") {
+					t.Fatal("credentials in renderer")
+				}
+				if filepath.Base(args[1]) == "coordinate.mjs" {
+					t.Fatal("shadow contacted Canvas")
+				}
+				if scenario == "command-failure" {
+					return errors.New("failed")
+				}
+				if filepath.Base(args[1]) == "prepare-content.mjs" {
+					commit := head
+					if scenario == "wrong-version" {
+						commit = strings.Repeat("c", 40)
+					}
+					data, _ := json.Marshal(map[string]string{"commit": commit, "applicationCommit": head, "applicationPackage": digest})
+					return writeConfined(args[4], "public/version.json", data)
+				}
+				return nil
+			}
+			err := g.prepareContent(context.Background(), latest, run)
+			if scenario == "shadow" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if runs != 6 {
+					t.Fatalf("commands %d", runs)
+				}
+				if strings.Join(commands, ",") != "validate_items.py,check-demo.mjs,build-item-history.mjs,prepare-content.mjs,check-document-links.mjs,check-item-history.mjs" {
+					t.Fatalf("unexpected command order %v", commands)
+				}
+			} else if err == nil {
+				t.Fatal("unsafe preparation accepted")
+			}
+			if (scenario == "untrusted" || scenario == "code-change") && runs != 0 {
+				t.Fatal("executed before trust/eligibility checks")
+			}
+			if scenario == "superseded" && !errors.Is(err, errContentSuperseded) {
+				t.Fatal("supersession not returned to the worker")
+			}
+			entries, _ := os.ReadDir(filepath.Join(g.cfg.StateDir, "local-build"))
+			for _, entry := range entries {
+				if localBuildAttemptName.MatchString(entry.Name()) {
+					t.Fatal("attempt leaked")
+				}
+			}
+		})
+	}
+}
+
+func TestReconciliationStartupTimerAndCancellation(t *testing.T) {
+	runs := make(chan struct{}, 10)
+	w := newReconcilingBuildWorker(func(context.Context) error { runs <- struct{}{}; return nil }, 20*time.Millisecond, time.Second)
+	for i := 0; i < 2; i++ {
+		select {
+		case <-runs:
+		case <-time.After(time.Second):
+			t.Fatal("missing startup or timer reconciliation")
+		}
+	}
+	w.close()
+	select {
+	case <-w.done:
+	default:
+		t.Fatal("worker not closed")
+	}
+}
+
+func TestContentWorkerOwnsRetryAndDeadline(t *testing.T) {
+	for _, mode := range []string{"content", "shadow", "deploy", "prepare"} {
+		want := 2 * time.Minute
+		if mode == "content" {
+			want = 17 * time.Minute
+		}
+		if got := (localBuildConfig{Mode: mode}).jobTimeout(); got != want {
+			t.Fatalf("%s timeout %s, want %s", mode, got, want)
+		}
+	}
+	runs := make(chan time.Duration, 2)
+	calls := 0
+	w := newReconcilingBuildWorker(func(ctx context.Context) error {
+		calls++
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			runs <- 0
+		} else {
+			runs <- time.Until(deadline)
+		}
+		if calls == 1 {
+			return &localBuildFailure{cause: errContentSuperseded}
+		}
+		return nil
+	}, time.Hour, 17*time.Minute)
+	defer w.close()
+	// Startup can requeue before the constructor's caller stores its pointer.
+	for i := 0; i < 2; i++ {
+		select {
+		case remaining := <-runs:
+			if remaining < 16*time.Minute || remaining > 17*time.Minute {
+				t.Fatalf("deadline %s", remaining)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("superseded startup not retried immediately")
+		}
+	}
+}
+
+// Opt-in actual immutable worktree -> trusted Node/Python commands -> full
+// content output -> link/date/identity checks. It cannot contact Canvas or push.
+func TestContentWorkerRealPackage(t *testing.T) {
+	directory, digest := os.Getenv("CONTENT_TEST_APPLICATION"), os.Getenv("CONTENT_TEST_PACKAGE_DIGEST")
+	if directory == "" || digest == "" {
+		t.Skip("requires a locally compiled proof package")
+	}
+	directory, err := filepath.Abs(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Source  string       `json:"source"`
+		Profile buildProfile `json:"profile"`
+	}
+	if err := readJSON(filepath.Join(directory, "package.json"), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	repoRoot := gitTest(t, ".", "rev-parse", "--show-toplevel")
+	state := t.TempDir()
+	pointer := filepath.Join(state, "approved.json")
+	if err := writeJSONAtomic(pointer, approvedApplication{Directory: directory, Digest: digest, Source: manifest.Source, Repo: "example/roadmap", WorkflowRunID: 1}); err != nil {
+		t.Fatal(err)
+	}
+	g := &GitHub{cfg: Config{Repo: "example/roadmap", RepoCacheDir: repoRoot, StateDir: state, LocalBuild: localBuildConfig{Mode: "shadow", ApplicationPointer: pointer, Profile: manifest.Profile}}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := g.prepareContent(ctx, func(context.Context) (string, error) { return manifest.Source, nil }, runBuildCommand); err != nil {
+		t.Fatal(err)
+	}
+	var receipt map[string]any
+	if err := readJSON(filepath.Join(state, "local-build/last-shadow.json"), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if receipt["commit"] != manifest.Source || receipt["state"] != "shadow-prepared-not-deployed" {
+		t.Fatal("invalid shadow receipt")
+	}
+}

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mount, type VueWrapper } from '@vue/test-utils';
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils';
 import SavedViews from './SavedViews.vue';
 import { emptyFilters } from '../../lib/filters';
 import { DEFAULT_VIEW, SAVED_VIEWS_KEY, readSavedViews, snapshotView } from '../../lib/savedViews';
@@ -31,6 +31,45 @@ beforeEach(() => localStorage.clear());
 afterEach(() => { wrappers.splice(0).forEach(w => w.unmount()); vi.unstubAllGlobals(); localStorage.clear(); vi.restoreAllMocks(); });
 
 describe('saved view picker', () => {
+  it('puts settings and saved views in one scrolling body below the fixed heading', async () => {
+    const w = mount(SavedViews, {
+      props: { filters: emptyFilters(), horizons: [], sort: DEFAULT_VIEW.sort, compact: true },
+      slots: { settings: '<fieldset class="test-settings">Settings</fieldset>' },
+      global: { stubs: { teleport: true } },
+    });
+    wrappers.push(w);
+    await picker(w).trigger('click');
+    expect(w.find('.view-popover-body .test-settings').exists()).toBe(true);
+    expect(w.find('.view-popover-body .view-list').exists()).toBe(true);
+    expect(w.find('.view-popover-body .roadmap-settings-header').exists()).toBe(false);
+    expect(w.find('.roadmap-settings-header [aria-label="Close views"]').exists()).toBe(true);
+  });
+
+  it('opens compact View as a modal drawer and restores focus and scrolling on Done', async () => {
+    const w = mount(SavedViews, {
+      props: { filters: emptyFilters(), horizons: [], sort: DEFAULT_VIEW.sort, compact: true },
+      attachTo: document.body,
+    });
+    wrappers.push(w);
+    (picker(w).element as HTMLButtonElement).focus();
+    expect(picker(w).text()).toBe('View');
+    expect(picker(w).findAll('svg')).toHaveLength(1);
+    expect(picker(w).find('.view-caret').exists()).toBe(false);
+    expect(picker(w).classes()).toContain('roadmap-settings-trigger');
+    await picker(w).trigger('click');
+    await flushPromises();
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-label="View options"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog!.getAttribute('aria-modal')).toBe('true');
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(dialog!.contains(document.activeElement)).toBe(true);
+    dialog!.querySelector<HTMLButtonElement>('[data-test="view-done"]')!.click();
+    await flushPromises();
+    expect(document.body.style.overflow).not.toBe('hidden');
+    expect(document.activeElement).toBe(picker(w).element);
+    expect(document.querySelector('[role="dialog"][aria-label="View options"]')).toBeNull();
+  });
+
   it('shows only personal saved views and returns focus after choosing one', async () => {
     localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify([weekly()]));
     const w = mountViews();

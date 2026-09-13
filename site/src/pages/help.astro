@@ -299,9 +299,14 @@ const TOC = [
 <p>Each published roadmap item is a Markdown file in the GitHub repository, with fields and a write-up.
         Uploaded files and resource metadata are stored there too. Private drafts are temporary working copies
         held separately until publication.</p>
-      <p>Publishing commits those changes and triggers a site rebuild. A Git commit can be complete before the
+      <p>Publishing commits those changes and prepares an updated site. Ordinary content edits reuse the
+        application rather than rebuilding it. A Git commit can be complete before the
         updated site is live; the save bar makes that distinction. The item’s Edit on GitHub link, where available,
         opens the same source file for direct editing or a pull request. Repository checks validate the content and build.</p>
+      <p>Compatible content updates appear in open tabs without reloading the page. Your filters and view settings
+        stay in place, and active editing work is protected. An application update may offer a normal reload;
+        you do not need a cache-clearing hard refresh. If a connection fails, the last complete view remains available.
+        Existing share snapshots update only when you explicitly publish an update to that share.</p>
     </section>
 
     <section id="shares" class="mt-10 scroll-mt-24">

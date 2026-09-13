@@ -8,7 +8,7 @@
 .item-toc > a[aria-current] { background: color-mix(in srgb, var(--roadmap-product-accent, var(--color-accent-brand-default)) 10%, transparent); font-weight: 600; }
 .item-toc > a[aria-current]::before { content: ''; position: absolute; left: -17px; top: 8px; width: 3px; height: 16px; border-radius: 999px; background: var(--roadmap-product-accent, var(--color-accent-brand-default)); }
 .item-toc > a:focus-visible { outline: 2px solid var(--color-accent-brand-default); outline-offset: 2px; border-radius: 2px; }
-[data-reading-body] h3[tabindex='-1']:focus { outline: none; }
+[data-reading-body] [tabindex='-1']:focus { outline: none; }
 @media (min-width: 1200px) {
   :root .detail-expanded .detail-reading-grid.has-item-toc, .detail-shell.is-expanded .detail-reading-grid.has-item-toc { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 48px; width: 100%; max-width: 1340px; margin-inline: auto; }
 }

@@ -38,6 +38,21 @@ export function classifyChanges({ base, head, isAncestor, changed }) {
 export function requiresApplicationBuild(content, event, ref) {
   return !(content === true && event === 'push' && ref === 'refs/heads/main');
 }
+// Reuse is compared to the canonical application's source, not just this push.
+// Treat executable files, symlinks and submodules as application changes even
+// when their names happen to match the content allowlist.
+export function reusableApplication(base, head, directory = process.cwd()) {
+  if (!/^[a-f0-9]{40}$/.test(base ?? '') || !/^[a-f0-9]{40}$/.test(head ?? '')) return false;
+  const read = args => execFileSync('git', args, { cwd: directory, encoding: 'utf8', timeout: 30000,
+    maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+  try {
+    read(['merge-base', '--is-ancestor', base, head]);
+    const paths = read(['diff', '--no-renames', '--name-only', '-z', base, head, '--']).split('\0').filter(Boolean);
+    if (paths.length && !contentOnly(paths)) return false;
+    return read(['ls-tree', '-r', '-z', head, '--', 'content', '.roadmap/publications'])
+      .split('\0').filter(Boolean).every(entry => entry.startsWith('100644 blob '));
+  } catch { return false; }
+}
 const git = (...args) =>
   execFileSync('git', args, {
     encoding: 'utf8',
@@ -71,7 +86,7 @@ export async function classifyEvent(event, name) {
     );
     base = data.workflow_runs?.[0]?.head_sha;
   }
-  return classifyChanges({
+  const result = classifyChanges({
     base,
     head,
     isAncestor: (a, b) => {
@@ -87,6 +102,8 @@ export async function classifyEvent(event, name) {
         .split('\0')
         .filter(Boolean),
   });
+  if (result.contentOnly && !reusableApplication(base, head)) return { ...result, contentOnly: false, reason: 'Unsafe content file modes' };
+  return result;
 }
 export function checkRunState(runs, sha) {
   const run = runs

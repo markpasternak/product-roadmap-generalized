@@ -18,7 +18,7 @@ test('check build starts independently and retains audits and CI regression test
   assert.equal(classifier.env.GH_TOKEN, '${{ github.token }}');
   for (const command of [
     'npm --prefix site audit --audit-level=moderate',
-    'node --test tooling/ci/*.test.mjs site/scripts/build-item-history.test.mjs',
+    'node --test tooling/ci/*.test.mjs site/scripts/build-item-history.test.mjs site/scripts/content-cache.test.mjs',
   ]) {
     assert.ok(build.steps.some((step) => step.run === command && !step.if));
   }
@@ -28,6 +28,7 @@ test('only artifact work is conditional and missing classifier output builds by 
   const commands = [
     'python3 tooling/validate_items.py',
     'npm --prefix site run build',
+    'node site/scripts/test-content-output.mjs',
     'node site/scripts/check-document-links.mjs',
     'node site/scripts/check-item-history.mjs',
   ];
@@ -35,6 +36,9 @@ test('only artifact work is conditional and missing classifier output builds by 
   for (const command of commands) {
     assert.equal(checks.jobs.build.steps.find((step) => step.run === command)?.if, guarded, command);
   }
+  const steps = checks.jobs.build.steps;
+  assert.ok(steps.findIndex(step => step.run === 'node site/scripts/test-content-output.mjs') >
+    steps.findIndex(step => step.run === 'npm --prefix site run build'));
 });
 
 test('deployment preflights before building and owns checks for every new artifact', () => {
@@ -43,8 +47,8 @@ test('deployment preflights before building and owns checks for every new artifa
   const upload = steps.findIndex((step) => step.name === 'Deploy to canvas-drop');
   const preflight = steps.findIndex((step) => step.id === 'coordination');
   assert.ok(preflight > 0 && preflight < steps.findIndex(step => step.uses === './.github/actions/setup-site'));
-  assert.equal(steps[preflight].run, 'node tooling/deploy/coordinate.mjs preflight');
-  assert.equal(steps[upload].run, 'node tooling/deploy/coordinate.mjs publish');
+  assert.equal(steps[preflight].run, 'node tooling/deploy/actions-publication.mjs select');
+  assert.equal(steps[upload].run, 'node tooling/deploy/actions-publication.mjs publish');
   assert.equal(steps[upload].if, undefined);
   const commands = [
     'python3 tooling/validate_items.py',
@@ -56,11 +60,26 @@ test('deployment preflights before building and owns checks for every new artifa
   for (const command of commands) {
     const index = steps.findIndex((step) => step.run === command);
     assert.ok(index >= 0 && index < upload, command);
-    assert.equal(steps[index].if, "steps.coordination.outputs.already_current != 'true'", command);
+    const expectedCondition = command === 'node site/scripts/check-demo.mjs'
+      ? "steps.coordination.outputs.already_current != 'true'"
+      : "steps.coordination.outputs.full_build == 'true'";
+    assert.equal(steps[index].if, expectedCondition, command);
   }
   assert.ok(steps.findIndex((step) => step.run === 'node tooling/ci/changes.mjs wait') < upload);
   for (const key of ['SITE_URL', 'SITE_BASE', 'SITE_AUDIENCE', 'PUBLIC_EDIT_API', 'PUBLIC_CANVAS_BACKEND']) assert.ok(deploy.env[key]);
   assert.ok(!existsSync(new URL('../../.github/workflows/validate.yml', import.meta.url)));
+  assert.equal(steps.find(step => step.uses === './.github/actions/setup-site').if, "steps.coordination.outputs.full_build == 'true'");
+  const content = steps.find(step => step.run === 'node tooling/deploy/actions-publication.mjs prepare');
+  assert.equal(content.if, "steps.coordination.outputs.full_build != 'true' && steps.coordination.outputs.already_current != 'true'");
+  assert.equal(content.env?.CANVAS_DROP_TOKEN, undefined);
+  const artifact = steps.find(step => step.name === 'Store canonical private application package');
+  assert.equal(artifact.if, "steps.coordination.outputs.full_build == 'true'");
+  const compiledContent = checks.jobs.build.steps.find(step => step.name === 'Test compiled internal and public content output');
+  assert.equal(compiledContent.if, "steps.changes.outputs.build_required != 'false'");
+  assert.equal(compiledContent.run, 'node site/scripts/test-content-output.mjs');
+  assert.equal(artifact.with['include-hidden-files'], true);
+  assert.ok(steps.indexOf(artifact) > steps.findIndex(step => step.run === 'node tooling/ci/changes.mjs wait'));
+  assert.ok(steps.indexOf(artifact) < upload);
 });
 
 test('aggregate verdict still requires the build and generalized security remains mandatory', () => {

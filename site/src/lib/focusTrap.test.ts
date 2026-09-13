@@ -25,6 +25,20 @@ afterEach(() => {
 });
 
 describe('dialog focus', () => {
+  it('enters and restores keyboard focus without scrolling the page', () => {
+    const opener = document.createElement('button');
+    document.body.append(opener);
+    opener.focus();
+    const dialog = panel();
+    const openerFocus = vi.spyOn(opener, 'focus');
+    const initialFocus = vi.spyOn(dialog.querySelector('button')!, 'focus');
+    const release = trapFocus(dialog);
+    releases.push(release);
+    expect(initialFocus).toHaveBeenCalledWith({ preventScroll: true });
+    release();
+    expect(openerFocus).toHaveBeenCalledWith({ preventScroll: true });
+  });
+
   it('wraps focus in both directions and redirects an attempted focus outside', () => {
     const outside = document.createElement('button');
     document.body.append(outside);

@@ -11,7 +11,7 @@ import os
 import re
 import sys
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ITEMS_DIR = os.path.join(REPO, "content", "items")
 PRODUCT_DIR = {
     "Music App": "music-app",
@@ -97,6 +97,8 @@ def placeholder_sections(txt):
 
 
 def main():
+    if not os.path.isdir(ITEMS_DIR):
+        sys.exit("Missing roadmap items directory")
     errors = []
     warnings = []
     seen = {}

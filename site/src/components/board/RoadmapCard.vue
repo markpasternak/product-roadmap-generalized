@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import PlannedDates from './PlannedDates.vue';
+import ItemLabels from './ItemLabels.vue';
+import { namedOwner } from '../../lib/cardMetadata';
 import { computed, nextTick, ref } from 'vue';
-import ProductMark from '../ui/ProductMark.vue';
 import HighlightedText from '../ui/HighlightedText.vue';
 import {
   PhArrowUpRight,
@@ -12,8 +13,10 @@ import {
 import {
   horizonDot,
   productColor,
+  productShort,
 } from '../../lib/display';
 import { useEditStore } from '../../lib/edit/store';
+import { guardPublishedContent } from '../../lib/published/usePublishedContent';
 import { resourcePreviewURLs } from '../../lib/edit/resourceClient';
 import type { ItemVM } from '../../lib/filters';
 import { repositoryAssetPath, resourceHref } from '../../lib/resources';
@@ -42,11 +45,14 @@ const props = withDefaults(defineProps<{
   highlightQuery?: string;
   /** View preference. The selected cover itself is item content. */
   showCover?: boolean;
+  /** Internal-only personal preference; presentation cards never show taxonomy. */
+  showLabels?: boolean;
   /** Non-interactive use of the exact board-card composition, such as the item editor preview. */
   preview?: boolean;
 }>(), { showCover: true });
 const emit = defineEmits<{
   (e: 'select', item: ItemVM): void;
+  (e: 'filter', token: string): void;
   (e: 'discard', id: string): void;
   (e: 'rename', payload: { id: string; title: string }): void;
   (e: 'duplicate', id: string): void;
@@ -58,13 +64,14 @@ const emit = defineEmits<{
 // the card that needs it.
 const editStore = useEditStore();
 const dirty = computed(() => !!props.editing && editStore.isDirty(props.item.id));
+const owner = computed(() => props.client ? '' : namedOwner(props.item.owner));
 
 // SortableJS (driven from Board.vue) owns drag-and-drop entirely — it's configured with
 // `handle: '.roadmap-drag-handle'`, so a drag can only ever start from the grip below, never
 // from a click/tap anywhere else on the card. The handle is rendered as a sibling of the
-// card's own <button> (see the template — both live in the outer wrapper div, same as the
-// discard/duplicate buttons below), so it can never end up nested inside a <button> (invalid
-// HTML), and a tap on it never bubbles into the card's own `@click` (open editor) since
+// card surface (see the template — both live in the outer wrapper div, same as the
+// discard/duplicate buttons below), so it never nests in the opening button,
+// and a tap on it never bubbles into the surface's `@click` (open editor) since
 // siblings don't bubble through each other — no stopPropagation needed for that.
 function onDiscardClick(e: MouseEvent) {
   e.stopPropagation();
@@ -83,6 +90,7 @@ function onDuplicateClick(e: MouseEvent) {
 // both clicks reach the editor. Only wired up while `editing`; outside edit mode the title
 // has no listeners and clicks bubble to the card exactly as before.
 const renaming = ref(false);
+guardPublishedContent(renaming);
 const renameValue = ref('');
 const renameInput = ref<HTMLInputElement | null>(null);
 let clickTimer: ReturnType<typeof setTimeout> | null = null;
@@ -157,6 +165,10 @@ function openItem() {
   });
 }
 
+function onSurfaceClick(event: MouseEvent) {
+  if (!props.preview && !(event.target as Element).closest('button, a, input, [role="button"]')) openItem();
+}
+
 // R4: working-copy status from projectBoard() — a subtle brand-accent treatment for
 // edited/new cards (ring + left accent bar, matching the existing `.roadmap-card-active`
 // language), and a dimmed/struck-through treatment for cards flagged for deletion.
@@ -176,8 +188,7 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
 
 <template>
   <div class="relative roadmap-card-item" :data-item-id="item.id">
-  <button
-    type="button"
+  <div
     class="group roadmap-card roadmap-product-card roadmap-action relative block w-full overflow-hidden rounded-2xl p-3.5 text-left transition duration-150"
     :class="[
       { 'roadmap-card-active': active },
@@ -186,10 +197,11 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
     ]"
     :style="{ '--roadmap-product-accent': productColor[item.product as keyof typeof productColor] ?? 'var(--color-icons-subtle-default)' }"
     :data-horizon="item.horizon"
-    :tabindex="preview ? -1 : 0"
-    :aria-hidden="preview || undefined"
-    @click="!preview && openItem()"
+    @click="onSurfaceClick"
   >
+    <button type="button" class="roadmap-card-open" :aria-label="item.title"
+      :tabindex="preview ? -1 : 0" :aria-hidden="preview || undefined"
+      @click.stop="!preview && openItem()" />
     <span
       v-if="dirty"
       data-test="dirty-dot"
@@ -212,7 +224,6 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
 
     <div class="roadmap-card-content" :class="{ 'roadmap-card-content-over-cover': !!coverSrc }">
     <div class="flex items-start gap-3">
-      <ProductMark v-if="showProduct" :product="item.product" :size="36" />
       <div class="min-w-0 flex-1">
         <h3
           v-if="!renaming"
@@ -253,7 +264,11 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
       </div>
     </div>
 
-    <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5" :class="editing ? 'pr-16' : ''">
+    <ItemLabels v-if="showLabels && !client" class="mt-2" :item="item" :preview="preview" @filter="emit('filter', $event)" />
+    <div class="card-meta mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5" :class="editing ? 'pr-16' : ''">
+      <span v-if="showProduct" class="card-product-badge" :title="item.product" role="img" :aria-label="item.product">
+        <span aria-hidden="true">{{ productShort[item.product as keyof typeof productShort] ?? '?' }}</span>
+      </span>
       <span
         v-if="showHorizon"
         class="roadmap-quiet-chip text-single-sm-medium text-text-primary-default inline-flex items-center gap-1.5 rounded-lg px-2 py-1"
@@ -264,13 +279,13 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
       <span class="roadmap-quiet-chip text-single-sm-medium text-text-subtle-default inline-flex items-center gap-1 rounded-lg px-2 py-1">
         {{ item.stage }}
       </span>
-      <span v-if="!client" class="text-single-sm-medium text-text-subtle-default" data-test="card-owner">
-        {{ item.owner || 'Unassigned' }}
+      <span v-if="owner" class="text-single-sm-medium text-text-subtle-default" data-test="card-owner">
+        {{ owner }}
       </span>
     </div>
     <PlannedDates :start-date="item.startDate" :end-date="item.endDate" compact />
     </div>
-  </button>
+  </div>
   <div
     v-if="dirty || (editing && pending !== 'deleted')"
     class="absolute right-2.5 bottom-2.5 flex items-center gap-1.5"
@@ -318,6 +333,9 @@ const discardTitle = computed(() => (isRestore.value ? 'Restore' : 'Discard chan
 </template>
 
 <style scoped>
+.roadmap-card { cursor:pointer; }
+.roadmap-card-open { position:absolute; inset:0; border:0; border-radius:inherit; background:none; padding:0; cursor:pointer; }
+.roadmap-card:has(.roadmap-card-open:focus-visible) { outline:2px solid var(--color-accent-brand-default); outline-offset:3px; }
 /* R4: working-copy status (from projectBoard()), edit mode only. Mirrors the existing
    .roadmap-card-active left-accent language so it reads as "part of the same system". */
 .roadmap-card-pending {

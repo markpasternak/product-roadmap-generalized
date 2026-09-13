@@ -34,12 +34,13 @@ export function installItemImageViewer(root: HTMLElement) {
   let index = 0;
   let zoom = 1;
   let opener: HTMLElement | null = null;
+  const imageSource = (image: HTMLImageElement) => image.srcset ? image.currentSrc || image.src : image.src;
 
   function collect() {
     const result: typeof images = [];
     for (const image of root.querySelectorAll<HTMLImageElement>(selector)) {
       if (dialog.contains(image)) continue;
-      const src = image.currentSrc || image.src;
+      const src = imageSource(image);
       if (!src || result.some(entry => entry.src === src)) continue;
       const link = image.closest('a');
       const label = image.alt || link?.textContent?.trim() || 'Image';
@@ -56,6 +57,21 @@ export function installItemImageViewer(root: HTMLElement) {
       trigger.setAttribute('aria-label', 'Open image: ' + (image.alt || trigger.textContent?.trim() || 'Image'));
       trigger.setAttribute('aria-haspopup', 'dialog');
       if (!trigger.matches('a, button')) { trigger.tabIndex = 0; trigger.setAttribute('role', 'button'); }
+    }
+    if (dialog.open) {
+      const current = images[index];
+      const latest = collect();
+      const resourceId = (src: string) => /\/assets\/(ast_[^/]+)\//.exec(src)?.[1];
+      const replacement = latest.findIndex(image => image.src === current?.src || (current && resourceId(current.src) && resourceId(image.src) === resourceId(current.src)));
+      if (replacement < 0) {
+        photo.hidden = true;
+        get('[data-image-error]').textContent = 'This image is no longer part of the published item.';
+        get('[data-image-error]').hidden = false;
+        previous.disabled = next.disabled = true;
+      } else {
+        images = latest; index = replacement;
+        if (images[index].src !== current.src || photo.hidden) render();
+      }
     }
   }
 
@@ -75,6 +91,7 @@ export function installItemImageViewer(root: HTMLElement) {
     photo.style.width = '';
     photo.hidden = false;
     get('[data-image-error]').hidden = true;
+    get('[data-image-error]').textContent = 'This image could not be loaded.';
     photo.alt = image.label;
     photo.src = image.src;
     get('[data-image-label]').textContent = image.label;
@@ -99,7 +116,7 @@ export function installItemImageViewer(root: HTMLElement) {
     const image = trigger.querySelector<HTMLImageElement>('img');
     if (!image) return;
     images = collect(); // Only this initiative, in reading order, without duplicates.
-    index = images.findIndex(entry => entry.src === (image.currentSrc || image.src));
+    index = images.findIndex(entry => entry.src === imageSource(image));
     if (index < 0) return;
     opener = trigger;
     dialog.showModal();
@@ -154,7 +171,7 @@ export function installItemImageViewer(root: HTMLElement) {
   const observer = new MutationObserver(records => {
     if (records.some(record => !dialog.contains(record.target))) refresh();
   });
-  observer.observe(root, { childList: true, subtree: true });
+  observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'alt'] });
   refresh();
   return {
     close,

@@ -30,6 +30,8 @@ export function isoDateTime(value: Date | number | string | null | undefined): s
   return date ? date.toISOString() : String(value);
 }
 
+const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
+
 export function formatDateTime(
   value: Date | number | string | null | undefined,
   opts: { timeZone?: string; suffix?: string } = {},
@@ -37,15 +39,18 @@ export function formatDateTime(
   if (value == null || value === '') return '';
   const date = validDate(value);
   if (!date) return String(value);
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: opts.timeZone,
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(date);
+  const zone = opts.timeZone;
+  let formatter = zone ? dateTimeFormatters.get(zone) : undefined;
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: opts.timeZone, month: 'short', day: 'numeric', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    // Cache explicit zones used by rendering. Local time still follows OS changes.
+    if (dateTimeFormatters.size >= 16) dateTimeFormatters.clear();
+    if (zone) dateTimeFormatters.set(zone, formatter);
+  }
+  const parts = formatter.formatToParts(date);
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? '';
   const formatted = `${get('month')} ${Number(get('day'))}, ${get('year')}, ${get('hour')}:${get('minute')}`;
   return opts.suffix ? `${formatted} ${opts.suffix}` : formatted;

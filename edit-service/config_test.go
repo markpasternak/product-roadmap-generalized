@@ -19,4 +19,14 @@ func TestLoadConfig(t *testing.T) {
 	if _, err := LoadConfig(func(string) string { return "" }); err == nil {
 		t.Fatal("expected error on missing required env")
 	}
+	for _, value := range []string{"4", "8"} {
+		env["ROADMAP_UPLOAD_CONCURRENCY"] = value
+		if _, err := LoadConfig(func(k string) string { return env[k] }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env["ROADMAP_UPLOAD_CONCURRENCY"] = "100"
+	if _, err := LoadConfig(func(k string) string { return env[k] }); err == nil {
+		t.Fatal("unbounded uploads accepted")
+	}
 }

@@ -14,28 +14,30 @@ interface Props {
   ogType?: 'website' | 'article';
   /** Path (relative to base) of a page-specific OG image; defaults to the brand card. */
   ogImage?: string;
+  canonicalPath?: string;
+  publicationTemplate?: boolean;
 }
-const { title, active, description, ogType = 'website', ogImage } = Astro.props;
+const { title, active, description, ogType = 'website', ogImage, canonicalPath, publicationTemplate = false } = Astro.props;
 const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/`;
 const buildGlobal = globalThis as typeof globalThis & { __ROADMAP_BUILD_TIME__?: string };
-const builtIso = buildGlobal.__ROADMAP_BUILD_TIME__ ??= new Date().toISOString();
-const builtAt = new Date(builtIso);
-const built = formatDateTime(builtAt, { timeZone: 'UTC', suffix: 'UTC' });
+const builtIso = publicationTemplate ? '__ROADMAP_PUBLISHED_AT__' : (buildGlobal.__ROADMAP_BUILD_TIME__ ??= new Date().toISOString());
+const built = publicationTemplate ? '__ROADMAP_PUBLISHED_LABEL__' : formatDateTime(builtIso, { timeZone: 'UTC', suffix: 'UTC' });
 // Absolute URLs for canonical/OG — Astro.site comes from SITE_URL in astro.config.
-const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const canonical = new URL(canonicalPath ?? Astro.url.pathname, Astro.site).href;
 const ogImageUrl = new URL(ogImage ?? `${base}brand/og-card.png`, Astro.site).href;
 ---
 
 <html lang="en" data-theme="light">
   <head>
     <meta charset="utf-8" />
+    {publicationTemplate && <Fragment set:html="<!--ROADMAP_STYLES-->" />}
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     {description && <meta name="description" content={description} />}
     <link rel="canonical" href={canonical} />
     <meta property="og:title" content={title} />
     {description && <meta property="og:description" content={description} />}
-    <meta property="og:type" content={ogType} />
+    <meta property="og:type" content={publicationTemplate ? '__ROADMAP_OG_TYPE__' : ogType} />
     <meta property="og:site_name" content="Product Roadmap" />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={ogImageUrl} />
@@ -262,7 +264,7 @@ const ogImageUrl = new URL(ogImage ?? `${base}brand/og-card.png`, Astro.site).hr
           <span>·</span>
           <a href={`${base}changelog`} class="hover:text-text-primary-default transition-colors">Recent item updates</a>
           <span>·</span>
-          <span>Published <time datetime={builtIso} data-local-date-time>{built}</time></span>
+          <span hidden={publicationTemplate}>Published <time datetime={builtIso} data-local-date-time data-publication-time={publicationTemplate || undefined}>{built}</time></span>
         </span>
       </div>
     </footer>

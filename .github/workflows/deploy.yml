@@ -35,6 +35,7 @@ env:
   SITE_AUDIENCE: internal
   PUBLIC_EDIT_API: https://roadmapdemoapi.canvas-drop.com
   PUBLIC_CANVAS_BACKEND: "true"
+  ROADMAP_PUBLICATION_PAUSED: ${{ vars.ROADMAP_PUBLICATION_PAUSED }}
 
 jobs:
   deploy:
@@ -48,14 +49,14 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      - name: Check current release and capture publication token
+      - name: Select trusted application and capture publication token
         id: coordination
-        run: node tooling/deploy/coordinate.mjs preflight
+        run: node tooling/deploy/actions-publication.mjs select
         env:
           CANVAS_DROP_TOKEN: ${{ secrets.CANVAS_DROP_TOKEN }}
           GH_TOKEN: ${{ github.token }}
       - uses: ./.github/actions/setup-site
-        if: steps.coordination.outputs.already_current != 'true'
+        if: steps.coordination.outputs.full_build == 'true'
       - name: Classify changes since the last verified deployment
         id: changes
         run: node tooling/ci/changes.mjs
@@ -69,25 +70,34 @@ jobs:
           key: history-${{ runner.os }}-${{ hashFiles('site/scripts/build-item-history.mjs', 'site/src/lib/itemHistory.server.ts') }}-${{ github.sha }}
           restore-keys: history-${{ runner.os }}-${{ hashFiles('site/scripts/build-item-history.mjs', 'site/src/lib/itemHistory.server.ts') }}-
       - name: Validate content
-        if: steps.coordination.outputs.already_current != 'true'
+        if: steps.coordination.outputs.full_build == 'true'
         run: python3 tooling/validate_items.py
 
       # Full internal build. Served at the canvas subdomain root, so base = "/".
       - name: Build the roadmap site
-        if: steps.coordination.outputs.already_current != 'true'
+        if: steps.coordination.outputs.full_build == 'true'
         working-directory: site
         run: npm run build
 
       - name: Verify source document links
-        if: steps.coordination.outputs.already_current != 'true'
+        if: steps.coordination.outputs.full_build == 'true'
         run: node site/scripts/check-document-links.mjs
       - name: Verify published item dates
-        if: steps.coordination.outputs.already_current != 'true'
+        if: steps.coordination.outputs.full_build == 'true'
         run: node site/scripts/check-item-history.mjs
 
       - name: Verify fictional demo content
         if: steps.coordination.outputs.already_current != 'true'
         run: node site/scripts/check-demo.mjs
+
+      - name: Prepare content using the verified application package
+        if: steps.coordination.outputs.full_build != 'true' && steps.coordination.outputs.already_current != 'true'
+        run: node tooling/deploy/actions-publication.mjs prepare
+
+      - name: Bind the full build to its canonical application identity
+        id: application
+        if: steps.coordination.outputs.full_build == 'true'
+        run: node tooling/deploy/actions-publication.mjs bind-full
 
       # The public demo retains its secret-history scan for every release.
       - name: Require successful application checks before publishing
@@ -95,19 +105,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # canvas-drop expects a zip whose root is the site root (index.html at top).
-      - name: Package the static site
-        if: steps.coordination.outputs.already_current != 'true'
-        run: |
-          # Canvas Drop ignores dotfiles; this marker is only for GitHub Pages.
-          rm -f site/dist/.nojekyll
-          (cd site/dist && zip -qr "$GITHUB_WORKSPACE/site.zip" .)
+      # This is private executable build tooling, never part of the Canvas
+      # manifest. Consumers also require this entire main workflow to succeed.
+      - name: Store canonical private application package
+        if: steps.coordination.outputs.full_build == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: roadmap-application-${{ steps.application.outputs.application_digest }}
+          path: ${{ steps.application.outputs.application_directory }}/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Deploy to canvas-drop
         env:
           CANVAS_DROP_TOKEN: ${{ secrets.CANVAS_DROP_TOKEN }}
           GH_TOKEN: ${{ github.token }}
-        run: node tooling/deploy/coordinate.mjs publish
+        run: node tooling/deploy/actions-publication.mjs publish
 
       - name: Record verified deployment
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

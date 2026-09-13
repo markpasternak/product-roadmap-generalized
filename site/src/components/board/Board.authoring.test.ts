@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mount, type VueWrapper } from "@vue/test-utils";
 import { flushPromises } from "@vue/test-utils";
+import { shallowRef } from 'vue';
+import { createPublishedContext, publishedContextKey, type PublishedContext } from '../../lib/published/usePublishedContent';
+import type { PublishedContent } from '../../lib/published/model';
+import type { PublishedRelease } from '../../lib/published/client';
 import type { ItemVM } from "../../lib/filters";
 
 // Board pulls in a lot of real child components (drawer, editors, share dialog); auto-stub
@@ -91,11 +95,12 @@ const item = (over: Partial<ItemVM> = {}): ItemVM => ({
 });
 
 let wrappers: VueWrapper[] = [];
-async function mountBoard(items: ItemVM[] = [item()]) {
+async function mountBoard(items: ItemVM[] = [item()], context?: PublishedContext) {
   const w = mount(Board, {
     attachTo: document.body,
     props: { items },
     global: {
+      provide: context ? { [publishedContextKey as symbol]: context } : {},
       stubs: {
         transition: false,
         ResourceEditor: { template: "<div><slot /></div>" },
@@ -120,6 +125,99 @@ beforeEach(() => {
   watchForNewVersionMock.mockClear();
   newVersionCb = null;
   vi.spyOn(window.location, "reload").mockImplementation(() => {});
+});
+
+describe('published revisions preserve the editor working base', () => {
+  function publication(items = [item()]) {
+    return createPublishedContext(shallowRef({
+      release: { commit: 'a'.repeat(40) } as PublishedRelease,
+      model: { items: [], boardItems: items, documents: [], documentHtml: {}, audience: 'internal' } as PublishedContent,
+    }));
+  }
+  it('patches a viewer in place and preserves filters and selection by stable ID', async () => {
+    meMock.mockResolvedValue({ editor: false, login: '' });
+    const context = publication();
+    const w = await mountBoard([item()], context);
+    const vm = w.vm as any;
+    vm.filters.q = 'Existing'; vm.selected = item();
+    await flushPromises();
+    expect(context.blocked.value).toBe(false);
+    const changed = item({ title: 'Existing item, updated', horizon: 'Next' });
+    await w.setProps({ items: [changed] });
+    expect(vm.liveItems[0].horizon).toBe('Next');
+    expect(vm.selected.title).toBe(changed.title);
+    expect(vm.filters.q).toBe('Existing');
+    expect(watchForNewVersionMock).not.toHaveBeenCalled();
+    expect(window.location.reload).not.toHaveBeenCalled();
+    await w.setProps({ items: [] });
+    expect(w.get('[data-published-removal]').text()).toContain('no longer part');
+    expect(vm.selected).toBeNull();
+  });
+  it('retains dirty fields and bodies, including a remotely deleted open item', async () => {
+    const context = publication();
+    const w = await mountBoard([item()], context);
+    const store = useEditStore();
+    store.setField('TALK-1', 'title', 'My draft'); store.setBody('TALK-1', 'My unpublished body');
+    (w.vm as any).openEditor('TALK-1');
+    await flushPromises();
+    expect(context.blocked.value).toBe(true);
+    const before = store.snapshot();
+    await w.setProps({ items: [] });
+    expect(store.snapshot()).toEqual(before);
+    expect((w.vm as any).editingItem.title).toBe('My draft');
+    expect((w.vm as any).liveItems[0].title).toBe('Existing item');
+    expect(watchForNewVersionMock).not.toHaveBeenCalled();
+  });
+  it('protects an inline title before it has even entered the draft store', async () => {
+    localStorage.setItem('rm-edit-mode', '1');
+    const context = publication();
+    const w = await mountBoard([item()], context);
+    await w.get('[data-test="card-title"]').trigger('dblclick');
+    const input = w.get('[data-test="rename-input"]');
+    await input.setValue('Typing an inline title');
+    expect(useEditStore().dirtyCount.value).toBe(0);
+    expect(context.blocked.value).toBe(true);
+    await w.setProps({ items: [item({ title: 'Remote title' })] });
+    expect((input.element as HTMLInputElement).value).toBe('Typing an inline title');
+    expect((w.vm as any).liveItems[0].title).toBe('Existing item');
+  });
+  it('keeps a saved-but-not-live receipt and its working view until existing live proof clears it', async () => {
+    const context = publication();
+    const w = await mountBoard([item()], context);
+    useEditStore().recordCommit('b'.repeat(40), '{}');
+    await flushPromises();
+    expect(context.blocked.value).toBe(true);
+    await w.setProps({ items: [item({ title: 'New published title' })] });
+    expect((w.vm as any).liveItems[0].title).toBe('Existing item');
+    expect(useEditStore().committedSha.value).toBe('b'.repeat(40));
+    useEditStore().clearCommit();
+    await flushPromises();
+    expect((w.vm as any).liveItems[0].title).toBe('New published title');
+  });
+  it('defers a drag and applies only after it ends, without clearing a store operation', async () => {
+    const context = publication();
+    const w = await mountBoard([item()], context);
+    const vm = w.vm as any;
+    vm.draggingId = 'TALK-1'; await flushPromises();
+    expect(context.blocked.value).toBe(true);
+    await w.setProps({ items: [item({ title: 'Remote title' })] });
+    expect(vm.liveItems[0].title).toBe('Existing item');
+    vm.draggingId = null; await flushPromises();
+    expect(vm.liveItems[0].title).toBe('Remote title');
+    expect(useEditStore().dirtyCount.value).toBe(0);
+  });
+  it('loads a clean editor base from the accepted published commit, not moving main', async () => {
+    const { fetchItems } = await import('../../lib/edit/client');
+    const context = publication();
+    const w = await mountBoard([item()], context);
+    (w.vm as any).editMode = true; await flushPromises();
+    vi.mocked(fetchItems).mockClear();
+    context.current.value = { ...context.current.value, release: { ...context.current.value.release!, commit: 'c'.repeat(40) } };
+    await w.setProps({ items: [item({ title: 'Published C' })] });
+    await flushPromises();
+    expect(fetchItems).toHaveBeenCalledWith('c'.repeat(40));
+    expect(window.location.reload).not.toHaveBeenCalled();
+  });
 });
 
 afterEach(() => {
@@ -202,6 +300,21 @@ describe("account drafts and recoverable publication", () => {
     await work;
     expect(store.bodyValue("TALK-1")).toBe("second");
     expect(store.dirtyCount.value).toBe(1);
+  });
+  it('refreshes the file library after a committed resource change', async () => {
+    const { listResources, invalidateResourceLibrary } = await import('../../lib/edit/resourceClient');
+    const { authedRequest } = await import('../../lib/edit/client');
+    const w = await editing();
+    invalidateResourceLibrary();
+    vi.mocked(authedRequest).mockResolvedValueOnce(new Response(JSON.stringify([{ id: 'ast_one', name: 'Before', revisions: [] }])));
+    expect((await listResources())[0]!.name).toBe('Before');
+    useEditStore().setAssets({ attach: [], update: [{ id: 'ast_one', baseManifestSha: 'b'.repeat(40), name: 'After' }] });
+    syncMock.mockResolvedValueOnce({ ok: true, sha: 'a'.repeat(40) });
+    await send(w);
+    await flushPromises();
+    vi.mocked(authedRequest).mockResolvedValueOnce(new Response(JSON.stringify([{ id: 'ast_one', name: 'After', revisions: [] }])));
+    expect((await listResources())[0]!.name).toBe('After');
+    invalidateResourceLibrary();
   });
   it("retries the frozen payload and identity after a lost response", async () => {
     const w = await editing();
@@ -323,7 +436,7 @@ describe("account drafts and recoverable publication", () => {
     expect(status(w).text()).toContain("Your changes are live");
     expect(useEditStore().committedSha.value).toBeNull();
   });
-  it('confirms live within four seconds without waiting for a stalled status request', async () => {
+  it('confirms live within half a second without waiting for a stalled status request', async () => {
     const w = await editing();
     vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout', 'Date']});
     deployStatusMock.mockImplementationOnce(() => new Promise(() => {}));
@@ -332,7 +445,9 @@ describe("account drafts and recoverable publication", () => {
     await send(w);
     await flushPromises();
     vi.mocked(fetchDeployedCommit).mockResolvedValue('a'.repeat(40));
-    await vi.advanceTimersByTimeAsync(4000);
+    await vi.advanceTimersByTimeAsync(499);
+    expect(status(w).text()).not.toContain('Your changes are live');
+    await vi.advanceTimersByTimeAsync(1);
     expect(status(w).text()).toContain('Your changes are live');
     expect(deployStatusMock).toHaveBeenCalledTimes(1);
     const count = vi.mocked(fetchDeployedCommit).mock.calls.length;
@@ -353,13 +468,30 @@ describe("account drafts and recoverable publication", () => {
     expect(fetchDeployedCommit).not.toHaveBeenCalled();
     expect(deployStatusMock).not.toHaveBeenCalled();
     Object.defineProperty(document, 'hidden', {value: false, configurable: true});
-    await vi.advanceTimersByTimeAsync(4000);
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushPromises();
     expect(fetchDeployedCommit).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(4000);
     expect(fetchDeployedCommit).toHaveBeenCalledTimes(1);
     vi.mocked(fetchDeployedCommit).mockResolvedValue('a'.repeat(40));
     await vi.advanceTimersByTimeAsync(4000);
     expect(status(w).text()).toContain('Your changes are live');
+  });
+  it('backs off the initiating client after the twenty-second fast window', async () => {
+    const w = await editing();
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout', 'Date']});
+    vi.mocked(fetchDeployedCommit).mockResolvedValue('c'.repeat(40));
+    deployStatusMock.mockImplementationOnce(() => new Promise(() => {}));
+    useEditStore().setField('TALK-1', 'title', 'Mine');
+    syncMock.mockResolvedValueOnce({ok: true, sha: 'a'.repeat(40)});
+    await send(w);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(20000);
+    const count = vi.mocked(fetchDeployedCommit).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetchDeployedCommit).toHaveBeenCalledTimes(count);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fetchDeployedCommit).toHaveBeenCalledTimes(count + 1);
   });
   it('ignores a late live response after a newer publication starts', async () => {
     const w = await editing();

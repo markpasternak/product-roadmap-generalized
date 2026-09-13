@@ -44,7 +44,7 @@ export function trapFocus(panel: HTMLElement, options: { initialFocus?: () => HT
   };
   document.addEventListener('keydown', onKey);
   document.addEventListener('focusin', onFocus);
-  (options.initialFocus?.() ?? focusables()[0] ?? panel).focus();
+  (options.initialFocus?.() ?? focusables()[0] ?? panel).focus({ preventScroll: true });
 
   let released = false;
   return () => {
@@ -55,6 +55,6 @@ export function trapFocus(panel: HTMLElement, options: { initialFocus?: () => HT
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('focusin', onFocus);
     if (!stack.length) document.body.style.overflow = previousOverflow;
-    if (wasTop && opener?.isConnected && (!stack.length || stack.at(-1)!.panel.contains(opener))) opener.focus();
+    if (wasTop && opener?.isConnected && (!stack.length || stack.at(-1)!.panel.contains(opener))) opener.focus({ preventScroll: true });
   };
 }

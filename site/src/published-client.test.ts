@@ -1,0 +1,33 @@
+import { beforeEach, expect, test, vi } from 'vitest';
+const hooks = vi.hoisted(() => ({ mount: vi.fn(), unmount: vi.fn(), watch: vi.fn(), stop: vi.fn() }));
+vi.mock('vue', async () => ({ ...await vi.importActual<typeof import('vue')>('vue'), createSSRApp: () => ({ provide: vi.fn(), mount: hooks.mount, unmount: hooks.unmount }) }));
+vi.mock('./components/published/PublishedPage.vue', () => ({ default: {} }));
+vi.mock('./lib/published/viewState', () => ({ captureViewState: () => () => {} }));
+vi.mock('./lib/published/routes', () => ({ contentRoutes: () => [] }));
+vi.mock('./lib/published/client', async () => ({ ...await vi.importActual<typeof import('./lib/published/client')>('./lib/published/client'), watchPublishedContent: hooks.watch }));
+beforeEach(() => {
+  vi.clearAllMocks();
+  hooks.watch.mockReturnValue({ stop: hooks.stop, flush: vi.fn(), refresh: vi.fn() });
+});
+test('stable SSR remains visible but cannot start editing before a verified snapshot; navigation cleans up startup', async () => {
+  const application = { applicationCommit: 'a'.repeat(40), applicationPackage: 'b'.repeat(64), profile: 'c'.repeat(64), contentSchema: 1 };
+  document.body.innerHTML = '<div id="published-root"><p>Existing roadmap</p></div><script id="published-seed" type="application/json"></script>';
+  document.getElementById('published-seed')!.textContent = JSON.stringify({ application, model: { audience: 'internal' }, base: '/' });
+  await import('./published-client');
+  expect(hooks.mount).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain('Existing roadmap');
+  document.dispatchEvent(new Event('astro:page-load'));
+  expect(hooks.watch).toHaveBeenCalledTimes(1);
+  const options = hooks.watch.mock.calls[0][0];
+  options.status('error');
+  expect(document.querySelector('[role="status"]')?.textContent).toContain('Retrying');
+  options.apply({ model: {}, release: { ...application, commit: 'd'.repeat(40), committedAt: '2026-09-13T12:00:00Z' } });
+  expect(hooks.mount).toHaveBeenCalledTimes(1);
+  expect(document.querySelector('[role="status"]')).toBeNull();
+  expect(document.getElementById('published-root')!.dataset.contentCommit).toBe('d'.repeat(40));
+  options.apply({ model: {}, release: { ...application, commit: 'e'.repeat(40), committedAt: '2026-09-13T12:00:01Z' } });
+  expect(hooks.mount).toHaveBeenCalledTimes(1);
+  document.dispatchEvent(new Event('astro:before-swap'));
+  expect(hooks.stop).toHaveBeenCalledOnce();
+  expect(hooks.unmount).toHaveBeenCalledOnce();
+});

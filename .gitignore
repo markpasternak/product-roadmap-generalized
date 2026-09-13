@@ -27,3 +27,10 @@ deployment-verification.json
 *.pfx
 .playwright-cli/
 output/
+
+# Private publication attempts and coordination observations.
+.publication-application/
+.publication-candidate/
+.publication-selection.json
+.deployment-intent.json
+deployment-verification.json

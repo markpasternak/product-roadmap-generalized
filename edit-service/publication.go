@@ -247,6 +247,7 @@ func (s *Server) handlePublication(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		sha, err := s.gh.runGit(r.Context(), token, root, "log", "-1", "--format=%H", "--", p)
+		s.gh.invalidateAssetSnapshots()
 		result = PublicationResult{OK: true, SHA: strings.TrimSpace(string(sha)), CreatedIDs: receipt.CreatedIDs, State: "committed"}
 		return err
 	})

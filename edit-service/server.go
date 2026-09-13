@@ -44,6 +44,7 @@ func NewServer(cfg Config) *Server {
 }
 
 func (s *Server) routes() {
+	s.mux.HandleFunc("POST /webhooks/github", s.handleGitHubWebhook)
 	s.mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	s.mux.HandleFunc("GET /auth/login", s.handleLogin)
 	s.mux.HandleFunc("GET /auth/callback", s.handleCallback)
@@ -68,10 +69,11 @@ func (s *Server) routes() {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	addVary(w.Header(), "Origin")
 	if r.Header.Get("Origin") == s.cfg.AllowedOrigin {
 		w.Header().Set("Access-Control-Allow-Origin", s.cfg.AllowedOrigin)
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key, If-None-Match")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE, OPTIONS")
 	}
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(204)

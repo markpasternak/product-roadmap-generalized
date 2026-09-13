@@ -70,3 +70,20 @@ test('incremental history equals fresh Git history through edits, reverts, renam
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the packaged CLI runs through a symlinked path such as macOS /tmp', async t => {
+  const { symlinkSync, readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const root = mkdtempSync(join(tmpdir(), 'roadmap-history-cli-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const git = (...args) => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
+  git('init', '-q'); git('config', 'user.name', 'Fixture'); git('config', 'user.email', 'fixture@example.test');
+  mkdirSync(join(root, 'content/items'), { recursive: true });
+  writeFileSync(join(root, 'content/items/A.md'), 'First'); git('add', '.'); git('commit', '-qm', 'First');
+  const entry = join(root, 'history.mjs');
+  symlinkSync(fileURLToPath(new URL('./build-item-history.mjs', import.meta.url)), entry);
+  const run = () => execFileSync(process.execPath, [entry], { cwd: root, encoding: 'utf8' });
+  assert.match(run(), /1\/1 refreshed/);
+  assert.match(run(), /0\/1 refreshed/);
+  assert.equal(JSON.parse(readFileSync(join(root, 'site/.cache/item-history.json'))).head, git('rev-parse', 'HEAD').toString().trim());
+});

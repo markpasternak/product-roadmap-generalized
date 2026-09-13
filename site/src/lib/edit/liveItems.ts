@@ -1,4 +1,4 @@
-// Runtime counterpart to `lib/board.ts`'s `buildBoardItems` — that function is BUILD-TIME
+// Editor counterpart to `published/board.ts`'s mapper — that function prepares published
 // (uses `getCollection`), so it can't run in the browser. This maps the edit-service's
 // `GET /api/items` response (git-fresh, read straight off the commit) into the same `ItemVM`
 // shape the board renders, so Board.vue can refresh its base state right after a Sync lands
@@ -88,6 +88,7 @@ export function itemsFromApi(apiItems: ApiItem[], base: string): ItemVM[] {
       themes,
       oneliner,
       outcome: sectionText(body, 'Target outcome'),
+      ...(!IS_PUBLIC ? { readingBody: body } : {}),
       sections,
       editUrl,
       links: parseLinks(body, base).map((l) => ({ ...l, title: null })),

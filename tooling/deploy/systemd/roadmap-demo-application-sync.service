@@ -1,0 +1,27 @@
+[Unit]
+Description=Approve the deployed roadmap demo application from verified Actions artifacts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/node /opt/roadmap-demo-operator/tooling/deploy/reconcile-application.mjs
+EnvironmentFile=/etc/roadmap-demo-editor.env
+LoadCredential=app.pem:/etc/roadmap-demo-editor-app.pem
+Environment=GITHUB_APP_PRIVATE_KEY_FILE=%d/app.pem
+Environment=ROADMAP_APPLICATION_GROUP=roadmap-demo-editor
+User=root
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/roadmap-demo-applications
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+TimeoutStartSec=5min
+MemoryMax=512M

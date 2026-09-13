@@ -26,6 +26,9 @@ export type SharedResource = {
   image?: boolean;
   inline?: boolean;
 };
+export type ShareResourceCatalog = {
+  assets: { id: string; revisions: { original: { path: string; mediaType: string; bytes: number; sha256: string } }[] }[];
+};
 export function shareResourceChoices(items: ItemVM[]): ShareResourceChoice[] {
   const out: ShareResourceChoice[] = [];
   for (const item of items) {
@@ -65,11 +68,12 @@ export async function prepareShareResources(
   selected: ShareResourceChoice[],
   base = "/",
   preview = false,
+  publishedCatalog?: ShareResourceCatalog,
 ) {
   const files: Record<string, Uint8Array> = {},
     resources = new Map<string, SharedResource[]>(),
     covers = new Map<string, string>();
-  let catalog: any = null,
+  let catalog: ShareResourceCatalog | null = publishedCatalog ?? null,
     total = 0;
   const choices = new Map(selected.filter(choice => items.some(item => item.id === choice.itemId)).map(choice => [choice.key, choice]));
   for (const item of items) {
@@ -97,11 +101,11 @@ export async function prepareShareResources(
           throw new Error("Could not verify the selected files. Try again.");
         catalog = await res.json();
       }
-      const a = catalog.assets?.find((a: any) =>
+      const a = catalog!.assets?.find((a) =>
         choice.repoPath!.startsWith(`content/assets/${a.id}/`),
       );
       const revision = a?.revisions.find(
-        (r: any) =>
+        (r) =>
           choice.repoPath === `content/assets/${a.id}/${r.original.path}`,
       );
       if (!revision)

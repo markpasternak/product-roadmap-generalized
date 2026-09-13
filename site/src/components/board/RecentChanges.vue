@@ -4,10 +4,11 @@
 // nothing at all — no empty box, no error — when the feed is empty or the
 // endpoint/token isn't available (R14), e.g. signed out or local dev without
 // the edit-service running.
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { PhArrowSquareOut, PhClockCounterClockwise, PhCaretDown } from '@phosphor-icons/vue';
 import { countsSummary, fetchActivity, formatRelativeTime, resolveTitles, type ParsedActivity } from '../../lib/activity';
 import { formatDateTime, isoDateTime } from '../../lib/dates';
+import { usePublishedContent } from '../../lib/published/usePublishedContent';
 
 const props = withDefaults(
   defineProps<{
@@ -26,6 +27,8 @@ const props = withDefaults(
 
 const loading = ref(true);
 const entries = ref<ParsedActivity[]>([]);
+const publication = usePublishedContent();
+if (publication) watch(() => publication.current.value.release?.commit, () => { void loadActivity(); });
 
 const byId = computed(() => new Map(props.items.map((i) => [i.id, { title: i.title }])));
 const visible = computed(() => (props.limit != null ? entries.value.slice(0, props.limit) : entries.value));
@@ -51,6 +54,8 @@ function toggleCollapsed() {
 // the component unmounts (e.g. `present` toggling this out of the tree) before
 // fetchActivity() resolves, the resolved entries are simply dropped.
 let isMounted = true;
+let activityInFlight = false;
+let activityQueued = false;
 onUnmounted(() => {
   isMounted = false;
 });
@@ -65,12 +70,19 @@ onMounted(async () => {
   await loadActivity();
 });
 async function loadActivity() {
+  if (activityInFlight) { activityQueued = true; return; }
+  if (!isMounted) return;
+  activityInFlight = true;
   loading.value = true;
   try {
     const activity = await fetchActivity();
     if (isMounted) entries.value = activity;
   } catch { /* The full page offers a retry; the board peek stays quiet. */ }
-  finally { if (isMounted) loading.value = false; }
+  finally {
+    activityInFlight = false;
+    if (isMounted) loading.value = false;
+    if (activityQueued && isMounted) { activityQueued = false; void loadActivity(); }
+  }
 }
 
 /** "who" label for a row — the human editor from `(via <login>)`, or a

@@ -2,6 +2,22 @@
 
 The service authenticates roadmap editors with GitHub and publishes to `REPO` on `main`. Published Markdown, original uploaded files and resource metadata all live in Git. A fresh checkout can rebuild the site without the editing service or upload staging.
 
+## Optional content publisher
+
+The `content` worker renders an immutable, validated Git revision using an explicitly
+approved application package; it does not compile Astro/Vite or install dependencies.
+UI publication, a signed GitHub push webhook, startup and a reconciliation timer
+can wake it. Hints coalesce to latest main. Code changes, unavailable credentials
+or incompatible packages leave publication to GitHub Actions.
+
+`POST /webhooks/github` uses a separate HMAC secret, not an editor session. Configure
+push events for this repository and verify delivery during deployment. The handler
+does not trust the payload's SHA or execute supplied commands. `shadow` mode prepares
+without Canvas activation; `disabled` pauses local publication. See
+[the release/operations checklist](../tooling/deploy/content-release-checklist.md)
+and [local build modes](LOCAL_BUILDS.md) for trusted package promotion, profile
+settings, webhook installation, fallback and coordinated pause/rollback.
+
 ## Working storage
 
 Set `ROADMAP_STATE_DIR` to a durable private directory, or use systemd's `StateDirectory=roadmap-demo-editor` (exposed as `STATE_DIRECTORY`). Back up this directory to preserve unpublished account drafts and staged uploads. The fallback under the system temporary directory is for development only. Keep the Git checkout cache separate; it can be rebuilt.
@@ -70,3 +86,43 @@ Limits: 25 MiB per file, 100 MiB of uploads per publication, 250 MiB of staged f
 ## Verify and release
 
 Run `go test -race ./...` and `go vet ./...`. Tests include an actual local bare Git repository to verify atomic asset/item/receipt commits and recovery after a simulated restart. Build the production binary with `-X main.version=<git-sha>`. Preserve the previous binary, deploy the service before the frontend, then verify `/health`, `/api/capabilities`, systemd health, the frontend workflow and the deployed `version.json`.
+
+## Committed image reads
+
+`GET /api/assets/content` authenticates each request, then reads the declared original
+from a pinned Git commit without creating a worktree. Concurrent requests share a
+refresh; a warm snapshot is reused for five seconds. Service publication invalidates
+it before returning success. External pushes are discovered at the next refresh;
+refresh failure returns an error rather than stale content.
+
+The cache holds at most eight commit snapshots and an 8 MiB metadata budget. Four
+responses may hold original buffers at once (25 MiB each); capacity remains held
+through the HTTP response, including slow clients. A 60-second write deadline
+prevents stalled downloads from holding that capacity indefinitely. Git refs under
+`refs/roadmap-asset-cache/` keep cached commits reachable and are cleaned on eviction
+or service restart. Cached metadata never includes permission decisions or staged
+uploads. Originals pass size, SHA-256 and MIME checks before serving.
+
+Both original-preview endpoints (`/api/assets/content?path=…` and
+`/api/uploads/:id/content`) use `Cache-Control: private, no-cache`, a strong quoted
+SHA-256 ETag and additive `Vary: Authorization, Origin`. Browsers may store bytes,
+but must revalidate before reuse. Every request rechecks the session and resource
+membership; staged files also recheck account ownership, expiry and actual bytes.
+Denied, missing, invalid and HTTP-precondition/range error responses are non-storable
+and have no success validator. HEAD, Range and other HTTP preconditions continue
+through Go's `http.ServeContent`.
+
+Within a pinned snapshot, a previously checksum/MIME-validated immutable Git object
+can answer a matching single-validator request without reading the body again.
+New snapshots must validate their own object/manifest combination. This does not
+extend the five-second snapshot freshness window or cache authorization decisions.
+Staged files are mutable local state and therefore retain per-request byte validation.
+Published images still load from Canvas first, and in-page preview reuse is unchanged.
+Revalidation controls future HTTP cache reuse: it cannot erase downloaded files or
+images already retained in page memory.
+
+For isolated browser proof, run `ROADMAP_PREVIEW_BROWSER=1 go test -run
+TestPreviewBrowserHarness -v` here. The printed loopback page uses real Go endpoints
+and fixture-only signed sessions on a separate API origin. Every preview open issues
+a fetch; `/events` records server-observed 200/304/error status and body-byte counts.
+POST `/stop` on the page origin stops the harness. No production data is involved.

@@ -141,6 +141,8 @@ describe('renderShareHtml', () => {
     expect(infraHtml).not.toContain('<span class="card-product">');
     const mixed = renderShareHtml({ ...ctx, product: null }, [item, infraItem]);
     expect(mixed).toContain('aria-label="Ads Platform"');
+    expect(mixed).toMatch(/class="card-meta">\s*<span class="card-product-badge"/);
+    expect(mixed).not.toContain('<span class="product-mark"');
     expect(mixed).toContain('aria-hidden="true">AP</span>');
     expect(mixed).not.toContain('<span class="card-product">');
   });

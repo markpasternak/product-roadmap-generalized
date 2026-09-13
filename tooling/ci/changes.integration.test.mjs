@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { reusableApplication } from './changes.mjs';
 
 test('actual Git comparisons keep pending code in scope after a later content push', () => {
   const root = mkdtempSync(join(tmpdir(), 'roadmap-ci-test-'));
@@ -67,6 +68,14 @@ test('actual Git comparisons keep pending code in scope after a later content pu
     assert.equal(cliOutput({}, 'workflow_dispatch'), 'content_only=false\nbuild_required=true\n');
     assert.equal(cliOutput({}, 'push', true), 'content_only=false\nbuild_required=true\n');
     assert.equal(classify({}, 'push').contentOnly, true);
+    assert.equal(reusableApplication(deployed, git('rev-parse', 'HEAD'), root), true);
+    assert.equal(reusableApplication(deployed, deployed, root), true);
+    git('update-index', '--chmod=+x', 'content/items/A.md');
+    git('commit', '-qm', 'Executable content is not data');
+    assert.equal(reusableApplication(deployed, git('rev-parse', 'HEAD'), root), false);
+    assert.equal(classify({}, 'push').contentOnly, false);
+    git('update-index', '--chmod=-x', 'content/items/A.md');
+    git('commit', '-qm', 'Restore regular content');
     assert.equal(classify({}, 'push', null).contentOnly, false);
     assert.equal(classify({}, 'workflow_dispatch').contentOnly, false);
     assert.equal(
@@ -81,6 +90,7 @@ test('actual Git comparisons keep pending code in scope after a later content pu
     git('add', '.');
     git('commit', '-qm', 'Later content');
     assert.equal(classify({}, 'push').contentOnly, false);
+    assert.equal(reusableApplication(deployed, git('rev-parse', 'HEAD'), root), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

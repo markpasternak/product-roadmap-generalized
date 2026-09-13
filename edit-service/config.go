@@ -13,6 +13,7 @@ type Config struct {
 	StateDir                                                      string
 	LocalBuild                                                    localBuildConfig
 	CanvasDropToken                                               string // Server-only; never part of build environments or receipts.
+	WebhookSecret                                                 string // Separate from editor sessions and deployment credentials.
 }
 
 func LoadConfig(getenv func(string) string) (Config, error) {
@@ -25,12 +26,19 @@ func LoadConfig(getenv func(string) string) (Config, error) {
 		RepoCacheDir:    getenv("REPO_CACHE_DIR"),
 		StateDir:        getenv("STATE_DIRECTORY"),
 		CanvasDropToken: getenv("CANVAS_DROP_TOKEN"),
+		WebhookSecret:   getenv("GITHUB_WEBHOOK_SECRET"),
 	}
 	c.LocalBuild = localBuildConfig{
 		Mode: getenv("ROADMAP_LOCAL_BUILD_MODE"), HasToken: getenv("CANVAS_DROP_TOKEN") != "",
-		CanvasAPIURL: getenv("CANVAS_API_URL"),
-		BaseSHA:      getenv("ROADMAP_LOCAL_BUILD_BASE_SHA"), DependenciesDir: getenv("ROADMAP_LOCAL_BUILD_DEPENDENCIES"),
+		CanvasAPIURL:       getenv("CANVAS_API_URL"),
+		ApplicationPointer: getenv("ROADMAP_APPLICATION_POINTER"),
+		UploadConcurrency:  getenv("ROADMAP_UPLOAD_CONCURRENCY"),
+		RaceBarrier:        getenv("ROADMAP_CONTENT_RACE_BARRIER") == "true",
+		BaseSHA:            getenv("ROADMAP_LOCAL_BUILD_BASE_SHA"), DependenciesDir: getenv("ROADMAP_LOCAL_BUILD_DEPENDENCIES"),
 		Profile: buildProfile{SiteURL: getenv("SITE_URL"), Base: getenv("SITE_BASE"), Audience: getenv("SITE_AUDIENCE"), EditAPI: getenv("PUBLIC_EDIT_API"), CanvasBackend: getenv("PUBLIC_CANVAS_BACKEND")},
+	}
+	if n := c.LocalBuild.UploadConcurrency; n != "" && n != "4" && n != "8" {
+		return Config{}, fmt.Errorf("ROADMAP_UPLOAD_CONCURRENCY must be 4 or 8")
 	}
 	if dir := getenv("ROADMAP_STATE_DIR"); dir != "" {
 		c.StateDir = dir

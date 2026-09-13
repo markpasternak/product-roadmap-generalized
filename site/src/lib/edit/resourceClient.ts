@@ -1,19 +1,31 @@
 import { ref } from "vue";
 import { authedRequest, EDIT_API, getToken } from "./client";
-import { repositoryAssetPath, type ResourceAsset, type ResourceUpload } from "../resources";
+import { repositoryAssetPath, resourceHref, type ResourceAsset, type ResourceUpload } from "../resources";
 export const resourceTransferCount = ref(0);
 export const resourcePreviewURLs = ref<Record<string, string>>({});
 const imageRequests = new Map<string, Promise<void>>();
 let resourceListCache: { at: number; assets: ResourceAsset[] } | undefined;
 let resourceListRequest: Promise<ResourceAsset[]> | undefined;
+let resourceListGeneration = 0;
 const RESOURCE_LIST_TTL = 5 * 60_000;
 const cloneResources = (assets: ResourceAsset[]): ResourceAsset[] =>
   typeof structuredClone === 'function' ? structuredClone(assets) : JSON.parse(JSON.stringify(assets));
-/** Load authenticated originals when the static build has not caught up yet. */
+/** Prefer deployed images; authenticated originals cover builds that have not caught up. */
 export async function loadImagePreview(path: string): Promise<void> {
   if (!repositoryAssetPath(path) || resourcePreviewURLs.value[path]) return;
   if (imageRequests.has(path)) return imageRequests.get(path)!;
   const request = (async () => {
+    const staticURL = resourceHref(path, import.meta.env.BASE_URL);
+    const available = await new Promise<boolean>((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve(true);
+      image.onerror = () => resolve(false);
+      image.src = staticURL;
+    });
+    if (available) {
+      resourcePreviewURLs.value = { ...resourcePreviewURLs.value, [path]: staticURL };
+      return;
+    }
     const res = await authedRequest(`/api/assets/content?path=${encodeURIComponent(path)}`);
     if (!res.ok || !res.headers.get('content-type')?.startsWith('image/'))
       throw new Error('Image preview unavailable');
@@ -27,15 +39,23 @@ export async function loadImagePreview(path: string): Promise<void> {
 export async function listResources(): Promise<ResourceAsset[]> {
   if (resourceListCache && Date.now() - resourceListCache.at < RESOURCE_LIST_TTL)
     return cloneResources(resourceListCache.assets);
-  resourceListRequest ??= (async () => {
+  const generation = resourceListGeneration;
+  const request = resourceListRequest ??= (async () => {
     const res = await authedRequest("/api/assets");
     if (!res.ok) throw new Error("Could not load the file library. Try again.");
     const assets = await res.json() as ResourceAsset[];
-    resourceListCache = { at: Date.now(), assets };
+    if (generation === resourceListGeneration)
+      resourceListCache = { at: Date.now(), assets };
     return assets;
   })();
-  try { return cloneResources(await resourceListRequest); }
-  finally { resourceListRequest = undefined; }
+  try { return cloneResources(await request); }
+  finally { if (resourceListRequest === request) resourceListRequest = undefined; }
+}
+/** A committed asset change must be visible when the draft is acknowledged. */
+export function invalidateResourceLibrary(): void {
+  resourceListGeneration++;
+  resourceListCache = undefined;
+  resourceListRequest = undefined;
 }
 export function uploadResource(
   file: File,

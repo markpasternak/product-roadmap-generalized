@@ -46,6 +46,18 @@ async function mockFiles(response: Response) {
   return fetcher;
 }
 describe("explicit frozen share resources", () => {
+  it('uses the accepted content catalog instead of fetching a moving latest catalog', async () => {
+    const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map(b => b.toString(16).padStart(2, '0')).join('');
+    const catalog = { assets: [{ id: 'ast_test', revisions: [{ original: { path: 'rev_one/notes.txt', mediaType: 'text/plain', bytes: bytes.length, sha256 } }] }] };
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response(bytes));
+    vi.stubGlobal('fetch', fetcher);
+    const result = await prepareShareResources([item], [choice], '/', false, catalog);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe('/assets/ast_test/rev_one/notes.txt');
+    expect(result.files['assets/ast_test/rev_one/notes.txt']).toEqual(bytes);
+    fetcher.mockResolvedValueOnce(new Response('Changed after the tab opened'));
+    await expect(prepareShareResources([item], [choice], '/', false, catalog)).rejects.toThrow('did not match its published original');
+  });
   it('automatically freezes the selected card cover without listing it as a drawer resource', async () => {
     const imageBytes = new Uint8Array([137, 80, 78, 71]);
     const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', imageBytes))).map(b => b.toString(16).padStart(2, '0')).join('');

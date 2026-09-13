@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue';
 import { PhBookmarkSimple, PhCaretDown, PhCheck, PhPencilSimple, PhPlus, PhX } from '@phosphor-icons/vue';
 import { activityLabel } from '../../lib/activityFilter';
+import { isTopFocusTrap, trapFocus } from '../../lib/focusTrap';
 import type { FilterState, SortKey } from '../../lib/filters';
 import { SAVED_VIEWS_KEY, readSavedViews, sameViewSelection, snapshotView, type SavedView } from '../../lib/savedViews';
 
@@ -29,9 +30,15 @@ const removed = ref<{ view: SavedView; index: number; wasSelected: boolean } | n
 let messageTimer: ReturnType<typeof setTimeout> | undefined;
 const root = ref<HTMLElement>();
 const panel = ref<HTMLElement>();
+let releaseFocus: (() => void) | undefined;
+watch(open, async value => {
+  if (!props.compact) return;
+  if (!value) { releaseFocus?.(); releaseFocus = undefined; return; }
+  await nextTick();
+  if (open.value && panel.value) releaseFocus = trapFocus(panel.value);
+});
 const opensAbove = ref(false);
 const panelMaxHeight = ref('');
-const panelOffset = ref(0);
 const trigger = ref<HTMLButtonElement>();
 const nameInput = ref<HTMLInputElement>();
 const panelId = useId();
@@ -82,6 +89,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('storage', onStorage);
   window.removeEventListener('resize', positionPanel);
   clearTimeout(messageTimer);
+  releaseFocus?.();
 });
 
 function onStorage(event: StorageEvent) {
@@ -103,12 +111,14 @@ function persist(next: SavedView[]) {
 async function close(restoreFocus = true) {
   open.value = false;
   error.value = '';
-  if (restoreFocus) { await nextTick(); trigger.value?.focus(); }
+  if (restoreFocus) { await nextTick(); trigger.value?.focus({ preventScroll: true }); }
 }
 function onOutsidePointer(event: PointerEvent) {
+  if (props.compact) return; // The drawer scrim owns outside dismissal.
   if (open.value && event.target instanceof Node && !root.value?.contains(event.target)) void close(false);
 }
 function onFocusOut(event: FocusEvent) {
+  if (props.compact) return; // Modal focus is contained, not a dismissal signal.
   // Replacing the picker with its name form briefly blurs the removed button.
   // Clicking a label can also move focus to a page ancestor before its checkbox is activated.
   // Only dismiss for a concrete outside focus target; outside pointers are handled above.
@@ -117,15 +127,11 @@ function onFocusOut(event: FocusEvent) {
 }
 async function positionPanel() {
   if (!open.value) return;
+  if (props.compact) { await nextTick(); return; }
   panelMaxHeight.value = '';
   await nextTick();
   if (!open.value || !root.value || !panel.value) return;
   const anchor = root.value.getBoundingClientRect();
-  if (props.compact) {
-    const width = panel.value.getBoundingClientRect().width;
-    const left = anchor.right - width;
-    panelOffset.value = Math.min(Math.max(left, 16), Math.max(16, window.innerWidth - width - 16)) - left;
-  }
   const below = window.innerHeight - anchor.bottom - 12;
   const navigationBottom = document.querySelector('.site-navbar')?.getBoundingClientRect().bottom ?? 0;
   const above = anchor.top - Math.max(12, navigationBottom + 12);
@@ -138,6 +144,9 @@ function toggle() {
   error.value = '';
   open.value = true;
   void positionPanel();
+}
+function onPanelEscape() {
+  if (!props.compact || isTopFocusTrap(panel.value)) void close();
 }
 function apply(entry: ViewEntry) {
   selectedKey.value = entry.key;
@@ -190,7 +199,7 @@ function update() {
   if (!persist(views.value.map(view => view.name === next.name ? next : view))) return;
   removed.value = null;
   message.value = `Updated “${next.name}”.`;
-  trigger.value?.focus();
+  if (!props.compact) trigger.value?.focus();
 }
 function remove() {
   const index = views.value.findIndex(view => view.name === editingName.value);
@@ -223,12 +232,12 @@ function undo() {
 <template>
   <div ref="root" class="saved-views" :class="{ compact }" aria-label="Roadmap views" @focusout="onFocusOut" @keydown.esc.stop.prevent="close()">
     <div class="view-toolbar">
-      <button ref="trigger" type="button" class="view-trigger roadmap-action" :aria-expanded="open" :aria-controls="panelId"
+      <button ref="trigger" type="button" class="roadmap-action" :class="compact ? 'roadmap-settings-trigger' : 'view-trigger'" :aria-expanded="open" :aria-controls="panelId"
         :aria-label="compact ? 'View options and saved views' : `Choose view: ${selected?.view.name ?? 'Current view'}${modified ? ', modified' : ''}`" @click="toggle">
         <PhBookmarkSimple :size="16" aria-hidden="true" />
-        <span class="view-current-name">{{ compact ? selected?.view.name ?? 'View' : selected?.view.name ?? 'Current view' }}</span>
+        <span class="view-current-name">{{ compact ? 'View' : selected?.view.name ?? 'Current view' }}</span>
         <span v-if="compact && modified" class="view-modified-dot" aria-label="View has unsaved changes" />
-        <PhCaretDown :size="12" aria-hidden="true" class="view-caret" :class="{ 'is-open': open }" />
+        <PhCaretDown v-if="!compact" :size="12" aria-hidden="true" class="view-caret" :class="{ 'is-open': open }" />
       </button>
       <span v-if="modified && !compact" class="view-modified">Modified</span>
       <div v-if="!compact" class="view-actions">
@@ -238,12 +247,16 @@ function undo() {
       </div>
     </div>
 
-    <section v-if="open" :id="panelId" ref="panel" class="view-popover" :class="{ 'opens-above': opensAbove }" :style="{ maxHeight: panelMaxHeight, transform: compact ? `translateX(${panelOffset}px)` : undefined }" :aria-label="mode === 'list' ? 'Choose a view' : mode === 'create' ? 'Save view' : 'Rename view'">
-      <div class="view-popover-heading">
+    <Teleport to="body" :disabled="!compact">
+    <Transition :name="compact ? 'settings-sheet' : undefined">
+    <div v-if="open" :class="{ 'roadmap-settings-overlay': compact }" @keydown.esc.stop.prevent="onPanelEscape">
+    <div v-if="compact" class="roadmap-settings-scrim" aria-hidden="true" @click="close()" />
+    <section :id="panelId" ref="panel" :class="[compact ? 'roadmap-settings-panel' : 'view-popover', { 'opens-above': !compact && opensAbove }]" :style="compact ? undefined : { maxHeight: panelMaxHeight }" :role="compact ? 'dialog' : undefined" :aria-modal="compact ? true : undefined" :tabindex="compact ? -1 : undefined" :aria-label="mode === 'list' ? (compact ? 'View options' : 'Choose a view') : mode === 'create' ? 'Save view' : 'Rename view'">
+      <div :class="compact ? 'roadmap-settings-header' : 'view-popover-heading'">
         <h2>{{ mode === 'list' ? (compact ? 'View options' : 'Your saved views') : mode === 'create' ? 'Save this view' : 'Edit saved view' }}</h2>
-        <button type="button" class="view-icon-action" aria-label="Close views" @click="close()"><PhX :size="16" aria-hidden="true" /></button>
+        <button type="button" :class="compact ? 'roadmap-settings-close' : 'view-icon-action'" aria-label="Close views" @click="close()"><PhX :size="compact ? 18 : 16" aria-hidden="true" /></button>
       </div>
-      <template v-if="mode === 'list'">
+      <div v-if="mode === 'list'" class="view-popover-body">
         <slot name="settings" />
         <div v-if="compact && modified" class="view-current-status">
           <span>{{ selected?.view.name }} · Modified</span>
@@ -266,7 +279,7 @@ function undo() {
         <div class="view-popover-footer">
           <button type="button" class="view-text-action view-save" @click="edit()"><PhPlus :size="15" aria-hidden="true" /> Save as new view</button>
         </div>
-      </template>
+      </div>
       <form v-else class="view-form" @submit.prevent="save">
         <label :for="inputId">View name</label>
         <input :id="inputId" ref="nameInput" v-model="name" maxlength="60" autocomplete="off" :aria-invalid="!!error" :aria-describedby="error ? errorId : undefined" @input="error = ''" />
@@ -280,7 +293,13 @@ function undo() {
           <button type="submit" class="view-submit roadmap-primary-action roadmap-action">{{ mode === 'create' ? 'Save view' : 'Save name' }}</button>
         </div>
       </form>
+      <div v-if="compact && mode === 'list'" class="roadmap-settings-footer">
+        <button type="button" data-test="view-done" @click="close()">Done</button>
+      </div>
     </section>
+    </div>
+    </Transition>
+    </Teleport>
     <div v-if="message" class="view-feedback">
       <span role="status">{{ message }}</span>
       <button v-if="removed" type="button" class="view-text-action" @click="undo">Undo</button>
@@ -291,7 +310,9 @@ function undo() {
 
 <style scoped>
 .saved-views.compact { margin-bottom: 0; flex-shrink: 0; }
-.compact .view-popover { width: min(380px, calc(100vw - 32px)); left: auto; right: 0; }
+.roadmap-settings-panel .view-popover-body, .roadmap-settings-panel .view-form { flex:1; }
+.roadmap-settings-panel :deep(.compact-view-settings) { padding:1.25rem;gap:1.25rem; }
+.roadmap-settings-panel :deep(.lane-order-setting), .roadmap-settings-panel :deep(.view-horizons label) { min-height:40px; }
 .view-feedback { position:fixed;right:1.5rem;bottom:1.5rem;top:auto;width:auto;max-width:min(360px,calc(100vw - 2rem));padding:.75rem 1rem;border:1px solid var(--roadmap-glass-border);border-radius:9px;background:var(--color-card);box-shadow:var(--roadmap-warm-shadow),0 12px 32px rgb(0 0 0 / 18%);z-index:50; }
 .view-current-status { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .5rem 1rem; }
 .view-current-status > span { flex-basis: 100%; color: var(--roadmap-ink-muted); }
@@ -312,7 +333,8 @@ function undo() {
 .view-popover-heading { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; padding: .6rem .75rem .4rem 1rem; }
 .view-popover-heading h2 { margin: 0; font-size: .875rem; font-weight: 600; }
 .view-icon-action { display: inline-grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 5px; color: var(--roadmap-ink-muted); cursor: pointer; }
-.view-list { min-height: 96px; flex:1 1 auto; max-height:none; overflow-y:auto; overscroll-behavior:contain; padding:0 .5rem .5rem; scrollbar-width:thin; }
+.view-popover-body { min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+.view-list { padding:0 .5rem .5rem; }
 .view-section-label { margin: .5rem .5rem .35rem; font-size: .68rem; font-weight: 500; color: var(--roadmap-ink-muted); }
 .view-option { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex: 1; width: 100%; min-width: 0; text-align: left; padding: .7rem .5rem; border-radius: 6px; cursor: pointer; }
 .view-option[aria-pressed='true'] { background: var(--color-surface-subtle-default); }

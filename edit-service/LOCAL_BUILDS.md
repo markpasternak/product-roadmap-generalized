@@ -1,5 +1,21 @@
 # Optional local builds and coordinated publication
 
+## Content-publication release
+
+The new `content` and `shadow` modes use a verified, explicitly installed private
+application package. They do not install dependencies or compile Astro/Vite.
+See [the current release and operations checklist](../tooling/deploy/content-release-checklist.md)
+for package promotion, webhook installation, timers, pause/rollback and live tests.
+`ROADMAP_LOCAL_BUILD_MODE=disabled` or a missing Canvas token leaves Actions in
+charge. Shadow mode needs no Canvas token and never begins/finalizes an upload.
+
+## Legacy compatibility modes
+
+The remaining ZIP/full-Astro instructions below describe the retained `prepare`
+and `deploy` compatibility modes. They are not the new content-worker setup.
+Retain them only for the initial migration rollback; current work uses the feature
+branch and normal PR release, not the historical direct-main iteration loop.
+
 The editor can prepare a site ZIP or publish it directly through Canvas Drop's
 deployment API. Both modes are opt-in. No mode or no token leaves publishing to
 GitHub Actions. A failed fast-path attempt never changes the successful save
@@ -154,6 +170,70 @@ A rollback, new deployment or failed subsequent attempt can leave them outdated.
 Deploy mode always consults Canvas; it never skips based on a cached local receipt.
 Graceful shutdown drains accepted HTTP requests, then cancels the worker and its
 subprocess group. The next push or Actions handles missed work.
+
+## Timing instrumentation and the local editor deployment loop
+
+The editor emits structured `local_build_timing` JSON records to its existing
+systemd journal. Each attempt has an `attempt` identifier, `editor_revision`
+(the deployed Go binary), and `commit` (the GitHub content snapshot, once known).
+Durations use monotonic clocks, in milliseconds. `offset_ms` is the time the
+record was emitted relative to worker start; it is not a wall-clock timestamp.
+
+Measurements include queue wait (from the first notification occupying the
+coalesced pending slot), stale-attempt cleanup, latest-main lookup, eligibility,
+immutable checkout, coordination preflight, secret-scan applicability, dependency
+cache hit/miss and preparation, validation, npm build, source-link/date checks,
+version proof, ZIP packaging, final freshness, publication/verification, receipt
+storage, dependency restoration, and checkout/attempt cleanup.
+
+An embedded, trusted Node preload observes the existing npm processes, including
+presentation sync, version generation, item-history generation, and Astro itself.
+It reports process duration, CPU usage, and process maximum RSS in KiB. These are
+process measurements, **not** total service/cgroup peak memory. The coordinator's
+HTTP calls are observed through Undici diagnostics, without wrapping fetch or
+reading response bodies: latest GitHub ref, Canvas status/manifest/version reads,
+and upload through complete response receipt. See the
+[Undici diagnostics contract](https://github.com/nodejs/undici/blob/main/docs/docs/api/DiagnosticsChannel.md).
+The encompassing coordinator duration also includes Node startup, local file
+hashing, response parsing and final proof storage; those non-network costs are
+not individually attributed yet.
+
+Use the terminal `attempt` record for total worker time. Parent stages and Node
+child-process durations are **inclusive and overlapping**; do not sum every
+record. Queue wait is outside worker time. A killed child may have a `started`
+record without a terminal process record; use the enclosing failed/cancelled/
+timed-out stage. `published` and `already_current` are taken from verified proof,
+not inferred from a zero subprocess exit. A superseded Git head is distinguished
+from an ordinary failure. Cleanup failures are logged separately and do not
+retroactively undo a verified publication. Prepared-artifact reuse is `skipped`.
+
+No raw subprocess output, URLs, query values, credentials, response bodies, or
+content is forwarded. Child telemetry accepts only fixed labels and bounded
+numeric fields, with bounded line and record counts. A probe-file write failure
+disables child metrics for that attempt without blocking publishing. Go stage
+timings remain available. The probe stays outside the site and ZIP and is
+removed with the attempt.
+
+For the generalized demo deployment loop, make changes on a feature branch, run
+tests, and merge through the repository's normal PR path. Cross-compile the merged `edit-service`
+with `GOOS=linux GOARCH=amd64 CGO_ENABLED=0`, `-trimpath`, and
+`-ldflags "-s -w -X main.version=<merged-commit>"`. Transfer the binary to a private
+server staging directory, compare SHA-256 checksums, preserve the running binary
+for rollback, atomically replace `/usr/local/bin/roadmap-demo-editor`, and restart only
+`roadmap-demo-editor`. Verify `/health`, `/api/capabilities`, and the running binary
+checksum. Keep the primary roadmap editor untouched.
+
+**Do not set the content baseline to an unmerged local commit.** The content
+worker still fetches GitHub main, validates its approved baseline, and builds
+that immutable snapshot. The timing preload ships inside the Go binary, so it
+works without changing that snapshot, deploying frontend code, or changing the
+release identity. This local deployment procedure does not implicitly ship local
+Astro/application changes. Actions and all freshness/security checks stay enabled.
+
+After deployment, observe one real UI publication and retain the timing records
+alongside the local/Actions verification receipts. Compare multiple cold/warm
+samples on the same host/profile and record competing builds. The first sample
+is not a speed guarantee; this change instruments behavior, it does not optimize it.
 
 ## Local verification
 
